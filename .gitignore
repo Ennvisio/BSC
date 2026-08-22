@@ -1,0 +1,75 @@
+# ============================================================
+# Dependencies
+# ============================================================
+/vendor
+/node_modules
+
+# ============================================================
+# Environment / secrets
+# ============================================================
+.env
+.env.backup
+.env.production
+!.env.example
+
+# ============================================================
+# Laravel runtime & cache — generated at request time, not source.
+# Each of these already has its own storage/**/.gitignore keeping
+# the folder itself tracked; only its generated contents are ignored.
+# ============================================================
+/public/hot
+/public/storage
+bootstrap/cache/*.php
+storage/app/public/*
+!storage/app/public/.gitignore
+storage/framework/cache/data/*
+!storage/framework/cache/data/.gitignore
+storage/framework/sessions/*
+!storage/framework/sessions/.gitignore
+storage/framework/testing/*
+!storage/framework/testing/.gitignore
+storage/framework/views/*
+!storage/framework/views/.gitignore
+storage/logs/*.log
+!storage/logs/.gitignore
+.phpunit.result.cache
+*.sqlite
+
+# ============================================================
+# Frontend build output (webpack.mix.js compiles into these)
+# ============================================================
+/public/js
+/public/css
+/public/mix-manifest.json
+*.css.map
+*.js.map
+
+# ============================================================
+# User-uploaded runtime content (certificates, signatures, photos) —
+# written by the app at runtime, not part of the source tree.
+# ============================================================
+images/cert_copy/
+images/signature/
+images/userphoto/
+public/images/cert_copy/
+public/images/signature/
+public/images/userphoto/
+
+# ============================================================
+# Editor / OS cruft
+# ============================================================
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+*.swp
+*.autosave.*
+
+# ============================================================
+# Backups, dumps, and archives currently sitting in the repo root —
+# these look like production DB dumps / a pre-upgrade snapshot.
+# Confirm none of these are needed before committing history without them.
+# ============================================================
+/.upgrade-backup/
+/Archive.zip
+*.sql
