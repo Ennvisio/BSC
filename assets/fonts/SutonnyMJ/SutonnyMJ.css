@@ -1,0 +1,8 @@
+@font-face {
+	font-family: 'SutonnyMJ';
+	src: url('SutonnyMJ.eot?#iefix') format('embedded-opentype'),
+       url('SutonnyMJ.woff') format('woff'), 
+       url('SutonnyMJ.ttf')  format('truetype'),
+	   url('SutonnyMJ.otf')  format('truetype'),
+       url('SutonnyMJ.svg#svgFontName') format('svg'); 
+}

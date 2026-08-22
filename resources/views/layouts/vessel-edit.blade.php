@@ -1,0 +1,15 @@
+@extends('layouts.admin-master')
+@section('main-content')
+<div class="col-lg-6 col-xl-12  form-wrap">
+  <div class="card">
+    <div class="card-header pv-card-hader">
+      <strong class="pptitle">Vessel Information Edit Form</strong>
+  </div>
+  <!-- ./pv-card-hader -->
+  <!-- card-body -->
+  <div class="card-body">
+      @include('layouts.vessel-edit-form')
+  </div>
+</div>
+</div>
+@endsection

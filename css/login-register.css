@@ -1,0 +1,151 @@
+/********************************
+* login-register.css
+********************************/
+@import url("../assets/fonts/SutonnyMJ/SutonnyMJ.css");
+@import url('https://fonts.googleapis.com/css?family=Roboto+Condensed:400,700');
+
+.auth-page-content {
+    background: url(../images/auth-form-bg.jpg) no-repeat scroll center top / cover;
+    min-height: calc( 100vh + 2px);
+    position: relative;
+    padding: 0 15px 50px;
+    z-index: 2;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.auth-page-content:after {
+    position: absolute;
+    content: "";
+    background: #fff;
+    width: 100%;
+    height: calc( 50% + 1px);;
+    left: 0;
+    bottom: 0;
+    z-index: 1;
+}
+
+.navbar-laravel {
+    display: none;
+}
+
+.auth-page-content>div {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+}
+
+/* login */
+.login {
+    background: #F8F5F3;
+    width: 495px;
+    margin: 0 auto;
+}
+
+.login .login-top {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-flow: row wrap;
+    height: 195px;
+    margin-top: 22px;
+}
+
+.login .login-top .logo-left {
+    width: 100px;
+    height: 100px;
+    overflow: hidden;
+}
+
+.login .login-top .logo-left img {
+    max-width: 100%;
+    height: auto;
+}
+
+.login .login-top  .logo-text {
+    color: #D5002E;
+    font-size: 21px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.login .login-top .logo-text .logo-text-en {
+    color: #166667;
+    font-family: 'Roboto Condensed', sans-serif;
+}
+
+.login .login-top .logo-text .logo-text-en span{
+    font-size: 80%;
+    margin-top: 10px;
+    display: block;
+    color: #000;
+}
+
+.login .login-top .logo-text .logo-text-bn {
+    font-family: SutonnyMJ;
+    font-size: 28px;
+}
+
+.login .logo-bottom {
+    background: #5374AE;
+}
+
+.login .logo-bottom .form-title {
+    color: #fff;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-align: center;
+    display: block;
+    width: 100%;
+    font-family: 'Roboto Condensed', sans-serif;
+    line-height: 1;
+}
+
+.login .logo-bottom form {
+    width: 250px;
+    margin: 0px auto;
+    padding: 20px 0;
+}
+
+.logo-bottom.login-form .form-group {
+    margin-bottom: 10px;
+}
+
+.login .logo-bottom form input.form-control {
+    border: none;
+    border-radius: 0;
+    padding: 4px 13px;
+    height: auto;
+}
+
+.login .logo-bottom label.form-check-label {
+    color: #ffff;
+    font-size: 12px;
+    font-family: sans-serif;
+}
+
+.login .logo-bottom button.btn.btn-primary {
+    background-color: #11679A;
+    padding: 5px 12px;
+}
+
+.login .logo-bottom button.btn.btn-primary:hover,
+.login .logo-bottom button.btn.btn-primary:focus {
+    background-color: #115882;
+}
+
+.login .logo-bottom  a.btn.btn-link {
+    color: #fff;
+    padding: 0 5px;
+}
+
+
+/* registation */
+.registation .registation-top {
+    margin-top:72px;
+}
+.not-active {
+  pointer-events: none; cursor: default; text-decoration: none; color: black;
+}

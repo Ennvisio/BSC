@@ -1,0 +1,61 @@
+body {
+    background: #ddd;
+}
+.section-padding {
+    padding: 65px 0;
+}
+.site-wrapper {
+    width: 1200px;
+    margin: 0 auto;
+    min-height: 100vh;
+    background: #fff;
+}
+
+.vessel-form label {
+    /*font-weight: 500;*/
+}
+.vessel-form .required {
+    color: #f00;
+}
+
+.nav-tabs .nav-item.show .nav-link, .nav-tabs .nav-link.active {
+    color: #fff!important;
+    background-color: #00bcd4;
+    border-color: #00bcd4 #00bcd4 #00bcd4;
+    border-radius: 6px 6px 0 0;
+}
+
+.vessel-form .tab-content {
+    margin: 0 auto;
+    max-width: 1000px;
+}
+
+.vessel-form #myTab li a {
+    font-weight: 500;
+    color: #00bcd4;
+    font-size: 16px;
+    font-family: sans-serif;
+    letter-spacing: 1px;
+    padding: 9px 16px;
+    text-transform: capitalize;
+}
+
+.bsc-form-wrapper {
+    border: 1px solid #ddd;
+    padding: 15px;
+    margin: 34px 0 15px;
+    position: relative;
+}
+.form-header {
+    position: absolute;
+    top: -17px;
+    display: inline-block;
+    background: #00BCD4;
+    padding: 5px 10px;
+    border-radius: 5px;
+    color: #fff;
+    font-weight: 500;
+}
+.btn-primary a {
+    color: #fff;
+}
