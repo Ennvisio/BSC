@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Certificates | Ship Repair Department</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.1.1/css/bootstrap.css">
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.6/css/all.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="theme.css">
+</head>
+<body class="srd">
+
+<div class="srd-shell">
+
+  <div class="srd-sidebar-backdrop js-srd-sidebar-close"></div>
+  <aside class="srd-sidebar">
+    <div class="srd-brand">
+      <div class="srd-brand-mark"><i class="fas fa-ship"></i></div>
+      <div class="srd-brand-text"><strong>Ship Repair Dept.</strong><span>Bangladesh Shipping Corp.</span></div>
+    </div>
+
+    <div class="srd-nav-label">Overview</div>
+    <a href="/home" class="srd-nav-item"><i class="fas fa-th-large"></i>Dashboard</a>
+
+    <div class="srd-nav-label">Fleet Records</div>
+    <a href="/home/certificate" class="srd-nav-item active"><i class="fas fa-certificate"></i>Certificates<span class="srd-nav-count">11</span></a>
+    <a href="/home/survey" class="srd-nav-item"><i class="fas fa-clipboard-check"></i>Surveys<span class="srd-nav-count">4</span></a>
+    <a href="/home/vessel" class="srd-nav-item"><i class="fas fa-ship"></i>Vessels<span class="srd-nav-count">8</span></a>
+
+    <div class="srd-nav-label">Stores</div>
+    <a href="/home/category" class="srd-nav-item"><i class="fas fa-th"></i>Categories<span class="srd-nav-count">13</span></a>
+    <a href="/home/item" class="srd-nav-item"><i class="fas fa-box"></i>Items<span class="srd-nav-count">292</span></a>
+    <a href="/home/order" class="srd-nav-item"><i class="fas fa-clipboard-list"></i>Requisitions<span class="srd-nav-count">6</span></a>
+
+    <div class="srd-nav-label">Admin</div>
+    <a href="/home/user" class="srd-nav-item"><i class="fas fa-user"></i>Users</a>
+    <a href="/home/trash" class="srd-nav-item"><i class="fas fa-trash-alt"></i>Trash</a>
+
+    <div class="srd-sidebar-foot">
+      <div class="srd-avatar">SA</div>
+      <div><strong style="display:block;font-size:12.5px;font-weight:600;">Super Admin</strong><span style="font-size:10.5px;color:var(--srd-muted);">Administrator</span></div>
+    </div>
+  </aside>
+
+  <div class="srd-main">
+    <div class="srd-topbar">
+      <div class="srd-topbar-left">
+        <a href="#" class="js-srd-menu-toggle srd-menu-toggle"><i class="fas fa-bars"></i></a>
+        <div class="srd-search"><i class="fas fa-search"></i><input type="text" placeholder="Search vessels, certificates, items…"></div>
+      </div>
+      <div class="srd-topbar-right">
+        <button class="srd-icon-btn"><i class="far fa-bell"></i><span class="srd-dot"></span></button>
+        <div class="srd-user-chip">
+          <div class="srd-avatar">SA</div>
+          <div class="srd-user-meta"><strong>Super Admin</strong><span>srd@bsc.gov.bd</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="srd-content">
+      <div class="srd-page-head">
+        <div>
+          <h1 class="srd-page-title">Certificates</h1>
+          <div class="srd-page-sub">Statutory and class certificates across the fleet</div>
+        </div>
+        <button class="btn btn-srd"><i class="fas fa-plus mr-1"></i>Add certificate</button>
+      </div>
+
+      <!-- filter bar — same three inputs your current "Select Ship / Search" row uses -->
+      <div class="srd-toolbar">
+        <select class="form-control" style="width:auto;">
+          <option>All vessels</option>
+          <option>MT Banglar Shourabh</option>
+          <option>MV Banglar Arjan</option>
+        </select>
+        <select class="form-control" style="width:auto;">
+          <option>Issuing authority</option>
+          <option>BV</option>
+          <option>MMD</option>
+        </select>
+        <div class="srd-search" style="display:flex;flex:1;min-width:220px;">
+          <i class="fas fa-search"></i><input type="text" placeholder="Search certificates…">
+        </div>
+      </div>
+
+      <div class="srd-chip-row">
+        <a href="#" class="srd-chip active">All 11</a>
+        <a href="#" class="srd-chip">Valid 6</a>
+        <a href="#" class="srd-chip">Expiring soon 2</a>
+        <a href="#" class="srd-chip">Expired 3</a>
+      </div>
+
+      <!-- keep using your existing DataTable init on this <table> — theme.css
+           only restyles it, the .srd-table-responsive-cards wrapper turns
+           rows into cards below 576px instead of clipping the table -->
+      <div class="srd-panel srd-table-responsive-cards">
+        <div class="table-responsive">
+        <table class="table" id="certificatesTable">
+          <thead>
+            <tr><th>Certificate</th><th>Issuing authority</th><th>Issued on</th><th>Expiry</th><th>Vessel</th><th>Status</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-label="Certificate"><span class="srd-cell-strong">Safety Equipment</span></td>
+              <td data-label="Authority">BV</td>
+              <td data-label="Issued">2020-01-21</td>
+              <td data-label="Expiry">2022-05-12</td>
+              <td data-label="Vessel">MV Banglar Samriddhi</td>
+              <td data-label="Status"><span class="badge badge-srd badge-srd-danger">Expired</span></td>
+              <td data-label="Actions">
+                <button class="srd-action-btn" title="View file"><i class="fas fa-eye"></i></button>
+                <button class="srd-action-btn" title="Edit"><i class="fas fa-pen"></i></button>
+                <button class="srd-action-btn is-danger" title="Delete"><i class="fas fa-trash-alt"></i></button>
+              </td>
+            </tr>
+            <tr>
+              <td data-label="Certificate"><span class="srd-cell-strong">Load Line</span></td>
+              <td data-label="Authority">Bangladesh &mdash; Narsingdi</td>
+              <td data-label="Issued">2019-12-25</td>
+              <td data-label="Expiry">2019-12-27</td>
+              <td data-label="Vessel">MT Banglar Shourabh</td>
+              <td data-label="Status"><span class="badge badge-srd badge-srd-danger">Expired</span></td>
+              <td data-label="Actions">
+                <button class="srd-action-btn" title="View file"><i class="fas fa-eye"></i></button>
+                <button class="srd-action-btn" title="Edit"><i class="fas fa-pen"></i></button>
+                <button class="srd-action-btn is-danger" title="Delete"><i class="fas fa-trash-alt"></i></button>
+              </td>
+            </tr>
+            <tr>
+              <td data-label="Certificate"><span class="srd-cell-strong">C AEA# Annual</span></td>
+              <td data-label="Authority">MMD</td>
+              <td data-label="Issued">2019-12-17</td>
+              <td data-label="Expiry">2027-03-12</td>
+              <td data-label="Vessel">MV Banglar Arjan</td>
+              <td data-label="Status"><span class="badge badge-srd badge-srd-success">Valid</span></td>
+              <td data-label="Actions">
+                <button class="srd-action-btn" title="View file"><i class="fas fa-eye"></i></button>
+                <button class="srd-action-btn" title="Edit"><i class="fas fa-pen"></i></button>
+                <button class="srd-action-btn is-danger" title="Delete"><i class="fas fa-trash-alt"></i></button>
+              </td>
+            </tr>
+            <tr>
+              <td data-label="Certificate"><span class="srd-cell-strong">SAFCOM</span></td>
+              <td data-label="Authority">MMD</td>
+              <td data-label="Issued">2019-12-17</td>
+              <td data-label="Expiry">2027-06-04</td>
+              <td data-label="Vessel">MV Banglar Samriddhi</td>
+              <td data-label="Status"><span class="badge badge-srd badge-srd-success">Valid</span></td>
+              <td data-label="Actions">
+                <button class="srd-action-btn" title="View file"><i class="fas fa-eye"></i></button>
+                <button class="srd-action-btn" title="Edit"><i class="fas fa-pen"></i></button>
+                <button class="srd-action-btn is-danger" title="Delete"><i class="fas fa-trash-alt"></i></button>
+              </td>
+            </tr>
+            <tr>
+              <td data-label="Certificate"><span class="srd-cell-strong">Safety Radio</span></td>
+              <td data-label="Authority">BV</td>
+              <td data-label="Issued">2019-09-24</td>
+              <td data-label="Expiry">2026-09-23</td>
+              <td data-label="Vessel">MT Banglar Jyoti</td>
+              <td data-label="Status"><span class="badge badge-srd badge-srd-warning">Expiring soon</span></td>
+              <td data-label="Actions">
+                <button class="srd-action-btn" title="View file"><i class="fas fa-eye"></i></button>
+                <button class="srd-action-btn" title="Edit"><i class="fas fa-pen"></i></button>
+                <button class="srd-action-btn is-danger" title="Delete"><i class="fas fa-trash-alt"></i></button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+        <div class="d-flex justify-content-between align-items-center px-3 py-3" style="font-size:12.5px;color:var(--srd-muted);">
+          <div>Showing 1&ndash;5 of 11</div>
+          <nav>
+            <ul class="pagination pagination-sm mb-0">
+              <li class="page-item disabled"><a class="page-link" href="#">&lsaquo;</a></li>
+              <li class="page-item active"><a class="page-link" href="#">1</a></li>
+              <li class="page-item"><a class="page-link" href="#">2</a></li>
+              <li class="page-item"><a class="page-link" href="#">3</a></li>
+              <li class="page-item"><a class="page-link" href="#">&rsaquo;</a></li>
+            </ul>
+          </nav>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.3.1.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"></script>
+<script src="theme.js"></script>
+</body>
+</html>

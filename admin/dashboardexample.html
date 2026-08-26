@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard | Ship Repair Department</title>
+
+<!-- existing stack — same versions already loaded on the live site -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.1.1/css/bootstrap.css">
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.6/css/all.css">
+
+<!-- optional, remove if you don't want the extra font requests -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<!-- new theme, layered on top of Bootstrap — see theme.css -->
+<link rel="stylesheet" href="theme.css">
+</head>
+<body class="srd">
+
+<div class="srd-shell">
+
+  <!-- SIDEBAR START — save as partials/sidebar.blade.php -->
+  <div class="srd-sidebar-backdrop js-srd-sidebar-close"></div>
+  <aside class="srd-sidebar">
+    <div class="srd-brand">
+      <div class="srd-brand-mark"><i class="fas fa-ship"></i></div>
+      <div class="srd-brand-text"><strong>Ship Repair Dept.</strong><span>Bangladesh Shipping Corp.</span></div>
+    </div>
+
+    <div class="srd-nav-label">Overview</div>
+    <a href="/home" class="srd-nav-item active"><i class="fas fa-th-large"></i>Dashboard</a>
+
+    <div class="srd-nav-label">Fleet Records</div>
+    <a href="/home/certificate" class="srd-nav-item"><i class="fas fa-certificate"></i>Certificates<span class="srd-nav-count">11</span></a>
+    <a href="/home/survey" class="srd-nav-item"><i class="fas fa-clipboard-check"></i>Surveys<span class="srd-nav-count">4</span></a>
+    <a href="/home/vessel" class="srd-nav-item"><i class="fas fa-ship"></i>Vessels<span class="srd-nav-count">8</span></a>
+
+    <div class="srd-nav-label">Stores</div>
+    <a href="/home/category" class="srd-nav-item"><i class="fas fa-th"></i>Categories<span class="srd-nav-count">13</span></a>
+    <a href="/home/item" class="srd-nav-item"><i class="fas fa-box"></i>Items<span class="srd-nav-count">292</span></a>
+    <a href="/home/order" class="srd-nav-item"><i class="fas fa-clipboard-list"></i>Requisitions<span class="srd-nav-count">6</span></a>
+
+    <div class="srd-nav-label">Admin</div>
+    <a href="/home/user" class="srd-nav-item"><i class="fas fa-user"></i>Users</a>
+    <a href="/home/trash" class="srd-nav-item"><i class="fas fa-trash-alt"></i>Trash</a>
+
+    <div class="srd-sidebar-foot">
+      <div class="srd-avatar">SA</div>
+      <div><strong style="display:block;font-size:12.5px;font-weight:600;">Super Admin</strong><span style="font-size:10.5px;color:var(--srd-muted);">Administrator</span></div>
+    </div>
+  </aside>
+  <!-- SIDEBAR END -->
+
+  <div class="srd-main">
+    <!-- TOPBAR START — save as partials/topbar.blade.php -->
+    <div class="srd-topbar">
+      <div class="srd-topbar-left">
+        <a href="#" class="js-srd-menu-toggle srd-menu-toggle"><i class="fas fa-bars"></i></a>
+        <div class="srd-search"><i class="fas fa-search"></i><input type="text" placeholder="Search vessels, certificates, items…"></div>
+      </div>
+      <div class="srd-topbar-right">
+        <button class="srd-icon-btn"><i class="far fa-bell"></i><span class="srd-dot"></span></button>
+        <div class="srd-user-chip">
+          <div class="srd-avatar">SA</div>
+          <div class="srd-user-meta"><strong>Super Admin</strong><span>srd@bsc.gov.bd</span></div>
+        </div>
+      </div>
+    </div>
+    <!-- TOPBAR END -->
+
+    <div class="srd-content">
+      <div class="srd-page-head">
+        <div>
+          <h1 class="srd-page-title">Dashboard</h1>
+          <div class="srd-page-sub">Fleet-wide certificate and survey status at a glance</div>
+        </div>
+        <div class="text-muted" style="font-size:12px;">Updated today, 9:40 AM</div>
+      </div>
+
+      <!-- stat cards — plain Bootstrap grid -->
+      <div class="row mb-4">
+        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+          <div class="srd-stat-card">
+            <div class="srd-stat-icon"><i class="fas fa-ship"></i></div>
+            <div class="srd-stat-value">8</div>
+            <div class="srd-stat-label">Vessels</div>
+            <div class="srd-stat-note is-success">All operational</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+          <div class="srd-stat-card">
+            <div class="srd-stat-icon"><i class="fas fa-certificate"></i></div>
+            <div class="srd-stat-value">11</div>
+            <div class="srd-stat-label">Active certificates</div>
+            <div class="srd-stat-note is-danger">3 expiring within 30 days</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+          <div class="srd-stat-card">
+            <div class="srd-stat-icon"><i class="fas fa-clipboard-check"></i></div>
+            <div class="srd-stat-value">4</div>
+            <div class="srd-stat-label">Survey reports</div>
+            <div class="srd-stat-note is-warning">1 due this month</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+          <div class="srd-stat-card">
+            <div class="srd-stat-icon"><i class="fas fa-clipboard-list"></i></div>
+            <div class="srd-stat-value">6</div>
+            <div class="srd-stat-label">Open requisitions</div>
+            <div class="srd-stat-note is-warning">2 pending approval</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+          <div class="srd-stat-card">
+            <div class="srd-stat-icon"><i class="fas fa-box"></i></div>
+            <div class="srd-stat-value">292</div>
+            <div class="srd-stat-label">Store items</div>
+            <div class="srd-stat-note is-muted">Across 13 categories</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <!-- certificate expiry watch -->
+        <div class="col-lg-7 mb-4 mb-lg-0">
+          <div class="srd-panel">
+            <div class="srd-panel-head">
+              <h3 class="srd-panel-title">Certificate expiry watch</h3>
+              <a class="srd-panel-link" href="/home/certificate">View all 11 &rarr;</a>
+            </div>
+
+            <div class="srd-row-item">
+              <div class="srd-row-icon"><i class="fas fa-ship"></i></div>
+              <div><div class="srd-row-title">MT Banglar Shourabh</div><div class="srd-row-sub">Safety Equipment Certificate</div></div>
+              <div class="srd-row-date">Expired 42 days ago</div>
+              <span class="badge badge-srd badge-srd-danger"><i class="fas fa-exclamation-triangle mr-1"></i>Expired</span>
+            </div>
+            <div class="srd-row-item">
+              <div class="srd-row-icon"><i class="fas fa-ship"></i></div>
+              <div><div class="srd-row-title">MT Banglar Agradoot</div><div class="srd-row-sub">CO2 System Certificate</div></div>
+              <div class="srd-row-date">Expired 5 days ago</div>
+              <span class="badge badge-srd badge-srd-danger"><i class="fas fa-exclamation-triangle mr-1"></i>Expired</span>
+            </div>
+            <div class="srd-row-item">
+              <div class="srd-row-icon"><i class="fas fa-ship"></i></div>
+              <div><div class="srd-row-title">MV Banglar Arjan</div><div class="srd-row-sub">Load Line Certificate</div></div>
+              <div class="srd-row-date">Expires in 9 days</div>
+              <span class="badge badge-srd badge-srd-warning"><i class="fas fa-clock mr-1"></i>Expiring soon</span>
+            </div>
+            <div class="srd-row-item">
+              <div class="srd-row-icon"><i class="fas fa-ship"></i></div>
+              <div><div class="srd-row-title">MT Banglar Jyoti</div><div class="srd-row-sub">Safety Radio Certificate</div></div>
+              <div class="srd-row-date">Expires in 28 days</div>
+              <span class="badge badge-srd badge-srd-warning"><i class="fas fa-clock mr-1"></i>Expiring soon</span>
+            </div>
+            <div class="srd-row-item">
+              <div class="srd-row-icon"><i class="fas fa-ship"></i></div>
+              <div><div class="srd-row-title">MV Banglar Joyjatra</div><div class="srd-row-sub">C AEA# Annual Certificate</div></div>
+              <div class="srd-row-date">Valid to 12 Mar 2027</div>
+              <span class="badge badge-srd badge-srd-success"><i class="fas fa-check-circle mr-1"></i>Valid</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- right column -->
+        <div class="col-lg-5">
+          <div class="srd-panel">
+            <div class="srd-panel-head">
+              <h3 class="srd-panel-title">Upcoming surveys</h3>
+              <a class="srd-panel-link" href="/home/survey">View all &rarr;</a>
+            </div>
+            <div class="srd-row-item">
+              <div><div class="srd-row-title">MT Banglar Agradoot</div><div class="srd-row-sub">Docking survey</div></div>
+              <div class="srd-row-date">14 Sep 2026</div>
+            </div>
+            <div class="srd-row-item">
+              <div><div class="srd-row-title">MT Banglar Shourabh</div><div class="srd-row-sub">Intermediate survey</div></div>
+              <div class="srd-row-date">02 Oct 2026</div>
+            </div>
+            <div class="srd-row-item">
+              <div><div class="srd-row-title">MV Banglar Samriddhi</div><div class="srd-row-sub">Annual survey</div></div>
+              <div class="srd-row-date">19 Oct 2026</div>
+            </div>
+          </div>
+
+          <div class="srd-panel">
+            <div class="srd-panel-head">
+              <h3 class="srd-panel-title">Requisitions in progress</h3>
+              <a class="srd-panel-link" href="/home/order">View all &rarr;</a>
+            </div>
+            <div class="srd-row-item">
+              <div><div class="srd-row-title">DK/SYM/01/2026</div><div class="srd-row-sub">MT Banglar Shourabh &middot; IMO Symbols</div></div>
+              <span class="badge badge-srd badge-srd-warning ml-auto">Pending</span>
+            </div>
+            <div class="srd-row-item">
+              <div><div class="srd-row-title">DK/Dk Str/03/2026</div><div class="srd-row-sub">MT Banglar Jyoti &middot; Deck Store</div></div>
+              <span class="badge badge-srd badge-srd-success ml-auto">Approved</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- existing stack -->
+<script src="https://code.jquery.com/jquery-3.3.1.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"></script>
+<script src="theme.js"></script>
+</body>
+</html>
