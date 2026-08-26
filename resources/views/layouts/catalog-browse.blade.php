@@ -1,6 +1,6 @@
 @extends('layouts.admin-master')
 @section('main-content')
-<div class="col-lg-6 col-xl-12">
+<div class="col-lg-12">
 	<div class="card">
 		<div class="card-header pv-card-hader">
 			<strong class="pptitle">Browse Catalog</strong>
@@ -16,20 +16,16 @@
 			</div>
 
 			<nav aria-label="breadcrumb">
-				<ol class="breadcrumb" id="catalog-breadcrumb" style="flex-wrap:wrap;">
-					<li class="breadcrumb-item active" data-parent-id="" style="cursor:pointer;">All categories</li>
-				</ol>
+				<ol class="breadcrumb" id="catalog-breadcrumb" style="flex-wrap:wrap;"></ol>
 			</nav>
 
 			<div class="row">
-				<div class="col-md-5">
-					<div id="catalog-groups" class="list-group" style="max-height:520px;overflow-y:auto;"></div>
+				<div class="col-lg-4">
+					<input type="text" id="catalog-group-filter" class="form-control mb-2" placeholder="Filter this list…">
+					<div id="catalog-groups" class="list-group" style="height:calc(100vh - 320px); min-height:360px; overflow-y:auto;"></div>
 				</div>
-				<div class="col-md-7">
-					<div id="catalog-items-wrapper">
-						<p class="text-muted">Select a category on the left. Once you reach a category with no
-						sub-categories, its items will appear here.</p>
-					</div>
+				<div class="col-lg-8">
+					<div id="catalog-items-wrapper"></div>
 				</div>
 			</div>
 		</div>
@@ -42,6 +38,7 @@
 $(function () {
 	// path[0] is always the synthetic root ("All categories", id '').
 	var path = [{ id: '', name: 'All categories' }];
+	var itemsTable = null;
 
 	function renderBreadcrumb() {
 		var html = '';
@@ -54,11 +51,12 @@ $(function () {
 	}
 
 	function loadGroups(parentId) {
+		$('#catalog-group-filter').val('');
 		$('#catalog-groups').html('<p class="text-muted p-2">Loading…</p>');
-		$('#catalog-items-wrapper').html('');
 
 		$.getJSON('{{url("/catalog/browse/children")}}/' + (parentId || ''), function (groups) {
 			if (groups.length === 0) {
+				$('#catalog-groups').html('<p class="text-muted p-3">No sub-categories here — showing its items on the right. &rarr;</p>');
 				loadItems(parentId);
 				return;
 			}
@@ -69,10 +67,10 @@ $(function () {
 					? '<span class="badge badge-secondary float-right">' + g.children_count + ' sub-categories</span>'
 					: '<span class="badge badge-info float-right">' + g.items_count + ' items</span>';
 				html += '<a href="#" class="list-group-item list-group-item-action catalog-group-link" data-id="' + g.id + '" data-name="' + g.name + '">'
-					+ g.name + badge + '</a>';
+					+ '<span class="catalog-group-name">' + g.name + '</span>' + badge + '</a>';
 			});
 			$('#catalog-groups').html(html);
-			$('#catalog-items-wrapper').html('<p class="text-muted">Select a category to drill down further, or one with an items count to see its items.</p>');
+			$('#catalog-items-wrapper').html('<p class="text-muted mt-2">Select a category on the left to drill down, or one already showing an items count to see its items here.</p>');
 		});
 	}
 
@@ -85,15 +83,22 @@ $(function () {
 				return;
 			}
 
-			var html = '<div class="table-responsive"><table class="table table-sm table-bordered">'
-				+ '<thead><tr><th>Article #</th><th>Name</th><th>Unit</th><th>Manufacturer</th><th>Vessels</th></tr></thead><tbody>';
+			var html = '<div class="table-responsive"><table id="catalog-items-table" class="table table-sm table-bordered" style="width:100%;">'
+				+ '<thead><tr><th>Article #</th><th>Name</th><th>Unit</th><th>Manufacturer</th><th>Part #</th><th>Vessels</th></tr></thead><tbody>';
 			items.forEach(function (i) {
 				var vessels = (i.vessels || []).map(function (v) { return v.name; }).join(', ') || '<span class="text-muted">none</span>';
 				html += '<tr><td>' + (i.article_number || '') + '</td><td>' + i.name + '</td><td>' + (i.unit || '') + '</td>'
-					+ '<td>' + (i.manufacturer || '') + '</td><td>' + vessels + '</td></tr>';
+					+ '<td>' + (i.manufacturer || '') + '</td><td>' + (i.part_number || '') + '</td><td>' + vessels + '</td></tr>';
 			});
 			html += '</tbody></table></div>';
+
+			if (itemsTable) { itemsTable.destroy(); itemsTable = null; }
 			$('#catalog-items-wrapper').html(html);
+
+			itemsTable = $('#catalog-items-table').DataTable({
+				pageLength: 25,
+				order: [[1, 'asc']]
+			});
 		});
 	}
 
@@ -109,6 +114,14 @@ $(function () {
 		path = path.slice(0, index + 1);
 		renderBreadcrumb();
 		loadGroups(path[path.length - 1].id);
+	});
+
+	$(document).on('keyup', '#catalog-group-filter', function () {
+		var term = $(this).val().toLowerCase();
+		$('#catalog-groups .catalog-group-link').each(function () {
+			var name = $(this).data('name').toLowerCase();
+			$(this).toggle(name.indexOf(term) !== -1);
+		});
 	});
 
 	renderBreadcrumb();
