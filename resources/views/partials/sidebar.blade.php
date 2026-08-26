@@ -21,6 +21,7 @@
   <a href="{{url('/home/item')}}" class="srd-nav-item {{Route::current()->uri() == 'home/item' ? 'active' : ''}}"><i class="fas fa-cubes"></i>Items<span class="srd-nav-count">{{ \App\Item::where('status',true)->count() }}</span></a>
   <a href="{{url('/home/order')}}" class="srd-nav-item {{Route::current()->uri() == 'home/order' ? 'active' : ''}}"><i class="fas fa-list-alt"></i>Requisitions</a>
   <a href="{{url('/catalog/import')}}" class="srd-nav-item {{in_array(Route::current()->uri(), ['catalog/import', 'catalog/import/history']) ? 'active' : ''}}"><i class="fas fa-upload"></i>Catalog Import</a>
+  <a href="{{url('/catalog/browse')}}" class="srd-nav-item {{Route::current()->uri() == 'catalog/browse' ? 'active' : ''}}"><i class="fas fa-th"></i>Browse Catalog</a>
   @endif
 
   @if(!empty(auth()->user()->role->role) &&

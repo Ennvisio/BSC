@@ -67,6 +67,10 @@ Route::get('/order/detail/{order_id}', 'HomeController@viewOrderDetail')->name('
   Route::post('/catalog/import', 'ItemImportController@store')->name('catalog.import.store');
   Route::get('/catalog/import/history', 'ItemImportController@history')->name('catalog.import.history');
 
+  Route::get('/catalog/browse', 'CatalogController@browse')->name('catalog.browse');
+  Route::get('/catalog/browse/children/{parentId?}', 'CatalogController@children')->name('catalog.browse.children');
+  Route::get('/catalog/browse/items/{groupId}', 'CatalogController@items')->name('catalog.browse.items');
+
   Route::get('/home/user', 'HomeController@getUser');
   Route::post('/user/store', 'HomeController@storeUser');
   Route::post('/user/delete', 'HomeController@deleteUser');
