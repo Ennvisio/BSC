@@ -168,160 +168,73 @@
     </div>
 </div>
 
-<div class="col-lg-3 col-md-6">
-    <div class="card counter">
-        <div class="card-body">
-            <a href="{{url('/home/certificate')}}">
-                <div class="stat-widget-five">
-                    <div class="stat-icon dib flat-color-1">
-                        <img style="width: 58px;height: auto;" src="{{url('assets/icons/certificate.png')}}">
-                    </div>
-                    <div class="stat-content">
-                        <div class="text-left dib">
-                            <div class="stat-text"><span class="count positive">{{\App\Certificate::where('status',true)->get()->count()}}</span></div>
-                            <div class="stat-heading">Certificate</div>
-                        </div>
-                    </div>
+<div class="col-lg-12">
+    <div class="row">
+        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+            <a href="{{url('/home/certificate')}}" class="text-decoration-none">
+                <div class="srd-stat-card">
+                    <div class="srd-stat-icon"><i class="fas fa-certificate"></i></div>
+                    <div class="srd-stat-value"><span class="count">{{\App\Certificate::where('status',true)->get()->count()}}</span></div>
+                    <div class="srd-stat-label">Certificates</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+            <a href="{{url('/home/survey')}}" class="text-decoration-none">
+                <div class="srd-stat-card">
+                    <div class="srd-stat-icon"><i class="fas fa-clipboard-check"></i></div>
+                    <div class="srd-stat-value"><span class="count">{{\App\Survey::where('status',true)->get()->count()}}</span></div>
+                    <div class="srd-stat-label">Surveys</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+            <a href="{{url('/home/vessel')}}" class="text-decoration-none">
+                <div class="srd-stat-card">
+                    <div class="srd-stat-icon"><i class="fas fa-ship"></i></div>
+                    <div class="srd-stat-value"><span class="count">{{\App\Vessel::where('status',true)->get()->count()}}</span></div>
+                    <div class="srd-stat-label">Vessels</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+            <a href="{{url('/home/item')}}" class="text-decoration-none">
+                <div class="srd-stat-card">
+                    <div class="srd-stat-icon"><i class="fas fa-th"></i></div>
+                    <div class="srd-stat-value"><span class="count">{{\App\Category::where('status',true)->get()->count()}}</span></div>
+                    <div class="srd-stat-label">Categories</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+            <a href="{{url('/home/item')}}" class="text-decoration-none">
+                <div class="srd-stat-card">
+                    <div class="srd-stat-icon"><i class="fas fa-box"></i></div>
+                    <div class="srd-stat-value"><span class="count">{{\App\Item::where('status',true)->get()->count()}}</span></div>
+                    <div class="srd-stat-label">Items</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+            <a href="{{url('/home/order')}}" class="text-decoration-none">
+                <div class="srd-stat-card">
+                    <div class="srd-stat-icon"><i class="fas fa-truck"></i></div>
+                    <div class="srd-stat-value"><span class="count">{{\App\Order::where('ord_status',true)->where('status','delivered')->get()->count()}}</span></div>
+                    <div class="srd-stat-label">Delivered</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+            <a href="{{url('/home/order')}}" class="text-decoration-none">
+                <div class="srd-stat-card">
+                    <div class="srd-stat-icon"><i class="fas fa-inbox"></i></div>
+                    <div class="srd-stat-value"><span class="count">{{\App\Order::where('ord_status',true)->where('status','received')->get()->count()}}</span></div>
+                    <div class="srd-stat-label">Received</div>
                 </div>
             </a>
         </div>
     </div>
 </div>
-<div class="col-lg-3 col-md-6">
-    <div class="card counter">
-        <div class="card-body">
-            <a href="{{url('/home/survey')}}">
-                <div class="stat-widget-five">
-                    <div class="stat-icon dib flat-color-2">
-                        <img style="width: 62px;height: auto;" src="{{url('assets/icons/survey.png')}}">
-                    </div>
-                    <div class="stat-content">
-                        <div class="text-left dib">
-                            <div class="stat-text"><span class="count negative">{{\App\Survey::where('status',true)->get()->count()}}</span></div>
-                            <div class="stat-heading">Survey</div>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-    </div>
-</div>
-<div class="col-lg-3 col-md-6">
-    <div class="card counter">
-        <div class="card-body">
-            <a href="{{url('/home/vessel')}}">
-                <div class="stat-widget-five">
-                    <div class="stat-icon dib flat-color-3">
-                        <img style="width: 58px;height: auto;" src="{{url('assets/icons/vessels.png')}}">
-                    </div>
-                    <div class="stat-content">
-                        <div class="text-left dib">
-                            <div class="stat-text">
-                                <span class="count pending">{{\App\Vessel::where('status',true)->get()->count()}}
-                                </span>
-                            </div>
-                            <div class="stat-heading">Vessels</div>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-    </div>
-</div>
-
-<div class="col-lg-3 col-md-6">
-    <div class="card counter">
-        <div class="card-body">
-            <a href="{{url('/home/item')}}">
-                <div class="stat-widget-five">
-                    <div class="stat-icon dib flat-color-4" style="color: #d6bd0c">
-                        <img style="width: 62px;height: auto;" src="{{url('assets/icons/category.png')}}">
-                    </div>
-                    <div class="stat-content">
-                        <div class="text-left dib">
-                            <div class="stat-text">    
-                                <span class="count pending">{{\App\Category::where('status',true)->get()->count()}}
-                                </span>
-                            </div>
-                            <div class="stat-heading">Category</div>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-    </div>
-</div>
-
-<div class="col-lg-3 col-md-6">
-    <div class="card counter">
-        <div class="card-body">
-            <a href="{{url('/home/item')}}">
-                <div class="stat-widget-five">
-                    <div class="stat-icon dib flat-color-4" style="color: #d6bd0c">
-                        <i class="fas fa-tasks"></i>
-                    </div>
-                    <div class="stat-content">
-                        <div class="text-left dib">
-                            <div class="stat-text">    
-                                <span class="count pending">{{\App\Item::where('status',true)->get()->count()}}
-                                </span>
-                            </div>
-                            <div class="stat-heading">Items</div>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-    </div>
-</div>
-
-<div class="col-lg-3 col-md-6">
-    <div class="card counter">
-        <div class="card-body">
-            <a href="{{url('/home/order')}}">
-                <div class="stat-widget-five">
-                    <div class="stat-icon dib flat-color-4" style="color: #66bb6a">
-                       <img style="width: 58px;height: auto;" src="{{url('assets/icons/requisition.png')}}">
-                    </div>
-                    <div class="stat-content">
-                        <div class="text-left dib">
-                            <div class="stat-text">                                   
-                                <span class="count pending">{{\App\Order::where('ord_status',true)->where('status','delivered')->get()->count()}}
-                                </span>
-                            </div>
-                            <div class="stat-heading">Delivered </div>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-    </div>
-</div>
-
-<div class="col-lg-3 col-md-6">
-    <div class="card counter">
-        <div class="card-body">
-            <a href="{{url('/home/order')}}">
-                <div class="stat-widget-five">
-                    <div class="stat-icon dib flat-color-4" style="color: #66bb6a">
-                       <img style="width: 58px;height: auto;" src="{{url('assets/icons/requisition.png')}}">
-                    </div>
-                    <div class="stat-content">
-                        <div class="text-left dib">
-                            <div class="stat-text"><span class="count">
-                                {{\App\Order::where('ord_status',true)->where('status','received')->get()->count()}}
-                            </span></div>
-                            <div class="stat-heading">Received </div>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-    </div>
-</div>
-
-<div class="col-lg-3 col-md-6">
-</div> 
 
 <!--<div class="col-lg-6 col-md-6">-->
 <!--    <div class="card ">-->
