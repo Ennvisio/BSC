@@ -40,7 +40,7 @@
         </div>
       </div>
 
-      <footer class="site-footer " style="background: #c9cab8">
+      <footer class="site-footer " style="background: #fff">
         <div class="footer-inner" >
           <div class="row">
             <div class="col-sm-6">
