@@ -62,7 +62,11 @@ Route::get('/order/detail/{order_id}', 'HomeController@viewOrderDetail')->name('
   Route::get('/approved/requisition', 'RoleController@approvedRequisition');
 
   Route::get('/home/trash', 'HomeController@allTrash');
-  
+
+  Route::get('/catalog/import', 'ItemImportController@create')->name('catalog.import.form');
+  Route::post('/catalog/import', 'ItemImportController@store')->name('catalog.import.store');
+  Route::get('/catalog/import/history', 'ItemImportController@history')->name('catalog.import.history');
+
   Route::get('/home/user', 'HomeController@getUser');
   Route::post('/user/store', 'HomeController@storeUser');
   Route::post('/user/delete', 'HomeController@deleteUser');

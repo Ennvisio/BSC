@@ -40,7 +40,10 @@ class Vessel extends Model
     public function vesselSurveys(){ 
         return $this->hasMany(VesselSurvey::class);
     }
-    public function vesselCertificates(){ 
+    public function vesselCertificates(){
         return $this->hasMany(VesselCertificate::class);
+    }
+    public function items(){
+        return $this->belongsToMany(Item::class, 'vessel_items');
     }
 }
