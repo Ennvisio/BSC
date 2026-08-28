@@ -4,10 +4,6 @@
 	<div class="card">
 		<div class="card-header pv-card-hader">
 			<strong class="pptitle">Catalog Import History</strong>
-
-			<div class="right-buttons">
-				<a href="{{url('/catalog/import')}}" class="btn btn-primary"><i class="fas fa-upload"></i> New Import</a>
-			</div>
 		</div>
 		<div class="card-body">
 			@if(session('message'))
