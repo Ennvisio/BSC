@@ -38,6 +38,12 @@
   <a href="{{url('/received/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'received/requisition' ? 'active' : ''}}"><i class="fas fa-inbox"></i>Received Requisition</a>
   @endif
 
+  @if(!empty(auth()->user()->role->user_type) && auth()->user()->role->user_type == 'ship')
+  <div class="srd-nav-label">Vessel Catalog</div>
+  <a href="{{url('/catalog/import')}}" class="srd-nav-item {{in_array(Route::current()->uri(), ['catalog/import', 'catalog/import/history']) ? 'active' : ''}}"><i class="fas fa-upload"></i>Catalog Import</a>
+  <a href="{{url('/catalog/browse')}}" class="srd-nav-item {{Route::current()->uri() == 'catalog/browse' ? 'active' : ''}}"><i class="fas fa-th"></i>Browse Catalog</a>
+  @endif
+
   @if(!empty(auth()->user()->role->role) && (auth()->user()->role->role!='super-admin') &&
    (auth()->user()->role->role!='second-engineer') &&
    (auth()->user()->role->role!='chief-officer'))

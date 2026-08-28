@@ -36,12 +36,18 @@
 				@csrf
 				<div class="form-group">
 					<label>Vessel</label>
+					@if($lockedVessel)
+					<input type="text" class="form-control" value="{{$lockedVessel->name}}" disabled>
+					<input type="hidden" name="vessel_id" value="{{$lockedVessel->id}}">
+					<small class="text-muted">Imports always apply to your own vessel.</small>
+					@else
 					<select name="vessel_id" class="form-control" required>
 						<option value="">Select vessel</option>
 						@foreach($vessels as $vessel)
 						<option value="{{$vessel->id}}">{{$vessel->name}}</option>
 						@endforeach
 					</select>
+					@endif
 				</div>
 				<div class="form-group">
 					<label>Catalog file (.xlsx, .xls, .csv)</label>

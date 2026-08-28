@@ -3,7 +3,7 @@
 <div class="col-lg-12">
 	<div class="card">
 		<div class="card-header pv-card-hader">
-			<strong class="pptitle">Browse Catalog</strong>
+			<strong class="pptitle">Browse Catalog{{ $vessel ? ' — '.$vessel->name : '' }}</strong>
 			<div class="right-buttons">
 				<a href="{{url('/catalog/import')}}" class="btn btn-primary"><i class="fas fa-upload"></i> Import Catalog</a>
 			</div>
@@ -12,7 +12,13 @@
 			<div class="row mb-3">
 				<div class="col-md-4"><div class="alert alert-secondary mb-0 text-center"><b>{{$groupCount}}</b> categories/folders</div></div>
 				<div class="col-md-4"><div class="alert alert-secondary mb-0 text-center"><b>{{$itemCount}}</b> items</div></div>
-				<div class="col-md-4"><div class="alert alert-secondary mb-0 text-center"><b>{{$vesselCount}}</b> vessels</div></div>
+				<div class="col-md-4"><div class="alert alert-secondary mb-0 text-center">
+					@if($vessel)
+					Catalog for <b>{{$vessel->name}}</b>
+					@else
+					<b>{{$vesselCount}}</b> vessels
+					@endif
+				</div></div>
 			</div>
 
 			<nav aria-label="breadcrumb">
