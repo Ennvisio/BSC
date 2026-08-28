@@ -1,0 +1,141 @@
+/* =========================================================================
+   Login page — self-contained, matches the SRD theme's palette/type
+   (see css/srd-theme.css) so it feels like the same product, not a
+   separate Laravel-scaffold page bolted on the front.
+   ========================================================================= */
+
+:root{
+  --login-ink:        #17242b;
+  --login-muted:      #6b7a82;
+  --login-border:     #e3e8e7;
+  --login-accent:     #007184;
+  --login-accent-dark:#005866;
+  --login-danger:     #c0392b;
+  --login-danger-tint:#fbeae8;
+}
+
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+  color:var(--login-ink);
+  background:#f4f6f6;
+}
+
+.login-shell{
+  min-height:100vh;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+}
+@media (max-width:900px){
+  .login-shell{grid-template-columns:1fr;}
+  .login-brand{min-height:220px;}
+}
+
+/* ---- left: brand panel ---- */
+.login-brand{
+  background:linear-gradient(160deg, var(--login-accent), var(--login-accent-dark));
+  color:#fff;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  padding:60px;
+  position:relative;
+  overflow:hidden;
+}
+.login-brand::before{
+  content:"";
+  position:absolute;
+  inset:auto -20% -40% auto;
+  width:70%;
+  padding-top:70%;
+  border-radius:50%;
+  background:rgba(255,255,255,.06);
+}
+.login-brand::after{
+  content:"";
+  position:absolute;
+  inset:-30% auto auto -15%;
+  width:50%;
+  padding-top:50%;
+  border-radius:50%;
+  background:rgba(255,255,255,.05);
+}
+.login-brand-inner{position:relative; z-index:1; max-width:420px;}
+.login-brand-mark{
+  width:56px; height:56px; border-radius:14px;
+  background:rgba(255,255,255,.14);
+  display:flex; align-items:center; justify-content:center;
+  margin-bottom:28px;
+}
+.login-brand-mark img{width:36px;height:auto;display:block;}
+.login-brand h1{
+  font-family:'Space Grotesk','IBM Plex Sans',sans-serif;
+  font-size:26px; font-weight:600; line-height:1.3; margin:0 0 10px;
+}
+.login-brand p{
+  font-size:14px; color:rgba(255,255,255,.78); margin:0 0 4px; line-height:1.6;
+}
+.login-brand .bn{
+  font-size:15px; color:rgba(255,255,255,.9); margin-bottom:18px; display:block;
+}
+.login-brand .tag{
+  display:inline-block; margin-top:22px; padding:6px 14px; border-radius:20px;
+  background:rgba(255,255,255,.14); font-size:12.5px; font-weight:600; letter-spacing:.02em;
+}
+
+/* ---- right: form panel ---- */
+.login-form-side{
+  display:flex; align-items:center; justify-content:center; padding:40px 24px;
+}
+.login-card{width:100%; max-width:380px;}
+.login-card h2{
+  font-family:'Space Grotesk','IBM Plex Sans',sans-serif;
+  font-size:22px; font-weight:600; margin:0 0 6px;
+}
+.login-card .sub{font-size:13.5px; color:var(--login-muted); margin-bottom:28px;}
+
+.login-field{margin-bottom:18px;}
+.login-field label{
+  display:block; font-size:12.5px; font-weight:600; color:var(--login-ink);
+  margin-bottom:6px;
+}
+.login-input-wrap{position:relative;}
+.login-input-wrap i.field-icon{
+  position:absolute; left:14px; top:50%; transform:translateY(-50%);
+  color:var(--login-muted); font-size:14px; pointer-events:none;
+}
+.login-input-wrap input{
+  width:100%; padding:11px 14px 11px 40px; border-radius:9px;
+  border:1px solid var(--login-border); font-size:14px; font-family:inherit;
+  color:var(--login-ink); background:#fff; outline:none;
+  transition:border-color .15s ease, box-shadow .15s ease;
+}
+.login-input-wrap input:focus{
+  border-color:var(--login-accent);
+  box-shadow:0 0 0 3px rgba(0,113,132,.12);
+}
+.login-input-wrap input.is-invalid{border-color:var(--login-danger);}
+.login-toggle-pw{
+  position:absolute; right:12px; top:50%; transform:translateY(-50%);
+  background:none; border:0; color:var(--login-muted); cursor:pointer; font-size:14px; padding:4px;
+}
+.login-error{
+  margin-top:6px; font-size:12px; color:var(--login-danger); font-weight:500;
+}
+
+.login-row{display:flex; align-items:center; justify-content:space-between; margin-bottom:22px;}
+.login-check{display:flex; align-items:center; gap:7px; font-size:13px; color:var(--login-muted);}
+.login-check input{margin:0;}
+.login-forgot{font-size:13px; color:var(--login-accent); text-decoration:none; font-weight:600;}
+.login-forgot:hover{color:var(--login-accent-dark); text-decoration:underline;}
+
+.login-submit{
+  width:100%; padding:12px; border:0; border-radius:9px;
+  background:var(--login-accent); color:#fff; font-size:14.5px; font-weight:600;
+  cursor:pointer; transition:background .15s ease;
+}
+.login-submit:hover{background:var(--login-accent-dark);}
+
+.login-foot{margin-top:28px; font-size:12px; color:var(--login-muted); text-align:center;}
