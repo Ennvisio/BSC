@@ -86,7 +86,7 @@ class ItemCatalogImport implements ToCollection, WithChunkReading, WithHeadingRo
         Item::upsert(
             $prepared,
             ['article_number'],
-            ['item_group_id', 'category_id', 'name', 'unit', 'part_number',
+            ['item_group_id', 'category_id', 'name', 'unit', 'account_number', 'part_number',
                 'drawing_number', 'hs_code', 'manufacturer', 'description', 'updated_at']
         );
 
@@ -130,6 +130,7 @@ class ItemCatalogImport implements ToCollection, WithChunkReading, WithHeadingRo
             'category_id' => $this->importCategoryId(),
             'name' => $itemName,
             'unit' => trim((string) ($row['unit_code'] ?? '')) ?: 'PC',
+            'account_number' => $this->nullableCell($row, 'account_number'),
             'part_number' => $this->nullableCell($row, 'part_number'),
             'drawing_number' => $this->nullableCell($row, 'drawing_number'),
             'hs_code' => $this->nullableCell($row, 'hs_code'),

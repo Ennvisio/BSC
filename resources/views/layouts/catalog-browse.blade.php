@@ -43,12 +43,16 @@ $(function () {
 	var path = [{ id: '', name: 'All categories' }];
 	var itemsTable = null;
 
+	function esc(value) {
+		return $('<div>').text(value === null || value === undefined ? '' : value).html();
+	}
+
 	function renderBreadcrumb() {
 		var html = '';
 		path.forEach(function (crumb, i) {
 			var isLast = i === path.length - 1;
 			html += '<li class="breadcrumb-item' + (isLast ? ' active' : '') + '" '
-				+ (isLast ? '' : 'data-index="' + i + '" style="cursor:pointer;"') + '>' + crumb.name + '</li>';
+				+ (isLast ? '' : 'data-index="' + i + '" style="cursor:pointer;"') + '>' + esc(crumb.name) + '</li>';
 		});
 		$('#catalog-breadcrumb').html(html);
 	}
@@ -69,8 +73,8 @@ $(function () {
 				var badge = g.children_count > 0
 					? '<span class="badge badge-secondary float-right">' + g.children_count + ' sub-categories</span>'
 					: '<span class="badge badge-info float-right">' + g.items_count + ' items</span>';
-				html += '<a href="#" class="list-group-item list-group-item-action catalog-group-link" data-id="' + g.id + '" data-name="' + g.name + '">'
-					+ '<span class="catalog-group-name">' + g.name + '</span>' + badge + '</a>';
+				html += '<a href="#" class="list-group-item list-group-item-action catalog-group-link" data-id="' + g.id + '" data-name="' + esc(g.name) + '">'
+					+ '<span class="catalog-group-name">' + esc(g.name) + '</span>' + badge + '</a>';
 			});
 			$('#catalog-groups').html(html);
 			$('#catalog-items-wrapper').html('<p class="text-muted mt-2">Select a category on the left to drill down, or one already showing an items count to see its items here.</p>');
@@ -87,11 +91,22 @@ $(function () {
 			}
 
 			var html = '<div class="table-responsive"><table id="catalog-items-table" class="table table-sm table-bordered" style="width:100%;">'
-				+ '<thead><tr><th>Article #</th><th>Name</th><th>Unit</th><th>Manufacturer</th><th>Part #</th><th>Vessels</th></tr></thead><tbody>';
+				+ '<thead><tr><th>Article #</th><th>Name</th><th>Unit</th><th>Account #</th><th>Description</th>'
+				+ '<th>Part #</th><th>Drawing #</th><th>HS Code</th><th>Manufacturer</th><th>Vessels</th></tr></thead><tbody>';
 			items.forEach(function (i) {
-				var vessels = (i.vessels || []).map(function (v) { return v.name; }).join(', ') || '<span class="text-muted">none</span>';
-				html += '<tr><td>' + (i.article_number || '') + '</td><td>' + i.name + '</td><td>' + (i.unit || '') + '</td>'
-					+ '<td>' + (i.manufacturer || '') + '</td><td>' + (i.part_number || '') + '</td><td>' + vessels + '</td></tr>';
+				var vessels = (i.vessels || []).map(function (v) { return esc(v.name); }).join(', ') || '<span class="text-muted">none</span>';
+				html += '<tr>'
+					+ '<td>' + esc(i.article_number) + '</td>'
+					+ '<td>' + esc(i.name) + '</td>'
+					+ '<td>' + esc(i.unit) + '</td>'
+					+ '<td>' + esc(i.account_number) + '</td>'
+					+ '<td>' + esc(i.description) + '</td>'
+					+ '<td>' + esc(i.part_number) + '</td>'
+					+ '<td>' + esc(i.drawing_number) + '</td>'
+					+ '<td>' + esc(i.hs_code) + '</td>'
+					+ '<td>' + esc(i.manufacturer) + '</td>'
+					+ '<td>' + vessels + '</td>'
+					+ '</tr>';
 			});
 			html += '</tbody></table></div>';
 

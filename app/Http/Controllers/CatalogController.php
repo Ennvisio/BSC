@@ -86,8 +86,8 @@ class CatalogController extends Controller
         $items = $query->with(['vessels' => fn ($q) => $q->select('vessels.id', 'vessels.name')])
             ->orderBy('name')
             ->get([
-                'id', 'name', 'article_number', 'unit', 'part_number',
-                'drawing_number', 'hs_code', 'manufacturer',
+                'id', 'name', 'article_number', 'unit', 'account_number', 'description',
+                'part_number', 'drawing_number', 'hs_code', 'manufacturer',
             ]);
 
         return response()->json($items);
