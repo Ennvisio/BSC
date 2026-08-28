@@ -35,7 +35,9 @@ body{
 
 /* ---- left: brand panel ---- */
 .login-brand{
-  background:linear-gradient(160deg, var(--login-accent), var(--login-accent-dark));
+  background:
+    linear-gradient(160deg, rgba(0,113,132,.90), rgba(0,60,72,.94)),
+    url('/images/auth-form-bg.jpg') center/cover no-repeat;
   color:#fff;
   display:flex;
   flex-direction:column;
@@ -43,24 +45,6 @@ body{
   padding:60px;
   position:relative;
   overflow:hidden;
-}
-.login-brand::before{
-  content:"";
-  position:absolute;
-  inset:auto -20% -40% auto;
-  width:70%;
-  padding-top:70%;
-  border-radius:50%;
-  background:rgba(255,255,255,.06);
-}
-.login-brand::after{
-  content:"";
-  position:absolute;
-  inset:-30% auto auto -15%;
-  width:50%;
-  padding-top:50%;
-  border-radius:50%;
-  background:rgba(255,255,255,.05);
 }
 .login-brand-inner{position:relative; z-index:1; max-width:420px;}
 .login-brand-mark{
