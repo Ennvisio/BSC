@@ -4,9 +4,6 @@
 	<div class="card">
 		<div class="card-header pv-card-hader">
 			<strong class="pptitle">Browse Catalog{{ $vessel ? ' — '.$vessel->name : '' }}</strong>
-			<div class="right-buttons">
-				<a href="{{url('/catalog/import')}}" class="btn btn-primary"><i class="fas fa-upload"></i> Import Catalog</a>
-			</div>
 		</div>
 		<div class="card-body">
 			<div class="row mb-3">
