@@ -1191,6 +1191,13 @@ table.table-bordered.dataTable td a {
 }
 
 /* Extra Small devices (landscape phones, 575px and down) */
-@media (max-width: 575px )  { 
+@media (max-width: 575px )  {
 
 }
+
+/* Certificate/Survey expiry status — dashboard "Validity of Certificates"
+   and "Survey Report" expire-date cells. More than 30 days left: green.
+   16-30 days left: yellow. 15 days or fewer, including already expired: red. */
+.exp-ok{background-color:#e7f7ec !important;color:#1f9d55;font-weight:600;}
+.exp-warn{background-color:#fdf3d8 !important;color:#8a5b00;font-weight:600;}
+.exp-danger{background-color:#fbe4e1 !important;color:#b23b3b;font-weight:600;}

@@ -128,7 +128,8 @@
                         <td>Remark</td>
                         @endif
                         
-                        <td>{{!empty($certificate->vesselCertificates->whereIn('vessel_id',$vessel->id)->whereIn('certificate_id',$certificate->id)->first()->exp_date)?$certificate->vesselCertificates->whereIn('vessel_id',$vessel->id)->whereIn('certificate_id',$certificate->id)->first()->exp_date:''}}</td>
+                        @php($certExpDate = !empty($certificate->vesselCertificates->whereIn('vessel_id',$vessel->id)->whereIn('certificate_id',$certificate->id)->first()->exp_date)?$certificate->vesselCertificates->whereIn('vessel_id',$vessel->id)->whereIn('certificate_id',$certificate->id)->first()->exp_date:'')
+                        <td class="{{ \App\ExpiryHelper::cssClass($certExpDate) }}">{{ $certExpDate }}</td>
                         
                         @endforeach
                         @endif
@@ -209,12 +210,13 @@
                         <td colspan="2" style="padding:0;"> 
                             <table border="0" cellpadding="0" width='100%' style="border:0px">
                                 <tr></tr>
+                                @php($surveyExpDate = !empty($s->vesselSurveys->whereIn('survey_id',$s->id)->whereIn('vessel_id',$v->id)->first()->survey_exp_date) ? $s->vesselSurveys->whereIn('survey_id',$s->id)->whereIn('vessel_id',$v->id)->first()->survey_exp_date :'')
                                 <tr>
                                     <td style="border: none!important;background: inherit!important">
                                         {{!empty($s->vesselSurveys->whereIn('survey_id',$s->id)->whereIn('vessel_id',$v->id)->first()->survey_date) ? $s->vesselSurveys->whereIn('survey_id',$s->id)->whereIn('vessel_id',$v->id)->first()->survey_date :''}}
                                     </td>
-                                   <td style="border: none!important">
-                                        {{!empty($s->vesselSurveys->whereIn('survey_id',$s->id)->whereIn('vessel_id',$v->id)->first()->survey_exp_date) ? $s->vesselSurveys->whereIn('survey_id',$s->id)->whereIn('vessel_id',$v->id)->first()->survey_exp_date :''}}
+                                   <td class="{{ \App\ExpiryHelper::cssClass($surveyExpDate) }}" style="border: none!important">
+                                        {{ $surveyExpDate }}
                                     </td>
                                 </tr>
                                 
