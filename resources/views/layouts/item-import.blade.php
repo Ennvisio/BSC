@@ -20,13 +20,13 @@
 			</div>
 			@endif
 
-			<p class="text-muted">
+			{{-- <p class="text-muted">
 				Upload an Excel/CSV catalog for one vessel. Expected columns: <b>Item Path</b> (a "->"-delimited
-				hierarchy, e.g. <code>00. Provisions-&gt;Beans and Peas, Dry-&gt;BEANS BROAD DRY</code>),
+				hierarchy, e.g. <code>Provisions-&gt;Beans and Peas, Dry-&gt;BEANS BROAD DRY</code>),
 				<b>Item Name</b>, <b>Article Number</b>, Unit Code, Account Number, Description, Part Number,
 				Drawing Number, HS Code, Manufacturer. Re-uploading the same file is safe — items are matched
 				by Article Number and updated, not duplicated.
-			</p>
+			</p> --}}
 
 			<form action="{{url('/catalog/import')}}" method="POST" enctype="multipart/form-data">
 				@csrf
@@ -49,7 +49,7 @@
 					<label>Catalog file (.xlsx, .xls, .csv)</label>
 					<input type="file" name="catalog_file" class="form-control-file" accept=".xlsx,.xls,.csv" required>
 				</div>
-				<button type="submit" class="btn btn-primary"><i class="fas fa-upload"></i> Import</button>
+				<button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-upload"></i> Import</button>
 			</form>
 		</div>
 	</div>
