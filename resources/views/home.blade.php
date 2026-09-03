@@ -128,7 +128,18 @@
                         <td>Remark</td>
                         @endif
                         
-                        @php($certExpDate = !empty($certificate->vesselCertificates->whereIn('vessel_id',$vessel->id)->whereIn('certificate_id',$certificate->id)->first()->exp_date)?$certificate->vesselCertificates->whereIn('vessel_id',$vessel->id)->whereIn('certificate_id',$certificate->id)->first()->exp_date:'')
+                        @php
+                            // A vessel can have several vessel_certificates rows for the same
+                            // certificate type (one per renewal cycle over the years) - sort by
+                            // expiry date so the most recent renewal wins, not whichever row
+                            // happens to come first.
+                            $matchedCert = $certificate->vesselCertificates
+                                ->whereIn('vessel_id',$vessel->id)
+                                ->whereIn('certificate_id',$certificate->id)
+                                ->sortByDesc('exp_date')
+                                ->first();
+                            $certExpDate = !empty($matchedCert->exp_date) ? $matchedCert->exp_date : '';
+                        @endphp
                         <td class="{{ \App\ExpiryHelper::cssClass($certExpDate) }}">{{ $certExpDate }}</td>
                         
                         @endforeach
@@ -210,10 +221,22 @@
                         <td colspan="2" style="padding:0;"> 
                             <table border="0" cellpadding="0" width='100%' style="border:0px">
                                 <tr></tr>
-                                @php($surveyExpDate = !empty($s->vesselSurveys->whereIn('survey_id',$s->id)->whereIn('vessel_id',$v->id)->first()->survey_exp_date) ? $s->vesselSurveys->whereIn('survey_id',$s->id)->whereIn('vessel_id',$v->id)->first()->survey_exp_date :'')
+                                @php
+                                    // Same as the certificate table above: a vessel can have several
+                                    // vessel_surveys rows for the same survey type (one per cycle),
+                                    // so both dates must come from the SAME most-recent row rather
+                                    // than two independent, potentially mismatched first() calls.
+                                    $matchedSurvey = $s->vesselSurveys
+                                        ->whereIn('survey_id',$s->id)
+                                        ->whereIn('vessel_id',$v->id)
+                                        ->sortByDesc('survey_exp_date')
+                                        ->first();
+                                    $surveyDoneDate = !empty($matchedSurvey->survey_date) ? $matchedSurvey->survey_date : '';
+                                    $surveyExpDate = !empty($matchedSurvey->survey_exp_date) ? $matchedSurvey->survey_exp_date : '';
+                                @endphp
                                 <tr>
                                     <td style="border: none!important;background: inherit!important">
-                                        {{!empty($s->vesselSurveys->whereIn('survey_id',$s->id)->whereIn('vessel_id',$v->id)->first()->survey_date) ? $s->vesselSurveys->whereIn('survey_id',$s->id)->whereIn('vessel_id',$v->id)->first()->survey_date :''}}
+                                        {{ $surveyDoneDate }}
                                     </td>
                                    <td class="{{ \App\ExpiryHelper::cssClass($surveyExpDate) }}" style="border: none!important">
                                         {{ $surveyExpDate }}
