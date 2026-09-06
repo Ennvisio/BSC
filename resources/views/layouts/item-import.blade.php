@@ -31,6 +31,15 @@
 			<form action="{{url('/catalog/import')}}" method="POST" enctype="multipart/form-data">
 				@csrf
 				<div class="form-group">
+					<label>Category</label>
+					<select name="category_id" class="form-control" required>
+						<option value="">Select category</option>
+						@foreach($categories as $category)
+						<option value="{{$category->id}}">{{$category->name}}</option>
+						@endforeach
+					</select>
+				</div>
+				<div class="form-group">
 					<label>Vessel</label>
 					@if($lockedVessel)
 					<input type="text" class="form-control" value="{{$lockedVessel->name}}" disabled>

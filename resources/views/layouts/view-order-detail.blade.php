@@ -5,6 +5,40 @@
 	max-height:80px;
 	max-width:300px;
 }
+
+/* The action row in this card header used class "right-button" (singular),
+   which nothing in style.css ever matched - only ".right-buttons" (plural)
+   is defined there - so these controls were laid out as bare inline
+   elements with no alignment. Lay them out properly here instead. */
+.order-section .card-header.first{
+	flex-wrap: wrap;
+	gap: 10px;
+	padding-top: .6rem;
+	padding-bottom: .6rem;
+}
+.order-section .card-header.first .right-button,
+.order-section .card-header.first .center-button{
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-left: auto;
+}
+.order-section .card-header.first .right-button > *,
+.order-section .card-header.first .center-button > *{
+	margin: 0;
+}
+.order-section .card-header.first .btn{
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	white-space: nowrap;
+	height: calc(1.5em + .75rem + 2px);
+}
+.order-section .card-header.first .form-control{
+	height: calc(1.5em + .75rem + 2px);
+	width: 235px;
+}
 </style>
 <div class="order-section container">
 	<div class="row">
@@ -15,8 +49,8 @@
 						<span style="color:red;">{{!empty($order->vessel->name)?$order->vessel->name:''}}</span>
 					</strong>
 					@if(auth()->user()->role->role =='am-ssm' && $order->status!='Supplied to Ship')
-					<div class="center-button" style="display:flex">
-						<select class="form-control order_status" id="order_status" name="order_status" style="width: 215px;margin-right: 5px;">
+					<div class="center-button">
+						<select class="form-control order_status" id="order_status" name="order_status">
 							@if($order->status!='')
 							<option selected value="{{$order->status}}">{{$order->status}}</option>
 							@else
@@ -36,24 +70,47 @@
 						Deliver Confirmation 
 					</button>
 					@endif
+					@php
+						$currentRole = auth()->user()->role->role ?? null;
+						// Only offer an action to someone who actually still has
+						// one here - previously every role saw Approve on every
+						// order forever, including ones they'd already signed off.
+						$canAct = $order->hasPendingActionFor($currentRole, auth()->id());
+					@endphp
 					<div class="right-button">
-						@if(auth()->user()->role->role != 'operator' && auth()->user()->role->role != 'am-ssm')
+						@if($canAct && $currentRole != 'operator' && $currentRole != 'am-ssm' && $currentRole != 'dgm-ssm')
 						<button type="button" class="btn btn-primary" id="approve_order" data-id="{{$order->id}}">
-							<i class="fas fa-check-circle"></i>  Approve 
+							<i class="fas fa-check-circle"></i>
+							{{ $currentRole == 'master' && $order->status == 'delivered' ? 'Confirm Receipt' : 'Approve' }}
 						</button>
 						@endif
-						
-						@if(auth()->user()->role->role=='operator' && $order->status=='delivered')
-						<button type="button" class="btn btn-primary" id="approve_order" data-id="{{$order->id}}">
-							<i class="fas fa-check-circle"></i> Confirm Receive
-						</button>
+
+						{{-- DGM (SSM) doesn't approve - they assign it to one named
+						     SSM officer, who then takes the final action. --}}
+						@if($canAct && $currentRole == 'dgm-ssm')
+						<select class="form-control" id="ssm_assignee">
+							<option value="">Assign to…</option>
+							@foreach($ssmOfficers ?? [] as $roleName => $officers)
+							<optgroup label="{{ strtoupper(str_replace('-', ' ', $roleName)) }}">
+								@foreach($officers as $officer)
+								<option value="{{ $officer->user->id }}">{{ $officer->user->name }}</option>
+								@endforeach
+							</optgroup>
+							@endforeach
+						</select>
+						<button type="button" class="btn btn-primary" id="assign_ssm" data-id="{{$order->id}}"><i class="fas fa-user-plus"></i> Assign</button>
 						@endif
-						@if(auth()->user()->role->role == 'gm-srd' || auth()->user()->role->role == 'agm-srd')
-						<button type="button" class="btn btn-info" id="forward_toagm" data-id="{{$order->id}}">
-						<i class="fas fa-angle-double-right"></i>  Forward
-						</button>
+
+						@if($canAct && $currentRole == 'gm-srd')
+						<select class="form-control" id="srd_delegate_target">
+							<option value="agm-srd">Delegate to AGM (SRD)</option>
+							<option value="am-srd">Delegate to AM (SRD)</option>
+							<option value="dgm-srd">Delegate to DGM (SRD)</option>
+							<option value="superintendent-srd">Delegate to Superintendent (SRD)</option>
+						</select>
+						<button type="button" class="btn btn-info" id="forward_toagm" data-id="{{$order->id}}"><i class="fas fa-angle-double-right"></i> Forward</button>
 						@endif
-						<button class="btn btn-info btn-bvprint print-order-details"><i class="fa fa-print"></i> Print</button>
+						<button type="button" class="btn btn-info btn-bvprint print-order-details"><i class="fa fa-print"></i> Print</button>
 					</div>
 				</div>
 				<div class="card-body">
@@ -75,7 +132,28 @@
 								<div class="col">
 									<strong>Port:</strong> {{$order->port_name}}
 								</div>
+								<div class="col">
+									<strong>Stage:</strong> <span class="badge badge-info">{{ $order->currentStageLabel() }}</span>
+								</div>
 							</div>
+							@php
+								$canEditReason = (auth()->user()->role->role == 'master' && empty($order->orderApproval->master_app))
+									|| (auth()->user()->role->role == 'chief-engineer' && empty($order->orderApproval->chief_eng_app));
+							@endphp
+							@if($canEditReason)
+							<div class="row mb-3">
+								<div class="col-md-12">
+									<label for="requisition_reason"><strong>Reason of Requisition</strong> (filled by Master/Chief Engineer)</label>
+									<textarea class="form-control" id="requisition_reason" rows="3" placeholder="Why is this requisition needed?">{{ $order->reason }}</textarea>
+								</div>
+							</div>
+							@elseif(!empty($order->reason))
+							<div class="row mb-3">
+								<div class="col-md-12">
+									<strong>Reason of Requisition:</strong> {{ $order->reason }}
+								</div>
+							</div>
+							@endif
 							<thead>
 								<tr>
 									<th>Item No.</th>
@@ -106,10 +184,22 @@
 									<td>{{$orderItem->item->impa_code}}</td>
 									<td class="item-name-td">{{$orderItem->item->name}}</td>
 									<td class="item-unit">{{$orderItem->item->unit}}</td>
-									<td>0</td>
-									<td>0</td>
-									<td>0</td>
-									<td>0</td>
+									{{-- Opening Stock and Last Supply are the figures captured when this
+										 requisition was raised, so an old form still prints what justified
+										 it. In Stock is live - what is on board right now. --}}
+									<td>{{ $orderItem->opening_stock !== null ? $orderItem->opening_stock : '-' }}</td>
+									<td>
+										@if($orderItem->last_supply_qty !== null)
+										{{ $orderItem->last_supply_qty }}
+										@if($orderItem->last_supply_date)
+										<br><span class="text-muted" style="font-size:11px;">{{ \Carbon\Carbon::parse($orderItem->last_supply_date)->format('d M Y') }}</span>
+										@endif
+										@else
+										-
+										@endif
+									</td>
+									<td>{{ $liveStock[$orderItem->item_id]['stock_qty'] ?? 0 }}</td>
+									<td>{{ $totalSupplied[$orderItem->item_id] ?? 0 }}</td>
 									<td class='req_qty'>
 										@if(auth()->user()->role->role=='am-srd' && $order->ast_m_app==null)
 										<div class="form-group" style="margin: 0">
@@ -120,18 +210,18 @@
 										@endif
 									</td>
 									<td class='deliver_qty'>
-										@if(auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship')
+										@if($canAct && in_array($currentRole, ['agm-ssm', 'am-ssm', 'superintendent-ssm']))
 										<div class="form-group" style="margin: 0">
-											<input type="number" data-id="{{$orderItem->id}}" class="form-control deliver-qty" name="deliver_qty[{{$orderItem->id}}]" value="{{$orderItem->del_item_qty}}">
+											<input type="number" data-id="{{$orderItem->id}}" class="form-control deliver-qty" name="deliver_qty[{{$orderItem->id}}]" value="{{ $orderItem->del_item_qty ?? $orderItem->item_qty }}">
 										</div>
 										@else
 										{{!empty($orderItem->del_item_qty)?$orderItem->del_item_qty:''}}
 										@endif
 									</td>
 									<td class='rcv_qty'>
-										@if(auth()->user()->role->role=='operator' && $order->status=='delivered')
+										@if($canAct && $currentRole == 'master' && $order->status == 'delivered')
 										<div class="form-group" style="margin: 0">
-											<input type="number" data-id="{{$orderItem->id}}" class="form-control deliver-qty" name="rcv_qty[{{$orderItem->id}}]" value="{{$orderItem->rcv_item_qty}}">
+											<input type="number" data-id="{{$orderItem->id}}" class="form-control rcv-qty" name="rcv_qty[{{$orderItem->id}}]" value="{{ $orderItem->rcv_item_qty ?? $orderItem->del_item_qty }}">
 										</div>
 										@else
 										{{!empty($orderItem->rcv_item_qty)?$orderItem->rcv_item_qty:''}}
@@ -157,28 +247,14 @@
 					<br>
 					<hr>	
 					<br>
-					<div id="order-print-footer1" class="print-header" >	
-						<div class="footer-notes">
-							*This form is to be sent for every indent whenever any consumable store is required. <br>
-							Note:   
-							<ul>
-								<li>1. Separate forms to be used for paints, chemicals, welding,  refrigeration equipment, general consumable stores, wire ropes, cargo gears, LSA/FFA items and stationeries.</li>  
-
-								<li>2. Opening stock to be shown declared in the last indent plus all Supplies made from the date of last indent to the date of this indent. </li>                                                                			
-								<li>3. Forms to be made out in 5 readable copies of which white, green and pink copies to be sent to General Manager(SR) and vessel to retain yellow and blue copies.</li>	
-
-								<li>4. Blue copy to be returned to GM(SR) after receipt of goods with date  and port of receipt clearly mentioning the items/quantity not </li>	
-
-								<li>5. Regarding “As per Sample” please see our Circular No.SRD 14/84  <br>		
-								dated 22.10.1984.</li>
-							</ul>
-						</div>
+					<div id="order-print-footer1" class="print-header" >
 						<div class="signs-master-chief">
 							
 						    @foreach(\App\Role::orderBy('user_type','asc')->get() as $role)
-								@if($role->user->id==$order->orderApproval->master_app 
+								@if($role->user->id==$order->orderApproval->master_app
 								|| $role->user->id==$order->orderApproval->chief_eng_app
 								|| $role->user->id==$order->orderApproval->cheif_ofcr_app
+								|| $role->user->id==$order->orderApproval->second_eng_app
 								|| $role->user->id==$order->orderApproval->ast_m_app
 								|| $role->user->id==$order->orderApproval->agm_app
 								|| $role->user->id==$order->orderApproval->gm_app
@@ -296,5 +372,22 @@
 	</table>
 </div>
 <!-- ./print header -->
+@endsection
+
+@section('home-js')
+<script>
+$(function () {
+	// admin-master.blade.php also does a bare $('#example').DataTable() -
+	// runs after this section, but on an already-initialized table that's a
+	// no-op, so this is what actually takes effect: a plain item list here
+	// doesn't need paging/search/the "Show N entries" picker.
+	$('#example').DataTable({
+		destroy: true,
+		paging: false,
+		searching: false,
+		info: false,
+	});
+});
+</script>
 @endsection
 

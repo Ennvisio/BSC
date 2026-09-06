@@ -54,10 +54,10 @@ position: absolute;
 					<th>Vessel Name</th>
 					<th>Req. Date</th>
 					<th>Port</th>
+					<th>Stage</th>
 					<th>status</th>
 					<th>status from ssm</th>
 					<th>Created By</th>
-					<th>Updated By</th>
 					<!-- <th class="action">Action</th> -->
 				</thead>
 				<tbody>
@@ -74,10 +74,10 @@ position: absolute;
 						<td>{{!empty($order->vessel->name)?$order->vessel->name:''}}</td>
 						<td>{{!empty($order->req_date)?$order->req_date:''}}</td>
 						<td>{{!empty($order->port_name)?$order->port_name:''}}</td>
+						<td><span class="badge badge-info">{{ $order->currentStageLabel() }}</span></td>
 						<td>{{!empty($order->status)?$order->status:''}}</td>
 						<td>{{!empty($order->status_from_am)?$order->status_from_am:''}}</td>
-						<td>{{!empty($order->created_by)?$order->created_by:''}}</td>
-						<td>{{!empty($order->updated_by)?$order->updated_by:''}}</td>
+						<td>{{ $order->creator->name ?? '' }}</td>
 						<!-- <td class="action">
 							<button class="btn btn-info edit-order" data-id="{{$order->id}}" data-name="{{$order->name}}" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>
 							<button class="btn btn-danger delete-order" data-id="{{$order->id}}" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>

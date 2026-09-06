@@ -1,6 +1,7 @@
 <?php
 namespace App\Http\Controllers;
 use App\Boiler;
+use App\BudgetGroup;
 use App\Category;
 use App\Certificate;
 use App\Dimension;
@@ -8,6 +9,7 @@ use App\Engine;
 use App\FrameworkDescription;
 use App\Http\Controllers\RoleController;
 use App\Http\Requests\BoilerValidate;
+use App\Http\Requests\BudgetGroupFormValidate;
 use App\Http\Requests\CategoryFormValidate;
 use App\Http\Requests\CertificateEditFormVal;
 use App\Http\Requests\CertificateFormValidate;
@@ -26,6 +28,7 @@ use App\Order;
 use App\OrderApproval;
 use App\OrderItem;
 use App\Role;
+use App\Services\StockService;
 use App\VesselSurvey;
 use App\VesselCertificate;
 use App\Survey;
@@ -34,6 +37,7 @@ use App\Vessel;
 use App\VesselParticular;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 class HomeController extends Controller
@@ -45,16 +49,45 @@ class HomeController extends Controller
   public function index()
   {
     if(!empty(auth()->user()->role->role && auth()->user()->role->user_type=='ship')){
-      if(auth()->user()->role->role=='second-engineer'){
-        $orders=Order::where('status','ready')
-        ->where('ord_status',true)
-        ->where('vessel_id', auth()->user()->role->vessel->id)
-        ->orderBy('created_at','desc')
-        ->get();
-        return view('layouts.ship-home',compact('orders'));  
+      if(in_array(auth()->user()->role->role, ['second-engineer', 'chief-officer'])){
+        // A real dashboard for the two roles that raise requisitions:
+        // their own vessel's requisition activity, catalog size, and a
+        // low-stock count - never another vessel's data. Everything else
+        // with user_type 'ship' (master, chief-engineer, operator) keeps
+        // its existing landing page below, unchanged.
+        $vesselId = auth()->user()->role->vessel_id;
+
+        $stats = [
+          'draft' => Order::where('status', 'draft')->where('created_by', auth()->user()->id)->count(),
+          'in_progress' => Order::where('vessel_id', $vesselId)->where('ord_status', true)
+            ->whereNotIn('status', ['delivered', 'received'])->count(),
+          'delivered' => Order::where('vessel_id', $vesselId)->where('ord_status', true)
+            ->where('status', 'delivered')->count(),
+          'received' => Order::where('vessel_id', $vesselId)->where('ord_status', true)
+            ->where('status', 'received')->count(),
+          'items' => DB::table('vessel_items')->where('vessel_id', $vesselId)->count(),
+          'low_stock' => DB::table('vessel_items')->where('vessel_id', $vesselId)
+            ->whereNotNull('min_qty')->whereColumn('stock_qty', '<=', 'min_qty')->count(),
+        ];
+
+        // The full picture, not the old status='ready' slice - a dashboard
+        // should show everything that's happened on this vessel, and the
+        // dedicated Pending/Approved/Received pages already cover the
+        // narrower, role-specific views for anyone who wants those instead.
+        $orders = Order::where('vessel_id', $vesselId)
+          ->where('ord_status', true)
+          ->orderBy('created_at', 'desc')
+          ->get();
+
+        $drafts = Order::where('status', 'draft')
+          ->where('created_by', auth()->user()->id)
+          ->orderBy('created_at', 'desc')
+          ->get();
+
+        return view('layouts.ship-home', compact('orders', 'drafts', 'stats'));
       }else{
         return redirect('/pending/requisition');
-      } 
+      }
     }
     elseif(!empty(auth()->user()->role->role && auth()->user()->role->user_type=='ssm')){
       return redirect('/pending/requisition');
@@ -208,9 +241,42 @@ public function updateCategory(CategoryFormValidate $request){
 }
 public function deleteCategory(Request $request){
   $category =Category::findOrFail($request->id);
-  $category->status = false; 
-  $category->update(); 
+  $category->status = false;
+  $category->update();
   $data ="Requested Category has been deleted successfully!";
+  return array($data);
+}
+public function getBudgetGroup(){
+  abort_unless(auth()->user()->role->role === 'super-admin', 403);
+  $budgetGroups=BudgetGroup::orderBy('created_at','desc')->where('status',true)->get();
+  return view('layouts.budget-group',compact('budgetGroups'));
+}
+public function storeBudgetGroup(BudgetGroupFormValidate $request){
+ abort_unless(auth()->user()->role->role === 'super-admin', 403);
+ $budgetGroup = new BudgetGroup;
+ $budgetGroup->name=$request->name;
+ $budgetGroup->created_by=auth()->user()->name;
+ $budgetGroup->updated_by='';
+ $budgetGroup->status=true;
+ $budgetGroup->save();
+ $data ="New Budget Group has been added successfully.";
+ return array($data,$budgetGroup);
+}
+public function updateBudgetGroup(BudgetGroupFormValidate $request){
+ abort_unless(auth()->user()->role->role === 'super-admin', 403);
+ $budgetGroup = BudgetGroup::findOrFail($request->BudgetGroup_Id);
+ $budgetGroup->name=$request->name;
+ $budgetGroup->updated_by=auth()->user()->name;
+ $budgetGroup->update();
+ $data ="Requested Budget Group has been updated successfully.";
+ return array($data,$budgetGroup);
+}
+public function deleteBudgetGroup(Request $request){
+  abort_unless(auth()->user()->role->role === 'super-admin', 403);
+  $budgetGroup =BudgetGroup::findOrFail($request->id);
+  $budgetGroup->status = false;
+  $budgetGroup->update();
+  $data ="Requested Budget Group has been deleted successfully!";
   return array($data);
 }
 public function getVessels()
@@ -294,13 +360,20 @@ public function getOrder(){
   $vessels =Vessel::orderBy('created_at','desc')->where('status',true)->get();
   
   if(auth()->user()->role->role=='second-engineer' || auth()->user()->role->role=='chief-officer'){
-    $orders=Order::where('status','ready')
-    ->where('ord_status',true)
-    ->where('vessel_id', auth()->user()->role->vessel->id)
+    // status=='ready' was the OLD single-page flow's initial status
+    // (HomeController@storeOrder) - the 3-step wizard these two roles
+    // actually use (RequisitionController@submit) sets 'approved by
+    // chief-officer'/'approved by second-engineer' instead and never
+    // touches 'ready' at any later stage either, so this filter matched
+    // nothing a wizard-submitted requisition could ever have: the list
+    // was permanently empty for every order these roles actually raise.
+    $orders=Order::where('ord_status',true)
+    ->where('vessel_id', auth()->user()->role->vessel_id)
     ->orderBy('created_at','desc')
     ->get();
-  } 
-  if(auth()->user()->role->role=='super-admin' || auth()->user()->role->role=='gm-srd'){
+  }
+  if(auth()->user()->role->role=='super-admin' || auth()->user()->role->role=='gm-srd'
+    || auth()->user()->role->role=='technical-superintendent' || auth()->user()->role->role=='marine-superintendent'){
     $orders=Order::
     where('ord_status',true)
     ->orderBy('created_at','desc')
@@ -755,7 +828,35 @@ public function viewOrderDetail($id){
  $order=Order::findOrFail($id);
    // return $vessel->vesselDetail->type;
    // {{!empty($vessel->vesselDetail->type)?$vessel->vesselDetail->type:''}}
- return view('layouts.view-order-detail',compact('order'));
+
+ // DGM (SSM) assigns the requisition to one named officer - the picker is
+ // grouped by role, so hand the view the officers keyed by their role.
+ $ssmOfficers = Role::whereIn('role', ['agm-ssm', 'am-ssm', 'superintendent-ssm'])
+   ->where('status', true)
+   ->with('user')
+   ->get()
+   ->filter(fn($role) => $role->user !== null)
+   ->groupBy('role');
+
+ // The form's stock columns. Opening Stock / Last Supply come off the line
+ // itself (snapshotted when the requisition was raised, so an old form still
+ // prints what justified it at the time); In Stock is deliberately LIVE - it
+ // answers "what is on board now", which is a different question. Total
+ // Supply is everything this vessel has ever received of that item.
+ $itemIds = $order->orderItems->pluck('item_id')->all();
+
+ $liveStock = app(StockService::class)->snapshotFor($order->vessel_id, $itemIds);
+
+ $totalSupplied = empty($itemIds) ? collect() : OrderItem::query()
+   ->select('order_items.item_id', DB::raw('SUM(order_items.rcv_item_qty) as total'))
+   ->join('orders', 'orders.id', '=', 'order_items.order_id')
+   ->where('orders.vessel_id', $order->vessel_id)
+   ->where('orders.status', 'received')
+   ->whereIn('order_items.item_id', $itemIds)
+   ->groupBy('order_items.item_id')
+   ->pluck('total', 'order_items.item_id');
+
+ return view('layouts.view-order-detail',compact('order','ssmOfficers','liveStock','totalSupplied'));
 }
 
 public function allTrash(){

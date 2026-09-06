@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Category;
 use App\Imports\ItemCatalogImport;
 use App\ItemImport;
 use App\Vessel;
@@ -10,23 +11,45 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class ItemImportController extends Controller
 {
+    /** Same guard HomeController applies: auth is wired per-controller in
+     * this app, not on the route groups, so a controller without this is
+     * reachable by a guest and fatals on auth()->user()->role. */
+    public function __construct()
+    {
+        $this->middleware('auth');
+    }
+
     public function create()
     {
+        // "Imported Catalog" (IMP) is deliberately excluded here - it's the
+        // legacy placeholder every pre-existing upload went through before
+        // category selection existed; new uploads always pick a real one.
+        $categories = Category::where('is_catalog', true)->where('symbol', '!=', 'IMP')
+            ->orderBy('name')->get();
+
         if ($this->isShipUser()) {
             return view('layouts.item-import', [
                 'vessels' => null,
                 'lockedVessel' => auth()->user()->role->vessel,
+                'categories' => $categories,
             ]);
         }
 
         return view('layouts.item-import', [
             'vessels' => Vessel::orderBy('name')->where('status', true)->get(),
             'lockedVessel' => null,
+            'categories' => $categories,
         ]);
     }
 
     public function store(Request $request)
     {
+        // A large catalog file's shared-strings XML alone can take PhpSpreadsheet's
+        // security scanner past PHP's default 30s limit - request more time here
+        // rather than depending on whatever max_execution_time the server happens
+        // to be configured with (dev box, XAMPP, production all differ).
+        set_time_limit(300);
+
         // Ship users can only ever import for their own vessel - the vessel_id
         // they're authoritative for comes from their role, never trusted from
         // the request, even though the form also sends it as a hidden field.
@@ -38,14 +61,18 @@ class ItemImportController extends Controller
         }
 
         $request->validate([
+            'category_id' => 'required|exists:categories,id',
             'catalog_file' => 'required|file|mimes:xlsx,xls,csv',
         ]);
 
+        $categoryId = (int) $request->category_id;
+
         $file = $request->file('catalog_file');
-        $import = new ItemCatalogImport($vesselId, auth()->user()->name);
+        $import = new ItemCatalogImport($vesselId, $categoryId, auth()->user()->name);
 
         $importRecord = ItemImport::create([
             'vessel_id' => $vesselId,
+            'category_id' => $categoryId,
             'uploaded_by' => auth()->user()->id,
             'filename' => $file->getClientOriginalName(),
             'status' => 'processing',
@@ -80,7 +107,7 @@ class ItemImportController extends Controller
 
     public function history()
     {
-        $imports = ItemImport::with(['vessel', 'uploadedBy'])
+        $imports = ItemImport::with(['vessel', 'category', 'uploadedBy'])
             ->when($this->isShipUser(), fn ($q) => $q->where('vessel_id', auth()->user()->role->vessel_id))
             ->orderBy('created_at', 'desc')
             ->get();

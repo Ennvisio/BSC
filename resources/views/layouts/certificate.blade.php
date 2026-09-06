@@ -48,13 +48,13 @@
 						<td>{{!empty($vessel_cert->exp_date)?$vessel_cert->exp_date:''}}</td>
 						<td>{{!empty($vessel_cert->vessel->name)?$vessel_cert->vessel->name:''}}</td>
 						<td class="tdfile">
-							<button type="button" class="cert_file btn btn-info" data-toggle="modal" data-target="#fileShowModal" data-file="{{url('/')}}/{{!empty($vessel_cert->cert_copy)?$vessel_cert->cert_copy:''}}" data-name="{{!empty($vessel_cert->certificate->name)?$vessel_cert->certificate->name:''}}"> 
+							<button type="button" class="cert_file btn btn-info btn-sm" data-toggle="modal" data-target="#fileShowModal" data-file="{{url('/')}}/{{!empty($vessel_cert->cert_copy)?$vessel_cert->cert_copy:''}}" data-name="{{!empty($vessel_cert->certificate->name)?$vessel_cert->certificate->name:''}}">
 								<i class="fas fa-eye"></i> Show File
 							</button>
 						</td>
 						<td class="action">
-							<button class="btn btn-info edit-certificate" data-id="{{$vessel_cert->id}}" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>
-							<button class="btn btn-danger delete-certificate" data-id="{{$vessel_cert->id}}" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>
+							<button class="btn btn-info btn-sm edit-certificate" data-id="{{$vessel_cert->id}}" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>
+							<button class="btn btn-danger btn-sm delete-certificate" data-id="{{$vessel_cert->id}}" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>
 						</td>
 					</tr>
 					@endforeach

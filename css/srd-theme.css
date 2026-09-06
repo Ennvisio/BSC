@@ -28,6 +28,17 @@
   --srd-radius:     10px;
   --srd-radius-sm:  7px;
   --srd-shadow:     0 1px 2px rgba(23,36,43,.04);
+
+  /* colored sidebar */
+  --srd-sidebar-bg:          var(--srd-accent-dark);
+  --srd-sidebar-border:      rgba(255,255,255,.12);
+  --srd-sidebar-text:        rgba(255,255,255,.78);
+  --srd-sidebar-text-strong: #ffffff;
+  --srd-sidebar-muted:       rgba(255,255,255,.55);
+  --srd-sidebar-icon:        rgba(255,255,255,.6);
+  --srd-sidebar-hover-bg:    rgba(255,255,255,.08);
+  --srd-sidebar-active-bg:   var(--srd-accent);
+  --srd-sidebar-active-text: #ffffff;
 }
 
 /* ---- base -----------------------------------------------------------
@@ -39,13 +50,13 @@
 ------------------------------------------------------------------------ */
 body.srd{ background:var(--srd-surface); }
 .srd-shell{
-  font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+  font-family:'Public Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
   color:var(--srd-ink);
   font-size:14px;
 }
 .srd h1,.srd h2,.srd h3,.srd h4,.srd .srd-font-display{
-  font-family:'Space Grotesk','IBM Plex Sans',sans-serif;
-  font-weight:600;
+  font-family:'Public Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+  font-weight:700;
   letter-spacing:-.01em;
   color:var(--srd-ink);
 }
@@ -64,8 +75,8 @@ body.srd{ background:var(--srd-surface); }
 .srd-sidebar{
   width:232px;
   flex-shrink:0;
-  background:var(--srd-card);
-  border-right:1px solid var(--srd-border);
+  background:var(--srd-sidebar-bg);
+  border-right:1px solid var(--srd-sidebar-border);
   display:flex;
   flex-direction:column;
   padding:16px 12px;
@@ -73,36 +84,43 @@ body.srd{ background:var(--srd-surface); }
 .srd-brand{ display:flex; align-items:center; gap:10px; padding:6px 8px 20px; }
 .srd-brand-mark{
   width:34px; height:34px; border-radius:9px; flex-shrink:0;
-  background:var(--srd-accent); color:#fff;
+  background:#ffffff; color:var(--srd-accent-dark);
   display:flex; align-items:center; justify-content:center; font-size:16px;
 }
-.srd-brand-text strong{ display:block; font-size:13.5px; font-weight:600; line-height:1.25; font-family:'Space Grotesk',sans-serif;}
-.srd-brand-text span{ display:block; font-size:10.5px; color:var(--srd-muted); }
+.srd-brand-text strong{ display:block; font-size:13.5px; font-weight:600; line-height:1.25; font-family:'Public Sans',sans-serif; color:var(--srd-sidebar-text-strong); }
+.srd-brand-text span{ display:block; font-size:10.5px; color:var(--srd-sidebar-muted); }
 
 .srd-nav-label{
   font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;
-  color:#8b979c; font-weight:600; padding:14px 10px 6px;
+  color:var(--srd-sidebar-muted); font-weight:600; padding:14px 10px 6px;
 }
 .srd-nav-item{
   display:flex; align-items:center; gap:11px;
   padding:9px 10px; border-radius:8px;
-  font-size:13.5px; font-weight:500; color:var(--srd-ink-soft);
+  font-size:13.5px; font-weight:500;
   margin-bottom:2px; text-decoration:none;
 }
-.srd-nav-item:hover{ background:#f2f5f4; color:var(--srd-ink); text-decoration:none; }
-.srd-nav-item i{ width:18px; text-align:center; font-size:14.5px; flex-shrink:0; color:#8b979c; }
-.srd-nav-item.active{ background:var(--srd-accent-tint); color:var(--srd-accent-dark); }
-.srd-nav-item.active i{ color:var(--srd-accent-dark); }
+/* ".srd a" (class+type selector) outranks a plain ".srd-nav-item" class
+   selector, so the link-color rules below are scoped through .srd-sidebar
+   to win regardless of source order. */
+.srd-sidebar .srd-nav-item{ color:var(--srd-sidebar-text); }
+.srd-sidebar .srd-nav-item:hover{ background:var(--srd-sidebar-hover-bg); color:var(--srd-sidebar-text-strong); text-decoration:none; }
+.srd-nav-item i{ width:18px; text-align:center; font-size:14.5px; flex-shrink:0; color:var(--srd-sidebar-icon); }
+.srd-sidebar .srd-nav-item:hover i{ color:var(--srd-sidebar-text-strong); }
+.srd-sidebar .srd-nav-item.active{ background:var(--srd-sidebar-active-bg); color:var(--srd-sidebar-active-text); }
+.srd-nav-item.active i{ color:var(--srd-sidebar-active-text); }
 .srd-nav-count{
   margin-left:auto; font-size:10.5px; font-weight:600;
-  background:#eef1f1; color:#5c6a6f; padding:1px 7px; border-radius:20px;
+  background:rgba(255,255,255,.14); color:var(--srd-sidebar-text); padding:1px 7px; border-radius:20px;
 }
-.srd-nav-item.active .srd-nav-count{ background:var(--srd-accent); color:#fff; }
+.srd-nav-item.active .srd-nav-count{ background:rgba(255,255,255,.22); color:#fff; }
 
 .srd-sidebar-foot{
   margin-top:auto; display:flex; align-items:center; gap:10px;
-  padding:12px 10px; border-top:1px solid var(--srd-border-soft);
+  padding:12px 10px; border-top:1px solid var(--srd-sidebar-border);
 }
+.srd-sidebar-foot strong{ color:var(--srd-sidebar-text-strong); }
+.srd-sidebar-foot span{ color:var(--srd-sidebar-muted); }
 
 /* ---- topbar --------------------------------------------------------- */
 .srd-topbar{
@@ -134,7 +152,7 @@ body.srd{ background:var(--srd-surface); }
   width:34px; height:34px; border-radius:50%;
   background:var(--srd-accent-tint); color:var(--srd-accent-dark);
   display:flex; align-items:center; justify-content:center;
-  font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:13px; flex-shrink:0;
+  font-family:'Public Sans',sans-serif; font-weight:600; font-size:13px; flex-shrink:0;
 }
 .srd-user-chip{ display:flex; align-items:center; gap:10px; padding-left:14px; border-left:1px solid var(--srd-border); text-decoration:none; }
 .srd-user-chip:hover{ text-decoration:none; }
@@ -155,16 +173,26 @@ body.srd{ background:var(--srd-surface); }
 
 /* ---- stat cards --------------------------------------------------------*/
 .srd-stat-card{
-  background:var(--srd-card); border:1px solid var(--srd-border); border-radius:var(--srd-radius);
-  padding:16px 18px; box-shadow:var(--srd-shadow); height:100%;
+  background:var(--srd-card); border:1px solid var(--srd-border); border-radius:14px;
+  padding:22px 20px; box-shadow:var(--srd-shadow); height:100%;
+  display:flex; align-items:center; gap:16px;
 }
 .srd-stat-icon{
-  width:32px; height:32px; border-radius:9px; background:var(--srd-accent-tint);
-  color:var(--srd-accent-dark); display:flex; align-items:center; justify-content:center; margin-bottom:12px;
+  width:52px; height:52px; border-radius:12px; flex-shrink:0;
+  background:var(--srd-accent-tint); color:var(--srd-accent-dark);
+  display:flex; align-items:center; justify-content:center; font-size:19px;
 }
-.srd-stat-value{ font-family:'Space Grotesk',sans-serif; font-size:24px; font-weight:600; line-height:1; color:var(--srd-ink); }
-.srd-stat-label{ font-size:12px; color:var(--srd-muted); font-weight:500; margin-top:4px; }
-.srd-stat-note{ font-size:11px; font-weight:600; margin-top:8px; }
+.srd-stat-icon.is-indigo{ background:#eceafd; color:#5b4fd6; }
+.srd-stat-icon.is-blue{   background:#e6f0fe; color:#2f6fed; }
+.srd-stat-icon.is-pink{   background:#fde9ec; color:#e5486b; }
+.srd-stat-icon.is-amber{  background:#fdf1da; color:#c8860a; }
+.srd-stat-icon.is-teal{   background:#e3f2f4; color:#00707f; }
+.srd-stat-icon.is-green{  background:#e5f6ec; color:#209457; }
+.srd-stat-icon.is-slate{  background:#e9ecef; color:#4b5a63; }
+.srd-stat-body{ min-width:0; }
+.srd-stat-label{ font-size:12.5px; color:var(--srd-muted); font-weight:500; }
+.srd-stat-value{ font-family:'Public Sans',sans-serif; font-size:26px; font-weight:700; line-height:1.3; color:var(--srd-ink); }
+.srd-stat-note{ font-size:11.5px; font-weight:600; }
 .srd-stat-note.is-danger{ color:var(--srd-danger); }
 .srd-stat-note.is-warning{ color:var(--srd-warning); }
 .srd-stat-note.is-success{ color:var(--srd-success); }

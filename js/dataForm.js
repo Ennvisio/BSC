@@ -603,6 +603,146 @@ $(document).on('click', '.delete-category', function(){
         });
       });
 
+$(document).on('submit','#budget_group_add_form',function(event){
+  event.preventDefault();
+  $("#budget_group_add_form .form_error").css('display','none');
+  $("#budget_group_add_form .form_error p").remove();
+  $('body').addClass("loading");
+  $.ajax({
+    type:'post',
+    url:'/budget-group/store',
+    data:new FormData($("#budget_group_add_form")[0]),
+    processData:false,
+    contentType:false,
+    success:function(response)
+    {
+      toastr.success( 'New Budget Group Added Successfully!','Well Done!')
+      var  idx= table.rows().count();
+      idx++;
+      var rowNode = table
+      .row.add( ['<b class="serial">'+idx+'</b>', response[1]['name'], response[1]['created_by'], response[1]['updated_by'],
+        '<div class="action"><button class="btn btn-info mr-1 edit-budget-group" data-id="'+response[1]['id']+'"  data-name="'+response[1]['name']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>'+
+        '<button class="btn btn-danger delete-budget-group" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button></div>'])
+      .order([0, 'dsc']).draw()
+      .node().id = 'budget-group-'+response[1]['id'];
+      $( rowNode )
+      .css( 'color', 'green' )
+      .animate( { color: 'red' } );
+      swal('Excellent!',response[0],'success').then(function() {
+        $('#budget_group_add_form')[0].reset();
+        $("[data-dismiss=modal]").trigger({ type: "click" });
+        $("#budget_group_add_form .form_error").css('display','none');
+      });
+    },
+    error: function(errors)
+    {
+      console.log(errors.responseJSON.errors);
+      toastr.warning("Error! Check Your Form Information Please.");
+      $.each(errors.responseJSON.errors, function(key, value){
+        $('#budget_group_add_form .form_error').show();
+        $('#budget_group_add_form .form_error').append('<p style="margin-bottom:5px;">'+value+'</p>');
+        $('html, body').stop().animate({
+          scrollTop: $('.alert-danger').offset().top - 150
+        }, 500);
+      });
+    }
+  });
+});
+
+$(document).on('click','.edit-budget-group',function(e){
+  e.preventDefault();
+  $('#budget_group_edit_form .BudgetGroup_Id').val($(this).data('id'));
+  $('#budget_group_edit_form .BudgetGroup_Name').val($(this).data('name'));
+  tr = $(this).parent().parent();
+  tr_id=tr.attr('id');
+  tr_sl = $('#'+tr_id +" .serial").text();
+})
+$(document).on('submit','#budget_group_edit_form',function(event){
+  event.preventDefault();
+  $("#budget_group_edit_form .form_error").css('display','none');
+  $("#budget_group_edit_form .form_error p").remove();
+  $('body').addClass("loading");
+  $.ajax({
+    type:'post',
+    url:'/budget-group/update',
+    data:new FormData($("#budget_group_edit_form")[0]),
+    processData:false,
+    contentType:false,
+    success:function(response)
+    {
+      toastr.success( 'Budget Group Info Updated Successfully!','Well Done!')
+      $('#budget_group_edit_form')[0].reset();
+      var rData = [
+      '<b class="serial">'+tr_sl+'</b>',
+      response[1]['name'],
+      response[1]['created_by'],
+      response[1]['updated_by'],
+      '<button class="btn btn-info edit-budget-group mr-1" data-id="'+response[1]['id']+'" data-name="'+response[1]['name']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button><button class="btn btn-danger delete-budget-group" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>'
+      ];
+      table
+      .row( 'tr#'+tr_id )
+      .data(rData)
+      .draw();
+      swal('Excellent!',response[0],'success').then(function() {
+        $("[data-dismiss=modal]").trigger({ type: "click" });
+        $('#budget_group_edit_form')[0].reset();
+      });
+    },
+    error: function(errors)
+    {
+      console.log(errors.responseJSON.errors);
+      toastr.warning("Error! Check Your Form Information Please.");
+      $.each(errors.responseJSON.errors, function(key, value){
+        $('#budget_group_edit_form .form_error').show();
+        $('#budget_group_edit_form .form_error').append('<p style="margin-bottom:5px;">'+value+'</p>');
+        $('html, body').stop().animate({
+          scrollTop: $('.alert-danger').offset().top - 150
+        }, 500);
+      });
+    }
+  });
+});
+$(document).on('click', '.delete-budget-group', function(){
+  var tr = $(this).parents('tr');
+  var tr_id=tr.attr('id');
+  var id = $(this).data('id');
+  swal({
+    title: 'Are you sure?',
+    text: "You want to delete this Budget Group!",
+    type: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    confirmButtonText: 'Yes, delete it!',
+    showLoaderOnConfirm: true,
+    preConfirm: function() {
+      return new Promise(function(resolve) {
+        $.ajax({
+          url: '/budget-group/delete',
+          type: 'post',
+          data: {
+            _token: CSRF_TOKEN,
+            'id':id,
+          },
+          dataType: 'json'
+        })
+        .done(function(response){
+          swal('Congratulation!',response[0],'success').then(function(){
+            table
+            .row("tr#"+tr_id)
+            .remove()
+            .draw();
+          });
+        })
+        .fail(function(response){
+          swal('Oops...', 'Something went wrong!' , 'error');
+        });
+      });
+    },
+    allowOutsideClick: false
+  });
+});
+
 $(document).on('click','.close_error_alert',function(){
   $(this).parent().hide();
 });
@@ -1101,9 +1241,15 @@ $(document).on('click', '.delete-item', function(){
         });
       });
 $(document).on('change','#cate_name',function(){
+  $('option.item_opt').remove();
+  // Catalog-backed categories (tagged via data-catalog on the option) can
+  // hold tens of thousands of items - those are browsed through the tree
+  // picker instead of loaded into this flat dropdown. See create-order.js.
+  if($(this).children("option:selected").data('catalog') == 1){
+    return;
+  }
   $('img.field-loader').css({'display':'block'});
   var cat_id=$(this).children("option:selected").val();
-  $('option.item_opt').remove();
   url='/get-items/'+cat_id;
   $.ajax({
     type:'get',
@@ -1136,6 +1282,9 @@ $(document).on('click','#add_item_button',function(e){
   cat_id
   ];
   $('option.item_opt').remove();
+  if($('select#cate_name').children("option:selected").data('catalog') == 1){
+    return;
+  }
   url='/get-items/'+cat_id;
   $.ajax({
     type:'get',
@@ -1171,8 +1320,14 @@ $(document).on('click','#order_add',function(e){
     if(exist_item_count == 0){
       var  idx= orderTable.rows().count();
       idx++;
+      // Column order matches the paper-form layout (SL NO / Item Name /
+      // IMPA Code / Unit / Opening Stock / Qty of Last Supply / Date of
+      // Last Supply / In Stock / Required / Office Use / Action) - the
+      // stock-history columns have no data source yet, so they render
+      // blank for now.
       var rowNode = orderTable
-      .row.add( ['<b class="serial">'+idx+'</b>', item_impa, item_name +'<input type="hidden" name="item_id[]" value="'+item_id+'">' , '<span class="added_qty">'+qty+'</span>' + '<input type="hidden" class="form-control qty-edit" name="item_qty[]" value="'+qty+'">', unit, cat_name, 
+      .row.add( ['<b class="serial">'+idx+'</b>', item_name +'<input type="hidden" name="item_id[]" value="'+item_id+'">', item_impa, unit, '', '', '', '',
+        '<span class="added_qty">'+qty+'</span>' + '<input type="hidden" class="form-control qty-edit" name="item_qty[]" value="'+qty+'">', '',
         '<button class="btn btn-info mr-1 edit-order-item" data-id="'+item_id+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>'+
         '<button class="btn btn-danger delete-order-item" data-id="'+item_id+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>'])
       .order([0, 'dsc']).draw()
@@ -1333,6 +1488,28 @@ $(document).on('submit','#add_order_form',function(event){
 // approve order 
 $(document).on('click', '#approve_order', function(){
   var id = $(this).data('id');
+  // Master/Chief Engineer's "Reason of Requisition" textarea is only
+  // rendered for them, at the origin-review stage - required before their
+  // approval goes through (see RoleController@approveRequisition).
+  var reasonField = $('#requisition_reason');
+  var reason = reasonField.length ? reasonField.val().trim() : null;
+  if (reasonField.length && reason === '') {
+    swal('Reason required', 'Please fill in the Reason of Requisition before approving.', 'warning');
+    return;
+  }
+  // The assigned SSM officer (AGM/AM/Superintendent SSM) can adjust each
+  // line's Deliver Qty (defaults to Req Qty), and Master can adjust Rcv Qty
+  // (defaults to Deliver Qty) when confirming receipt - both right on this
+  // same Approve click. See td.deliver_qty / td.rcv_qty in
+  // view-order-detail.blade.php.
+  var deliverQty = {};
+  $('input.deliver-qty').each(function () {
+    deliverQty[$(this).data('id')] = $(this).val();
+  });
+  var rcvQty = {};
+  $('input.rcv-qty').each(function () {
+    rcvQty[$(this).data('id')] = $(this).val();
+  });
   swal({
     title: 'Are you sure?',
     text: "You want to approve this Requisition!",
@@ -1350,6 +1527,9 @@ $(document).on('click', '#approve_order', function(){
           data: {
             _token: CSRF_TOKEN,
             'id':id,
+            'reason':reason,
+            'deliver_qty':deliverQty,
+            'rcv_qty':rcvQty,
           },
           dataType: 'json'
         })
@@ -1359,7 +1539,8 @@ $(document).on('click', '#approve_order', function(){
           });
         })
         .fail(function(response){
-          swal('Oops...', 'Something went wrong!' , 'error');
+          var message = (response.responseJSON && response.responseJSON.message) || 'Something went wrong!';
+          swal('Oops...', message, 'error');
         });
       });
     },
@@ -1367,9 +1548,59 @@ $(document).on('click', '#approve_order', function(){
   });
 });
 
-// approve order 
+// DGM (SSM) assigns the requisition to one named SSM officer, who then
+// takes the final action on it.
+$(document).on('click', '#assign_ssm', function(){
+  var id = $(this).data('id');
+  var assignedTo = $('#ssm_assignee').val();
+  if (!assignedTo) {
+    swal('Choose an officer', 'Please select which SSM officer to assign this requisition to.', 'warning');
+    return;
+  }
+  var assigneeName = $('#ssm_assignee option:selected').text();
+  swal({
+    title: 'Assign this requisition?',
+    text: 'It will go to ' + assigneeName + ' for the final action.',
+    type: 'info',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    confirmButtonText: 'Yes, assign it!',
+    showLoaderOnConfirm: true,
+    preConfirm: function() {
+      return new Promise(function(resolve) {
+        $.ajax({
+          url: '/order/assign',
+          type: 'post',
+          data: {
+            _token: CSRF_TOKEN,
+            'id': id,
+            'assigned_to': assignedTo,
+          },
+          dataType: 'json'
+        })
+        .done(function(response){
+          swal('Assigned!', response[0], 'success').then(function(){
+            window.location.href='/approved/requisition'
+          });
+        })
+        .fail(function(response){
+          var message = (response.responseJSON && response.responseJSON.message) || 'Something went wrong!';
+          swal('Oops...', message, 'error');
+        });
+      });
+    },
+    allowOutsideClick: false
+  });
+});
+
+// approve order
 $(document).on('click', '#forward_toagm', function(){
   var id = $(this).data('id');
+  // Only present for GM (SRD), who picks any one of the 4 delegate
+  // targets; AGM (SRD)'s own forward has just the one fixed target
+  // (AM SRD) so the select doesn't exist for them.
+  var targetRole = $('#srd_delegate_target').length ? $('#srd_delegate_target').val() : null;
   swal({
     title: 'Are you sure?',
     text: "You want to forward down this Requisition!",
@@ -1387,6 +1618,7 @@ $(document).on('click', '#forward_toagm', function(){
           data: {
             _token: CSRF_TOKEN,
             'id':id,
+            'target_role':targetRole,
           },
           dataType: 'json'
         })

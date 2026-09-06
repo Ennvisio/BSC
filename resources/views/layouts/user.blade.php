@@ -120,10 +120,15 @@
 								<option value="chief-engineer" class="ship_role">Chief Engineer</option>
 								<option value="am-srd" class="admin_role role-srd">AM-(SRD)</option>
 								<option value="agm-srd" class="admin_role role-srd">AGM-(SRD)</option>
+								<option value="dgm-srd" class="admin_role role-srd">DGM-(SRD)</option>
+								<option value="superintendent-srd" class="admin_role role-srd">Superintendent-(SRD)</option>
 								<option value="gm-srd" class="admin_role role-srd">GM-(SRD)</option>
 								<option value="dgm-ssm" class="admin_role role-ssm">DGM-(SSM)</option>
 								<option value="agm-ssm" class="admin_role role-ssm">AGM-(SSM)</option>
 								<option value="am-ssm" class="admin_role role-ssm">AM-(SSM)</option>
+								<option value="superintendent-ssm" class="admin_role role-ssm">Superintendent-(SSM)</option>
+								<option value="technical-superintendent" class="admin_role role-srd">Technical Superintendent</option>
+								<option value="marine-superintendent" class="admin_role role-srd">Marine Superintendent</option>
 							</select>
 						</div>
 					</div>
@@ -220,10 +225,15 @@
 								<option value="chief-engineer" class="ship_role role_opt">Chief Engineer</option>
 								<option value="am-srd" class="admin_role role-srd role_opt">AM-(SRD)</option>
 								<option value="agm-srd" class="admin_role role-srd role_opt">AGM-(SRD)</option>
+								<option value="dgm-srd" class="admin_role role-srd role_opt">DGM-(SRD)</option>
+								<option value="superintendent-srd" class="admin_role role-srd role_opt">Superintendent-(SRD)</option>
 								<option value="gm-srd" class="admin_role role-srd role_opt">GM-(SRD)</option>
 								<option value="dgm-ssm" class="admin_role role-ssm role_opt">DGM-(SSM)</option>
 								<option value="agm-ssm" class="admin_role role-ssm role_opt">AGM-(SSM)</option>
 								<option value="am-ssm" class="admin_role role-ssm role_opt">AM-(SSM)</option>
+								<option value="superintendent-ssm" class="admin_role role-ssm role_opt">Superintendent-(SSM)</option>
+								<option value="technical-superintendent" class="admin_role role-srd role_opt">Technical Superintendent</option>
+								<option value="marine-superintendent" class="admin_role role-srd role_opt">Marine Superintendent</option>
 							</select>
 						</div>
 					</div>

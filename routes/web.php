@@ -24,6 +24,11 @@ Route::get('/home/category', 'HomeController@getCategory')->name('get.all.catego
 Route::post('/category/store', 'HomeController@storeCategory')->name('store.one.category');
 Route::post('/category/update', 'HomeController@updateCategory')->name('update.one.category');
 Route::post('/category/delete', 'HomeController@deleteCategory')->name('delete.one.category');
+
+Route::get('/home/budget-group', 'HomeController@getBudgetGroup')->name('get.all.budget-group');
+Route::post('/budget-group/store', 'HomeController@storeBudgetGroup')->name('store.one.budget-group');
+Route::post('/budget-group/update', 'HomeController@updateBudgetGroup')->name('update.one.budget-group');
+Route::post('/budget-group/delete', 'HomeController@deleteBudgetGroup')->name('delete.one.budget-group');
 Route::get('/vessel-detail-add/{id}', 'HomeController@addVesselDetail')->name('add.vessel.detail');
 Route::get('/vessel-edit/{id}', 'HomeController@editVessel')->name('edit.vessel');
 
@@ -47,8 +52,15 @@ Route::get('/vessel-view/{vessel_id}', 'HomeController@viewVesselDetail')->name(
  
 Route::group(['middleware' => 'member'],function(){
 	Route::post('/order/store', 'HomeController@storeOrder')->name('store.order');
-	Route::get('/create/order', 'HomeController@createOrder')->name('add.new.order');
+	Route::get('/create/order', function () { return redirect()->route('requisition.step1'); })->name('add.new.order');
 	Route::get('/home/created-orders', 'HomeController@createdOrders');
+
+	Route::get('/requisition/create', 'RequisitionController@createStep1')->name('requisition.step1');
+	Route::post('/requisition/create', 'RequisitionController@storeStep1')->name('requisition.step1.store');
+	Route::get('/requisition/{order}/items', 'RequisitionController@step2')->name('requisition.step2');
+	Route::post('/requisition/{order}/items', 'RequisitionController@storeStep2')->name('requisition.step2.store');
+	Route::get('/requisition/{order}/review', 'RequisitionController@step3')->name('requisition.step3');
+	Route::post('/requisition/{order}/submit', 'RequisitionController@submit')->name('requisition.submit');
 });
 Route::get('/home/order', 'HomeController@getOrder')->name('get.all.order');//superadmin // operator
 
@@ -70,6 +82,17 @@ Route::get('/order/detail/{order_id}', 'HomeController@viewOrderDetail')->name('
   Route::get('/catalog/browse', 'CatalogController@browse')->name('catalog.browse');
   Route::get('/catalog/browse/children/{parentId?}', 'CatalogController@children')->name('catalog.browse.children');
   Route::get('/catalog/browse/items/{groupId}', 'CatalogController@items')->name('catalog.browse.items');
+  Route::get('/catalog/browse/search', 'CatalogController@search')->name('catalog.browse.search');
+
+  // Vessel stock (ROB). Every route here is Master-only - enforced in the
+  // controller, since this app has no role middleware.
+  Route::get('/stock/upload', 'StockController@create')->name('stock.upload.form');
+  Route::get('/stock/template', 'StockController@template')->name('stock.template');
+  Route::post('/stock/upload', 'StockController@store')->name('stock.upload.store');
+  Route::get('/stock/history', 'StockController@history')->name('stock.history');
+  Route::post('/stock/update', 'StockController@update')->name('stock.update');
+
+  Route::get('/ports/search', 'PortController@search')->name('ports.search');
 
   Route::get('/home/user', 'HomeController@getUser');
   Route::post('/user/store', 'HomeController@storeUser');
@@ -94,5 +117,6 @@ Route::get('/order/detail/{order_id}', 'HomeController@viewOrderDetail')->name('
   Route::post('/search/certificate','HomeController@searchCertificate');
 
   Route::post('/order/forward','RoleController@forwardToAgm');
+  Route::post('/order/assign','RoleController@assignToSsm')->name('order.assign.ssm');
 
   // Route::get('/home/deliver/order', 'HomeController@deliverReq');

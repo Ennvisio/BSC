@@ -3,66 +3,80 @@
 
 <div class="col-lg-12">
     <div class="row">
-        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+        <div class="col-6 col-md-3 mb-3">
             <a href="{{url('/home/certificate')}}" class="text-decoration-none">
                 <div class="srd-stat-card">
-                    <div class="srd-stat-icon"><i class="fas fa-certificate"></i></div>
-                    <div class="srd-stat-value"><span class="count">{{\App\Certificate::where('status',true)->get()->count()}}</span></div>
-                    <div class="srd-stat-label">Certificates</div>
+                    <div class="srd-stat-icon is-indigo"><i class="fas fa-certificate"></i></div>
+                    <div class="srd-stat-body">
+                        <div class="srd-stat-label">Certificates</div>
+                        <div class="srd-stat-value"><span class="count">{{\App\Certificate::where('status',true)->get()->count()}}</span></div>
+                    </div>
                 </div>
             </a>
         </div>
-        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+        <div class="col-6 col-md-3 mb-3">
             <a href="{{url('/home/survey')}}" class="text-decoration-none">
                 <div class="srd-stat-card">
-                    <div class="srd-stat-icon"><i class="fas fa-clipboard"></i></div>
-                    <div class="srd-stat-value"><span class="count">{{\App\Survey::where('status',true)->get()->count()}}</span></div>
-                    <div class="srd-stat-label">Surveys</div>
+                    <div class="srd-stat-icon is-blue"><i class="fas fa-clipboard"></i></div>
+                    <div class="srd-stat-body">
+                        <div class="srd-stat-label">Surveys</div>
+                        <div class="srd-stat-value"><span class="count">{{\App\Survey::where('status',true)->get()->count()}}</span></div>
+                    </div>
                 </div>
             </a>
         </div>
-        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+        <div class="col-6 col-md-3 mb-3">
             <a href="{{url('/home/vessel')}}" class="text-decoration-none">
                 <div class="srd-stat-card">
-                    <div class="srd-stat-icon"><i class="fas fa-ship"></i></div>
-                    <div class="srd-stat-value"><span class="count">{{\App\Vessel::where('status',true)->get()->count()}}</span></div>
-                    <div class="srd-stat-label">Vessels</div>
+                    <div class="srd-stat-icon is-pink"><i class="fas fa-ship"></i></div>
+                    <div class="srd-stat-body">
+                        <div class="srd-stat-label">Vessels</div>
+                        <div class="srd-stat-value"><span class="count">{{\App\Vessel::where('status',true)->get()->count()}}</span></div>
+                    </div>
                 </div>
             </a>
         </div>
-        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+        <div class="col-6 col-md-3 mb-3">
             <a href="{{url('/home/item')}}" class="text-decoration-none">
                 <div class="srd-stat-card">
-                    <div class="srd-stat-icon"><i class="fas fa-th"></i></div>
-                    <div class="srd-stat-value"><span class="count">{{\App\Category::where('status',true)->get()->count()}}</span></div>
-                    <div class="srd-stat-label">Categories</div>
+                    <div class="srd-stat-icon is-amber"><i class="fas fa-th"></i></div>
+                    <div class="srd-stat-body">
+                        <div class="srd-stat-label">Categories</div>
+                        <div class="srd-stat-value"><span class="count">{{\App\Category::where('status',true)->get()->count()}}</span></div>
+                    </div>
                 </div>
             </a>
         </div>
-        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+        <div class="col-6 col-md-3 mb-3">
             <a href="{{url('/home/item')}}" class="text-decoration-none">
                 <div class="srd-stat-card">
-                    <div class="srd-stat-icon"><i class="fas fa-cubes"></i></div>
-                    <div class="srd-stat-value"><span class="count">{{\App\Item::where('status',true)->get()->count()}}</span></div>
-                    <div class="srd-stat-label">Items</div>
+                    <div class="srd-stat-icon is-teal"><i class="fas fa-cubes"></i></div>
+                    <div class="srd-stat-body">
+                        <div class="srd-stat-label">Items</div>
+                        <div class="srd-stat-value"><span class="count">{{\App\Item::where('status',true)->get()->count()}}</span></div>
+                    </div>
                 </div>
             </a>
         </div>
-        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+        <div class="col-6 col-md-3 mb-3">
             <a href="{{url('/home/order')}}" class="text-decoration-none">
                 <div class="srd-stat-card">
-                    <div class="srd-stat-icon"><i class="fas fa-truck"></i></div>
-                    <div class="srd-stat-value"><span class="count">{{\App\Order::where('ord_status',true)->where('status','delivered')->get()->count()}}</span></div>
-                    <div class="srd-stat-label">Delivered</div>
+                    <div class="srd-stat-icon is-green"><i class="fas fa-truck"></i></div>
+                    <div class="srd-stat-body">
+                        <div class="srd-stat-label">Delivered</div>
+                        <div class="srd-stat-value"><span class="count">{{\App\Order::where('ord_status',true)->where('status','delivered')->get()->count()}}</span></div>
+                    </div>
                 </div>
             </a>
         </div>
-        <div class="col-6 col-md-4 col-xl mb-3 mb-xl-0">
+        <div class="col-6 col-md-3 mb-3">
             <a href="{{url('/home/order')}}" class="text-decoration-none">
                 <div class="srd-stat-card">
-                    <div class="srd-stat-icon"><i class="fas fa-inbox"></i></div>
-                    <div class="srd-stat-value"><span class="count">{{\App\Order::where('ord_status',true)->where('status','received')->get()->count()}}</span></div>
-                    <div class="srd-stat-label">Received</div>
+                    <div class="srd-stat-icon is-slate"><i class="fas fa-inbox"></i></div>
+                    <div class="srd-stat-body">
+                        <div class="srd-stat-label">Received</div>
+                        <div class="srd-stat-value"><span class="count">{{\App\Order::where('ord_status',true)->where('status','received')->get()->count()}}</span></div>
+                    </div>
                 </div>
             </a>
         </div>

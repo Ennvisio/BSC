@@ -2,7 +2,6 @@
 
 namespace App\Imports;
 
-use App\Category;
 use App\Item;
 use App\ItemGroup;
 use Illuminate\Support\Collection;
@@ -32,12 +31,11 @@ use Maatwebsite\Excel\Concerns\WithHeadingRow;
 class ItemCatalogImport implements ToCollection, WithChunkReading, WithHeadingRow
 {
     private int $vesselId;
+    private int $categoryId;
     private string $uploadedByName;
 
-    /** @var array<string,int> "{parentId}|{name}" => item_groups.id, loaded once */
+    /** @var array<string,int> "{categoryId}|{parentId}|{name}" => item_groups.id, loaded once */
     private array $groupMap = [];
-
-    private ?int $importCategoryId = null;
 
     public int $rowCount = 0;
     public int $importedCount = 0;
@@ -45,13 +43,14 @@ class ItemCatalogImport implements ToCollection, WithChunkReading, WithHeadingRo
     /** @var array<int,string> */
     public array $errors = [];
 
-    public function __construct(int $vesselId, string $uploadedByName)
+    public function __construct(int $vesselId, int $categoryId, string $uploadedByName)
     {
         $this->vesselId = $vesselId;
+        $this->categoryId = $categoryId;
         $this->uploadedByName = $uploadedByName;
 
-        foreach (ItemGroup::all(['id', 'parent_id', 'name']) as $group) {
-            $this->groupMap[$this->groupKey($group->parent_id, $group->name)] = $group->id;
+        foreach (ItemGroup::all(['id', 'category_id', 'parent_id', 'name']) as $group) {
+            $this->groupMap[$this->groupKey($group->category_id, $group->parent_id, $group->name)] = $group->id;
         }
     }
 
@@ -127,7 +126,7 @@ class ItemCatalogImport implements ToCollection, WithChunkReading, WithHeadingRo
         return [
             'article_number' => $articleNumber,
             'item_group_id' => $this->resolveGroupPath($segments),
-            'category_id' => $this->importCategoryId(),
+            'category_id' => $this->categoryId,
             'name' => $itemName,
             'unit' => trim((string) ($row['unit_code'] ?? '')) ?: 'PC',
             'account_number' => $this->nullableCell($row, 'account_number'),
@@ -157,13 +156,14 @@ class ItemCatalogImport implements ToCollection, WithChunkReading, WithHeadingRo
         $groupId = null;
 
         foreach ($segments as $name) {
-            $key = $this->groupKey($parentId, $name);
+            $key = $this->groupKey($this->categoryId, $parentId, $name);
 
             if (isset($this->groupMap[$key])) {
                 $groupId = $this->groupMap[$key];
             } else {
                 $path = $parentPath === '' ? $name : $parentPath.' -> '.$name;
                 $group = ItemGroup::create([
+                    'category_id' => $this->categoryId,
                     'parent_id' => $parentId,
                     'name' => $name,
                     'path' => $path,
@@ -179,9 +179,16 @@ class ItemCatalogImport implements ToCollection, WithChunkReading, WithHeadingRo
         return $groupId;
     }
 
-    private function groupKey(?int $parentId, string $name): string
+    /**
+     * item_groups.name uses a case-insensitive collation (utf8mb4_unicode_ci),
+     * so MySQL's unique index treats "AND" and "and" as the same value - the
+     * in-memory map has to match that or it'll attempt a real duplicate INSERT
+     * (see e.g. "Electrodes for Nickel, Nickel-Alloys AND/and Nickel-Alloy
+     * Steels" appearing both ways across one real spreadsheet).
+     */
+    private function groupKey(int $categoryId, ?int $parentId, string $name): string
     {
-        return ($parentId ?? 'root').'|'.$name;
+        return $categoryId.'|'.($parentId ?? 'root').'|'.mb_strtolower($name);
     }
 
     private function nullableCell(Collection $row, string $key): ?string
@@ -189,35 +196,5 @@ class ItemCatalogImport implements ToCollection, WithChunkReading, WithHeadingRo
         $value = trim((string) ($row[$key] ?? ''));
 
         return $value === '' ? null : $value;
-    }
-
-    /**
-     * Every import-created item needs a category_id (legacy NOT NULL column
-     * used only for requisition req_no prefixing) even though its real
-     * classification now lives in item_group_id. Route all imported items
-     * through one dedicated placeholder category rather than guessing a
-     * mapping onto the existing Deck/Engine/etc. requisition categories.
-     */
-    private function importCategoryId(): int
-    {
-        if ($this->importCategoryId === null) {
-            // Category has no $fillable, so mass-assignment (firstOrCreate's
-            // array form) is blocked - the existing app code always sets
-            // attributes individually instead, so match that here too.
-            $category = Category::where('symbol', 'IMP')->first();
-
-            if (! $category) {
-                $category = new Category;
-                $category->name = 'Imported Catalog';
-                $category->symbol = 'IMP';
-                $category->created_by = $this->uploadedByName;
-                $category->status = true;
-                $category->save();
-            }
-
-            $this->importCategoryId = $category->id;
-        }
-
-        return $this->importCategoryId;
     }
 }

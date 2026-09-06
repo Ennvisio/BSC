@@ -6,11 +6,16 @@ use Illuminate\Database\Eloquent\Model;
 
 class ItemGroup extends Model
 {
-    protected $fillable = ['parent_id', 'name', 'path'];
+    protected $fillable = ['parent_id', 'category_id', 'name', 'path'];
 
     public function parent()
     {
         return $this->belongsTo(ItemGroup::class, 'parent_id');
+    }
+
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
     }
 
     public function children()

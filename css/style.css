@@ -448,6 +448,16 @@ td.action .btn{
 	margin: 0 2.5px;
 }
 
+/* Shrink every button that lives inside a table cell (edit/delete/show-file/
+   etc. across all list tables) to Bootstrap's .btn-sm sizing, without having
+   to add that class by hand in every view. */
+table td .btn{
+	padding: .25rem .5rem;
+	font-size: .875rem;
+	line-height: 1.5;
+	border-radius: .2rem;
+}
+
 
 /* #example_wrapper */
 #example_wrapper {
@@ -571,18 +581,32 @@ table.dataTable thead tr th:first-child {
 .right-buttons, .right-buttons-wrapper {
     display: flex;
     align-items: center;
+    gap: 9px;
+}
+
+/* Every button in this row shares one size, whether it's a plain Bootstrap
+   .btn (e.g. "Add New X") or one the DataTables Buttons plugin injects
+   (Print/Pdf) - they used to run different padding and border widths
+   (6px/1px vs 5px/2px), which made the row look uneven even though every
+   button was otherwise styled correctly on its own. */
+.right-buttons .btn,
+.right-buttons .dt-buttons button {
+    padding: 7px 16px;
+    font-size: 14px;
+    line-height: 1.4;
+    border-radius: 4px;
+    font-weight: 600;
+    box-sizing: border-box;
 }
 
 .right-buttons .btn-bvprint {
-    margin: 0 9px;
+    margin: 0;
 }
 
 .right-buttons .dt-buttons button {
     background: #17a2b8;
-    padding: 5px 16px;
     color: #fff;
-    border: 2px solid #17a2b8;
-    border-radius: 4px;
+    border: 1px solid #17a2b8;
     cursor: pointer;
 }
 .right-buttons .dt-buttons button span{
@@ -1053,7 +1077,7 @@ table.table-bordered.dataTable td a {
 
 #summary-table-wrapper tr.th {
     text-align: center;
-    background: #0092b4;
+    background: #017184;
     color: #fff;
     text-transform: uppercase;
     text-align: center;
@@ -1086,7 +1110,7 @@ table.table-bordered.dataTable td a {
 
 #summary-table-wrapper .dataTable tr.th th{
     padding-right: 25px!important;
-    background: #0092b4;
+    background: #017184;
 }
 
 #summary-table-wrapper  th:last-child, 

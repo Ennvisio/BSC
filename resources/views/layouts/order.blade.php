@@ -19,10 +19,14 @@ position: absolute;
 <div class="col-lg-6 col-xl-12">
 	<div class="card">
 		<div class="card-header pv-card-hader">
-			@if(auth()->user()->role=='master'||
-			auth()->user()->role=='chief-officer'||
-			auth()->user()->role=='chief-engineer'||
-			auth()->user()->role=='second-engineer')
+			{{-- Was comparing the Role MODEL to a string ("role==") instead of
+				 role->role, so this was always false and the vessel name never
+				 rendered - every ship user silently fell to the plain title
+				 below. --}}
+			@if(auth()->user()->role->role=='master'||
+			auth()->user()->role->role=='chief-officer'||
+			auth()->user()->role->role=='chief-engineer'||
+			auth()->user()->role->role=='second-engineer')
 						<strong class="pptitle">
 				Requisition List of <span style="color:red;display: inline-block;padding-left: 5px;"> {{auth()->user()->role->vessel->name}} </span>
 			</strong>
@@ -75,9 +79,8 @@ position: absolute;
 			</div>
 			@endif 
 
-			<div class="right-buttons">	
-				@if(auth()->user()->role->role=='second-engineer' || auth()->user()->role->role=='chief-officer')	
-				
+			<div class="right-buttons">
+				@if(auth()->user()->role->role=='second-engineer' || auth()->user()->role->role=='chief-officer')
 				<a href="{{url('/create/order')}}" class="btn btn-primary">
 					<i class="fas fa-plus-square"></i> Add New Requisition
 				</a>
@@ -100,10 +103,10 @@ position: absolute;
 					<th>Vessel Name</th>
 					<th>Req. Date</th>
 					<th>Port</th>
+					<th>Stage</th>
 					<th>status</th>
 					<th>status from ssm</th>
 					<th>Created By</th>
-					<th>Updated By</th>
 					<!-- <th class="action">Action</th> -->
 				</thead>
 				<tbody>
@@ -120,10 +123,10 @@ position: absolute;
 						<td>{{!empty($order->vessel->name)?$order->vessel->name:''}}</td>
 						<td>{{!empty($order->req_date)?$order->req_date:''}}</td>
 						<td>{{!empty($order->port_name)?$order->port_name:''}}</td>
+						<td><span class="badge badge-info">{{ $order->currentStageLabel() }}</span></td>
 						<td>{{!empty($order->status)?$order->status:''}}</td>
 						<td>{{!empty($order->status_from_am)?$order->status_from_am:''}}</td>
-						<td>{{!empty($order->created_by)?$order->created_by:''}}</td>
-						<td>{{!empty($order->updated_by)?$order->updated_by:''}}</td>
+						<td>{{ $order->creator->name ?? '' }}</td>
 						<!-- <td class="action">
 							<button class="btn btn-info edit-order" data-id="{{$order->id}}" data-name="{{$order->name}}" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>
 							<button class="btn btn-danger delete-order" data-id="{{$order->id}}" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>

@@ -4,11 +4,11 @@ namespace App;
 
 use Illuminate\Database\Eloquent\Model;
 
-class ItemImport extends Model
+class StockImport extends Model
 {
     protected $fillable = [
         'vessel_id', 'category_id', 'uploaded_by', 'filename', 'status',
-        'row_count', 'imported_count', 'failed_count', 'error_log',
+        'row_count', 'updated_count', 'skipped_count', 'failed_count', 'error_log',
     ];
 
     public function vessel()

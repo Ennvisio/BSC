@@ -17,11 +17,123 @@
 		padding: 0;
 	}
 </style>
+{{-- Only present when HomeController@index built the dashboard for
+	 chief-officer/second-engineer - Pending/Approved/Received Requisition
+	 reuse this same view for every ship role without passing $stats, so
+	 they render exactly as before. --}}
+@isset($stats)
+<div class="row mb-3">
+	<div class="col-6 col-md-4 mb-3">
+		<a href="{{url('/home')}}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-amber"><i class="fas fa-file-alt"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">My Draft Requisitions</div>
+					<div class="srd-stat-value">{{ $stats['draft'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	<div class="col-6 col-md-4 mb-3">
+		<a href="{{url('/pending/requisition')}}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-blue"><i class="fas fa-hourglass-half"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">In Progress</div>
+					<div class="srd-stat-value">{{ $stats['in_progress'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	<div class="col-6 col-md-4 mb-3">
+		<a href="{{url('/approved/requisition')}}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-green"><i class="fas fa-truck"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Delivered - Awaiting Receipt</div>
+					<div class="srd-stat-value">{{ $stats['delivered'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	<div class="col-6 col-md-4 mb-3">
+		<a href="{{url('/received/requisition')}}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-slate"><i class="fas fa-inbox"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Received</div>
+					<div class="srd-stat-value">{{ $stats['received'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	<div class="col-6 col-md-4 mb-3">
+		<a href="{{url('/catalog/browse')}}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-indigo"><i class="fas fa-cubes"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Catalog Items</div>
+					<div class="srd-stat-value">{{ $stats['items'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	<div class="col-6 col-md-4 mb-3">
+		<a href="{{url('/catalog/browse')}}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-pink"><i class="fas fa-exclamation-triangle"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Low Stock Items</div>
+					<div class="srd-stat-value">{{ $stats['low_stock'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+</div>
+@endisset
+
+@if(isset($drafts) && $drafts->count() > 0)
+<div class="col-lg-6 col-xl-12">
+	<div class="card">
+		<div class="card-header pv-card-hader">
+			<strong class="pptitle">My Draft Requisitions</strong>
+		</div>
+		<div class="card-body">
+			<table class="table table-bordered">
+				<thead>
+					<tr>
+						<th>Title</th>
+						<th>Port</th>
+						<th>Started</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					@foreach($drafts as $draft)
+					<tr>
+						<td>{{ $draft->title }}</td>
+						<td>{{ $draft->port_name }}</td>
+						<td>{{ $draft->created_at->format('Y-m-d H:i') }}</td>
+						<td>
+							@if(empty($draft->category_id))
+							<a href="{{ route('requisition.step2', $draft) }}" class="btn btn-sm btn-info">Continue - Add Items</a>
+							@else
+							<a href="{{ route('requisition.step3', $draft) }}" class="btn btn-sm btn-info">Continue - Review &amp; Submit</a>
+							@endif
+						</td>
+					</tr>
+					@endforeach
+				</tbody>
+			</table>
+		</div>
+	</div>
+</div>
+@endif
 <div class="col-lg-6 col-xl-12">
 	<div class="card">
 		<div class="card-header pv-card-hader">
 			<strong class="pptitle">
-				Requisition List of 
+				Requisition List of
 				<span style="color:red;display: inline-block;padding-left: 5px;">
 					{{auth()->user()->role->vessel->name}}
 				</span>
@@ -48,10 +160,10 @@
 					<th>Vessel Name</th>
 					<th>Req. Date</th>
 					<th>Port</th>
+					<th>Stage</th>
 					<th>status</th>
 					<th>status from ssm</th>
 					<th>Created By</th>
-					<th>Updated By</th>
 					<!-- <th class="action">Action</th> -->
 				</thead>
 				<tbody>
@@ -68,10 +180,10 @@
 						<td>{{!empty($order->vessel->name)?$order->vessel->name:''}}</td>
 						<td>{{!empty($order->req_date)?$order->req_date:''}}</td>
 						<td>{{!empty($order->port_name)?$order->port_name:''}}</td>
+						<td><span class="badge badge-info">{{ $order->currentStageLabel() }}</span></td>
 						<td>{{!empty($order->status)?$order->status:''}}</td>
 						<td>{{!empty($order->status_from_am)?$order->status_from_am:''}}</td>
-						<td>{{!empty($order->created_by)?$order->created_by:''}}</td>
-						<td>{{!empty($order->updated_by)?$order->updated_by:''}}</td>
+						<td>{{ $order->creator->name ?? '' }}</td>
 					</tr>
 					@endforeach
 					@endif
