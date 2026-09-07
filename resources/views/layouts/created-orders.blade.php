@@ -32,7 +32,7 @@ position: absolute;
 			<div class="right-buttons">	
 				@if(auth()->user()->role->role=='second-engineer' || auth()->user()->role->role=='chief-officer')	
 				
-				<a href="{{url('/create/order')}}" class="btn btn-primary">
+				<a href="{{url('/create/order')}}" class="btn btn-success">
 					<i class="fas fa-plus-square"></i> Add New Requisition
 				</a>
 
@@ -55,8 +55,6 @@ position: absolute;
 					<th>Req. Date</th>
 					<th>Port</th>
 					<th>Stage</th>
-					<th>status</th>
-					<th>status from ssm</th>
 					<th>Created By</th>
 					<!-- <th class="action">Action</th> -->
 				</thead>
@@ -75,8 +73,6 @@ position: absolute;
 						<td>{{!empty($order->req_date)?$order->req_date:''}}</td>
 						<td>{{!empty($order->port_name)?$order->port_name:''}}</td>
 						<td><span class="badge badge-info">{{ $order->currentStageLabel() }}</span></td>
-						<td>{{!empty($order->status)?$order->status:''}}</td>
-						<td>{{!empty($order->status_from_am)?$order->status_from_am:''}}</td>
 						<td>{{ $order->creator->name ?? '' }}</td>
 						<!-- <td class="action">
 							<button class="btn btn-info edit-order" data-id="{{$order->id}}" data-name="{{$order->name}}" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>

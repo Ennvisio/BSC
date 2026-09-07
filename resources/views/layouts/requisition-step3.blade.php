@@ -66,7 +66,7 @@
 						</tbody>
 					</table>
 
-					<form method="POST" action="{{ route('requisition.submit', $order) }}">
+					<form method="POST" action="{{ route('requisition.submit', $order) }}" id="requisition-submit-form">
 						@csrf
 						<div class="form-group row">
 							<div class="col-md-12 text-right">
@@ -80,4 +80,46 @@
 		</div>
 	</div>
 </div>
+@endsection
+
+@section('home-js')
+<script>
+$(function () {
+	// Submitting is the point of no return - the requisition leaves the vessel
+	// and enters the approval chain, and the wizard can't be reopened
+	// afterwards. Confirm first, then let the form through.
+	var confirmed = false;
+
+	$('#requisition-submit-form').on('submit', function (e) {
+		if (confirmed) {
+			return true;
+		}
+
+		e.preventDefault();
+		var form = this;
+
+		swal({
+			title: 'Submit this requisition?',
+			text: 'It will be sent for approval and can no longer be edited.',
+			type: 'warning',
+			showCancelButton: true,
+			confirmButtonColor: '#28a745',
+			cancelButtonColor: '#6c757d',
+			confirmButtonText: 'Yes, submit it',
+			cancelButtonText: 'No, keep editing',
+		}).then(function (result) {
+			// SweetAlert2 resolves on dismiss as well as on confirm, so check
+			// which it was - otherwise cancelling would submit anyway.
+			var accepted = result === true || (result && result.value);
+
+			if (accepted) {
+				confirmed = true;
+				form.submit();
+			}
+		});
+
+		return false;
+	});
+});
+</script>
 @endsection

@@ -27,10 +27,15 @@
 						<div class="form-group row align-items-end">
 							<div class="col-md-5">
 								<label for="category"> Category: </label>
+								{{-- Pre-select the category already saved on this draft. Without
+									 it, returning to step 2 reset the dropdown to blank and the
+									 required rule then blocked Save & Next ("Please select an item
+									 in the list") even when nothing had been changed. --}}
+								@php $selectedCategory = old('Category_Name', $order->category_id); @endphp
 								<select class="form-control Category_Name" id="cate_name" name="Category_Name" required>
-									<option value="" selected class='cat_opt'>-- Choose Category --</option>
+									<option value="" {{ $selectedCategory ? '' : 'selected' }} class='cat_opt'>-- Choose Category --</option>
 									@foreach($categories as $category)
-									<option value="{{$category->id}}" class='cat_opt' data-catalog="{{$category->is_catalog ? 1 : 0}}">{{$category->name}}</option>
+									<option value="{{$category->id}}" class='cat_opt' data-catalog="{{$category->is_catalog ? 1 : 0}}" {{ (string) $selectedCategory === (string) $category->id ? 'selected' : '' }}>{{$category->name}}</option>
 									@endforeach
 								</select>
 							</div>
@@ -84,13 +89,44 @@
 												<th class="action">Action</th>
 											</tr>
 										</thead>
-										<tbody></tbody>
+										<tbody>
+											{{-- Lines already saved on this draft. Rendered server-side so
+												 DataTables picks them up on init, and carrying the same row
+												 id and hidden-input shape the picker's JS produces, so
+												 removing or re-adding afterwards behaves identically whether
+												 a row came from here or from the modal. --}}
+											@foreach($order->orderItems as $orderItem)
+											{{-- data-saved marks a line that already exists on the draft, so
+												 the delete icon knows to remove it server-side rather than
+												 only from the page. --}}
+											<tr id="row_ordered_item-{{ $orderItem->item_id }}" data-saved="1" data-item-id="{{ $orderItem->item_id }}">
+												<td><b class="serial">{{ $loop->iteration }}</b></td>
+												<td>{{ $orderItem->item->name ?? '' }}<input type="hidden" name="item_id[]" value="{{ $orderItem->item_id }}"></td>
+												<td>{{ $orderItem->item->article_number ?? '' }}</td>
+												<td>{{ $orderItem->item->unit ?? '' }}</td>
+												<td>{{ $orderItem->opening_stock ?? '' }}</td>
+												<td>{{ $orderItem->last_supply_qty ?? '' }}</td>
+												<td>{{ $orderItem->last_supply_date ? \Carbon\Carbon::parse($orderItem->last_supply_date)->format('d M Y') : '' }}</td>
+												<td>{{ $liveStock[$orderItem->item_id]['stock_qty'] ?? '' }}</td>
+												{{-- Editable, so a quantity can be corrected without deleting the
+													 line and adding it back. One visible input replaces the old
+													 span + hidden pair: it still submits as item_qty[] in row
+													 order alongside item_id[]. --}}
+												<td><input type="number" min="1" class="form-control form-control-sm required-qty" name="item_qty[]" style="width:80px;" value="{{ $orderItem->item_qty }}" data-original="{{ $orderItem->item_qty }}" required></td>
+												<td></td>
+												<td><button type="button" class="btn btn-danger btn-sm delete-order-item-row"><i class="fas fa-trash-alt"></i></button></td>
+											</tr>
+											@endforeach
+										</tbody>
 									</table>
 								</div>
 							</div>
 							<div class="form-group row">
 								<div class="col-md-12 text-right">
-									<button type="submit" class="btn btn-success">Save &amp; Next: Review</button>
+									{{-- Back to step 1 for THIS draft, not to a blank new-requisition
+										 form - that would strand this draft and its items. --}}
+									<a href="{{ route('requisition.step1.edit', $order) }}" class="btn btn-srd-outline"><i class="fas fa-arrow-left"></i> Back</a>
+									<button type="submit" class="btn btn-success">Save &amp; Next: Review <i class="fas fa-arrow-right"></i></button>
 								</div>
 							</div>
 						</div>
@@ -172,12 +208,23 @@ $(function () {
 		dom: 'frt',
 	});
 
-	// This page always starts a fresh item table - real persistence now
-	// happens server-side per draft (Save & Next), so the old single-page
-	// localStorage row cache would otherwise leak a previous draft's items
-	// into a brand new one.
+	// Persistence for this page is server-side per draft (Save & Next), so the
+	// draft's own saved lines - rendered into the table above - are the only
+	// rows that belong here.
+	//
+	// dataForm.js runs first and appends anything still sitting in the old
+	// single-page localStorage row cache straight into this table, which would
+	// either leak another draft's items in or duplicate the ones just
+	// rendered. Drop the cache, then drop any row it managed to add: the
+	// server's list is authoritative.
+	var savedRowIds = {!! json_encode($order->orderItems->pluck('item_id')->map(fn ($id) => 'row_ordered_item-'.$id)->all()) !!};
+
 	localStorage.removeItem('orderItemRows');
 	localStorage.removeItem('orderInfo');
+
+	pageOrderTable.rows(function (idx, data, node) {
+		return savedRowIds.indexOf(node.id) === -1;
+	}).remove().draw();
 
 	function esc(value) {
 		return $('<div>').text(value === null || value === undefined ? '' : value).html();
@@ -438,7 +485,7 @@ $(function () {
 				esc(item.article_number),
 				esc(item.unit),
 				'', '', '', '',
-				'<span class="added_qty">' + item.qty + '</span><input type="hidden" name="item_qty[]" value="' + item.qty + '">',
+				'<input type="number" min="1" class="form-control form-control-sm required-qty" name="item_qty[]" style="width:80px;" value="' + item.qty + '" data-original="' + item.qty + '" required>',
 				'',
 				'<button type="button" class="btn btn-danger btn-sm delete-order-item-row"><i class="fas fa-trash-alt"></i></button>',
 			]).draw().node().id = 'row_ordered_item-' + item.id;
@@ -447,14 +494,80 @@ $(function () {
 		$('#item-picker-modal').modal('hide');
 	});
 
+	// Required quantity is editable in place. Rows already on the draft save
+	// the change straight away so it survives a reload; rows staged in this
+	// session just carry their value through to Save & Next.
+	$(document).on('change blur', '.required-qty', function () {
+		var input = $(this);
+		var row = input.closest('tr');
+		var value = input.val();
+
+		if (!row.data('saved') || value === '' || value === String(input.data('original'))) {
+			return;
+		}
+
+		if (parseInt(value, 10) < 1) {
+			input.val(input.data('original'));
+			return;
+		}
+
+		$.ajax({
+			url: '{{ url("/requisition/".$order->id."/items") }}/' + row.data('item-id') + '/qty',
+			method: 'POST',
+			data: { _token: $('meta[name="csrf-token"]').attr('content'), item_qty: value }
+		}).done(function (response) {
+			input.data('original', String(response.item_qty));
+			input.removeClass('is-invalid').addClass('is-valid');
+		}).fail(function (xhr) {
+			// Put the old figure back rather than leave the page showing a
+			// quantity the requisition doesn't actually carry.
+			input.val(input.data('original'));
+			input.removeClass('is-valid').addClass('is-invalid');
+			var msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Could not update that quantity.';
+			if (typeof swal === 'function') { swal('Not saved', msg, 'error'); } else { alert(msg); }
+		});
+	});
+
 	$(document).on('click', '.delete-order-item-row', function () {
-		pageOrderTable.row($(this).closest('tr')).remove().draw();
+		var row = $(this).closest('tr');
+
+		// Rows added in this session aren't on the draft yet, so there's
+		// nothing to delete server-side - just drop them from the table.
+		if (!row.data('saved')) {
+			pageOrderTable.row(row).remove().draw();
+			return;
+		}
+
+		// Lines already saved on the draft are removed for real, otherwise the
+		// row reappears on the next page load and the delete looks like it
+		// silently failed.
+		var button = $(this).prop('disabled', true);
+
+		$.ajax({
+			url: '{{ url("/requisition/".$order->id."/items") }}/' + row.data('item-id') + '/remove',
+			method: 'POST',
+			data: { _token: $('meta[name="csrf-token"]').attr('content') }
+		}).done(function () {
+			pageOrderTable.row(row).remove().draw();
+		}).fail(function (xhr) {
+			button.prop('disabled', false);
+			var msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Could not remove that item.';
+			if (typeof swal === 'function') { swal('Not removed', msg, 'error'); } else { alert(msg); }
+		});
 	});
 
 	/* ---------- Category select: toggle catalog-modal vs legacy dropdown ---------- */
 
 	$('select#cate_name').on('change', function () {
-		var isCatalog = $(this).children('option:selected').data('catalog') == 1;
+		var selected = $(this).children('option:selected');
+		var isCatalog = selected.data('catalog') == 1;
+
+		// Nothing chosen yet - neither Add control makes sense.
+		if (!$(this).val()) {
+			$('#catalog-add-wrapper').hide();
+			$('#legacy-add-wrapper').hide();
+			return;
+		}
 
 		if (isCatalog) {
 			$('#catalog-add-wrapper').show();
@@ -464,6 +577,12 @@ $(function () {
 			$('#legacy-add-wrapper').show();
 		}
 	});
+
+	// Returning to step 2 arrives with the draft's category already selected,
+	// and a pre-selected <select> fires no change event - without this the
+	// right "Add Item" control would stay hidden and no more items could be
+	// added to an existing requisition.
+	$('select#cate_name').trigger('change');
 });
 </script>
 @endsection

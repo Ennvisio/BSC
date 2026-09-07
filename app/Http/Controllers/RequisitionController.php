@@ -20,14 +20,23 @@ use Illuminate\Http\Request;
  */
 class RequisitionController extends Controller
 {
-    public function createStep1()
+    /**
+     * Step 1 doubles as the edit form for a draft that already exists, so
+     * Back from step 2 returns here with the details filled in rather than
+     * to a blank form that would strand the draft and its items.
+     */
+    public function createStep1(?Order $order = null)
     {
+        if ($order) {
+            $this->authorizeDraft($order);
+        }
+
         $budgetGroups = BudgetGroup::where('status', true)->orderBy('name')->get();
 
-        return view('layouts.requisition-step1', compact('budgetGroups'));
+        return view('layouts.requisition-step1', compact('budgetGroups', 'order'));
     }
 
-    public function storeStep1(Request $request)
+    public function storeStep1(Request $request, ?Order $order = null)
     {
         $request->validate([
             'title' => 'required|string|max:255',
@@ -36,11 +45,21 @@ class RequisitionController extends Controller
             'port_name' => 'required|string',
         ]);
 
-        $order = new Order;
-        $order->vessel_id = auth()->user()->role->vessel_id;
-        $order->req_date = Carbon::now();
-        $order->status = 'draft';
-        $order->ord_status = false;
+        // Coming back to step 1 for a draft that already exists updates it -
+        // creating a second Order here would orphan the first along with every
+        // item already added to it.
+        if ($order) {
+            $this->authorizeDraft($order);
+        } else {
+            $order = new Order;
+            $order->vessel_id = auth()->user()->role->vessel_id;
+            $order->req_date = Carbon::now();
+            $order->status = 'draft';
+            $order->ord_status = false;
+            $order->created_by = auth()->user()->id;
+            $order->created_by_role = auth()->user()->role->role;
+        }
+
         $order->title = $request->title;
         $order->budget_group_id = $request->budget_group_id;
         $order->department = $request->department;
@@ -49,8 +68,6 @@ class RequisitionController extends Controller
         $order->etd = $request->etd ?: null;
         $order->remarks = $request->remarks;
         $order->high_priority = $request->boolean('high_priority');
-        $order->created_by = auth()->user()->id;
-        $order->created_by_role = auth()->user()->role->role;
         $order->save();
 
         return redirect()->route('requisition.step2', $order);
@@ -69,7 +86,16 @@ class RequisitionController extends Controller
             ->orderBy('name')
             ->get();
 
-        return view('layouts.requisition-step2', compact('order', 'categories'));
+        // Lines already saved against this draft, so coming BACK from the
+        // review step shows what's on the requisition instead of an empty
+        // table. Without this the page looked like the items had been lost,
+        // and re-saving from here would have written a second copy of them.
+        $order->load('orderItems.item');
+
+        $liveStock = app(StockService::class)
+            ->snapshotFor($order->vessel_id, $order->orderItems->pluck('item_id')->all());
+
+        return view('layouts.requisition-step2', compact('order', 'categories', 'liveStock'));
     }
 
     public function storeStep2(Request $request, Order $order)
@@ -98,6 +124,12 @@ class RequisitionController extends Controller
         // by side, and sourcing both from stock_qty made them the same number.
         $snapshot = app(StockService::class)->snapshotFor($order->vessel_id, $request->item_id);
 
+        // The submitted list is the WHOLE line-item set for this draft, not an
+        // addition to it: step 2 can be revisited (via Back from review, or by
+        // resuming the draft later), and appending would leave a second copy
+        // of every line each time through.
+        OrderItem::where('order_id', $order->id)->delete();
+
         foreach ($request->item_id as $index => $itemId) {
             $orderItem = new OrderItem;
             $orderItem->order_id = $order->id;
@@ -110,6 +142,42 @@ class RequisitionController extends Controller
         }
 
         return redirect()->route('requisition.step3', $order);
+    }
+
+    /**
+     * AJAX: drop one line from the draft straight away.
+     *
+     * The delete icon used to only remove the row from the page, leaving the
+     * line on the draft until Save & Next - so reloading brought it back,
+     * which reads as the delete having silently failed.
+     */
+    public function destroyStep2Item(Order $order, $itemId)
+    {
+        $this->authorizeDraft($order);
+
+        OrderItem::where('order_id', $order->id)->where('item_id', $itemId)->delete();
+
+        return response()->json(['message' => 'Item removed from this requisition.']);
+    }
+
+    /**
+     * AJAX: change one line's required quantity on the spot.
+     *
+     * Save & Next rewrites the whole line set anyway, so this isn't the only
+     * way the figure gets stored - it's here so an edit doesn't quietly revert
+     * on the next page load, the same way a delete used to.
+     */
+    public function updateStep2ItemQty(Request $request, Order $order, $itemId)
+    {
+        $this->authorizeDraft($order);
+
+        $request->validate(['item_qty' => 'required|integer|min:1']);
+
+        OrderItem::where('order_id', $order->id)
+            ->where('item_id', $itemId)
+            ->update(['item_qty' => (int) $request->item_qty]);
+
+        return response()->json(['item_qty' => (int) $request->item_qty]);
     }
 
     public function step3(Order $order)

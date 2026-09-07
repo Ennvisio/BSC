@@ -57,8 +57,14 @@ Route::group(['middleware' => 'member'],function(){
 
 	Route::get('/requisition/create', 'RequisitionController@createStep1')->name('requisition.step1');
 	Route::post('/requisition/create', 'RequisitionController@storeStep1')->name('requisition.step1.store');
+	// Same two actions, but for a draft that already exists - what Back from
+	// step 2 returns to, so the details can be corrected without starting over.
+	Route::get('/requisition/{order}/edit', 'RequisitionController@createStep1')->name('requisition.step1.edit');
+	Route::post('/requisition/{order}/edit', 'RequisitionController@storeStep1')->name('requisition.step1.update');
 	Route::get('/requisition/{order}/items', 'RequisitionController@step2')->name('requisition.step2');
 	Route::post('/requisition/{order}/items', 'RequisitionController@storeStep2')->name('requisition.step2.store');
+	Route::post('/requisition/{order}/items/{item}/remove', 'RequisitionController@destroyStep2Item')->name('requisition.step2.item.remove');
+	Route::post('/requisition/{order}/items/{item}/qty', 'RequisitionController@updateStep2ItemQty')->name('requisition.step2.item.qty');
 	Route::get('/requisition/{order}/review', 'RequisitionController@step3')->name('requisition.step3');
 	Route::post('/requisition/{order}/submit', 'RequisitionController@submit')->name('requisition.submit');
 });
@@ -108,6 +114,7 @@ Route::get('/order/detail/{order_id}', 'HomeController@viewOrderDetail')->name('
   Route::post('/change/file','HomeController@changeFile');
   Route::get('/delivered/requisition','HomeController@deliverReqForAll');
   Route::get('/received/requisition','HomeController@rcvReqForAll');
+  
   Route::post('/order/status/update','HomeController@updateStatusByAM');
   
   Route::post('/restore','HomeController@restore');

@@ -140,7 +140,7 @@
 			</strong>
 			<div class="right-buttons">	
 				@if(auth()->user()->role->role=='operator')	
-				<a href="{{url('/create/order')}}" class="btn btn-primary">
+				<a href="{{url('/create/order')}}" class="btn btn-success">
 					<i class="fas fa-plus-square"></i> Add New Requisition
 				</a>
 				@endif
@@ -161,8 +161,6 @@
 					<th>Req. Date</th>
 					<th>Port</th>
 					<th>Stage</th>
-					<th>status</th>
-					<th>status from ssm</th>
 					<th>Created By</th>
 					<!-- <th class="action">Action</th> -->
 				</thead>
@@ -181,8 +179,6 @@
 						<td>{{!empty($order->req_date)?$order->req_date:''}}</td>
 						<td>{{!empty($order->port_name)?$order->port_name:''}}</td>
 						<td><span class="badge badge-info">{{ $order->currentStageLabel() }}</span></td>
-						<td>{{!empty($order->status)?$order->status:''}}</td>
-						<td>{{!empty($order->status_from_am)?$order->status_from_am:''}}</td>
 						<td>{{ $order->creator->name ?? '' }}</td>
 					</tr>
 					@endforeach

@@ -4,8 +4,15 @@
 	<div class="row">
 		<div class="col-xl-12">
 			<div class="card order-card">
+				@php
+					// $order is set only when an existing draft is being edited
+					// (Back from step 2). Every field below falls back through
+					// old() -> the draft -> empty, so a validation bounce keeps
+					// what was typed and a revisit keeps what was saved.
+					$order = $order ?? null;
+				@endphp
 				<div class="card-header first">
-					<strong class="pptitle">New requisition for &nbsp;
+					<strong class="pptitle">{{ $order ? 'Edit requisition for' : 'New requisition for' }} &nbsp;
 						<span style="color:red;">{{auth()->user()->role->vessel->name}}</span>
 					</strong>
 					<div class="right-button">Step 1 of 3 — Details</div>
@@ -21,29 +28,30 @@
 					</div>
 					@endif
 
-					<form method="POST" action="{{ route('requisition.step1.store') }}">
+					<form method="POST" action="{{ $order ? route('requisition.step1.update', $order) : route('requisition.step1.store') }}">
 						@csrf
 
 						<div class="form-group row">
 							<div class="col-md-11">
 								<label for="title">Requisition title <span class="text-danger">*</span></label>
-								<input type="text" class="form-control" name="title" id="title" value="{{ old('title') }}" required>
+								<input type="text" class="form-control" name="title" id="title" value="{{ old('title', $order->title ?? '') }}" required>
 							</div>
 						</div>
 
 						<div class="form-group row justify-content-between">
 							<div class="col-md-5">
 								<label>Budget group <span class="text-danger">*</span></label>
-								<input type="text" class="form-control" id="budget-group-search" placeholder="Start typing to get suggestions" autocomplete="off">
-								<input type="hidden" name="budget_group_id" id="budget_group_id" value="{{ old('budget_group_id') }}">
+								<input type="text" class="form-control" id="budget-group-search" placeholder="Start typing to get suggestions" autocomplete="off" value="{{ $order->budgetGroup->name ?? '' }}">
+								<input type="hidden" name="budget_group_id" id="budget_group_id" value="{{ old('budget_group_id', $order->budget_group_id ?? '') }}">
 								<div id="budget-group-results" class="list-group" style="max-height:220px; overflow-y:auto; position:relative; z-index:5;"></div>
 							</div>
 							<div class="col-md-5">
 								<label for="department">Department <span class="text-danger">*</span></label>
+								@php $department = old('department', $order->department ?? ''); @endphp
 								<select class="form-control" name="department" id="department" required>
 									<option value="">Choose…</option>
-									<option value="Deck">Deck</option>
-									<option value="Engine">Engine</option>
+									<option value="Deck" {{ $department === 'Deck' ? 'selected' : '' }}>Deck</option>
+									<option value="Engine" {{ $department === 'Engine' ? 'selected' : '' }}>Engine</option>
 								</select>
 							</div>
 						</div>
@@ -51,7 +59,7 @@
 						<div class="form-group row justify-content-between">
 							<div class="col-md-5">
 								<label for="Port_Name">Port <span class="text-danger">*</span></label>
-								<input type="text" class="form-control" name="port_name" id="Port_Name" value="{{ old('port_name') }}" placeholder="Click to choose a port" readonly required style="background:#fff;cursor:pointer;" data-toggle="modal" data-target="#port-picker-modal">
+								<input type="text" class="form-control" name="port_name" id="Port_Name" value="{{ old('port_name', $order->port_name ?? '') }}" placeholder="Click to choose a port" readonly required style="background:#fff;cursor:pointer;" data-toggle="modal" data-target="#port-picker-modal">
 							</div>
 						</div>
 
@@ -73,25 +81,25 @@
 						<div class="form-group row justify-content-between">
 							<div class="col-md-5">
 								<label for="eta">ETA</label>
-								<input type="text" class="form-control date" name="eta" id="eta" value="{{ old('eta') }}" autocomplete="off">
+								<input type="text" class="form-control date" name="eta" id="eta" value="{{ old('eta', $order->eta ?? '') }}" autocomplete="off">
 							</div>
 							<div class="col-md-5">
 								<label for="etd">ETD</label>
-								<input type="text" class="form-control date" name="etd" id="etd" value="{{ old('etd') }}" autocomplete="off">
+								<input type="text" class="form-control date" name="etd" id="etd" value="{{ old('etd', $order->etd ?? '') }}" autocomplete="off">
 							</div>
 						</div>
 
 						<div class="form-group row">
 							<div class="col-md-11">
 								<label for="remarks">Remarks</label>
-								<textarea class="form-control" name="remarks" id="remarks" rows="4">{{ old('remarks') }}</textarea>
+								<textarea class="form-control" name="remarks" id="remarks" rows="4">{{ old('remarks', $order->remarks ?? '') }}</textarea>
 							</div>
 						</div>
 
 						<div class="form-group row">
 							<div class="col-md-11">
 								<div class="form-check">
-									<input type="checkbox" class="form-check-input" name="high_priority" id="high_priority" value="1" {{ old('high_priority') ? 'checked' : '' }}>
+									<input type="checkbox" class="form-check-input" name="high_priority" id="high_priority" value="1" {{ old('high_priority', $order->high_priority ?? false) ? 'checked' : '' }}>
 									<label class="form-check-label" for="high_priority">High priority</label>
 								</div>
 							</div>
@@ -99,7 +107,7 @@
 
 						<div class="form-group row">
 							<div class="col-md-11 text-right">
-								<button type="submit" class="btn btn-success">Save &amp; Next: Add Items</button>
+								<button type="submit" class="btn btn-success">Save &amp; Next: Add Items <i class="fas fa-arrow-right"></i></button>
 							</div>
 						</div>
 					</form>
