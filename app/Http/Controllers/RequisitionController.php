@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Attachment;
 use App\BudgetGroup;
 use App\Category;
 use App\Order;
@@ -40,6 +41,7 @@ class RequisitionController extends Controller
     {
         $request->validate([
             'title' => 'required|string|max:255',
+            'reason' => 'required|string',
             'budget_group_id' => 'required|exists:budget_groups,id',
             'department' => 'required|in:Deck,Engine',
             'port_name' => 'required|string',
@@ -61,12 +63,12 @@ class RequisitionController extends Controller
         }
 
         $order->title = $request->title;
+        $order->reason = $request->reason;
         $order->budget_group_id = $request->budget_group_id;
         $order->department = $request->department;
         $order->port_name = $request->port_name;
         $order->eta = $request->eta ?: null;
         $order->etd = $request->etd ?: null;
-        $order->remarks = $request->remarks;
         $order->high_priority = $request->boolean('high_priority');
         $order->save();
 
@@ -90,7 +92,7 @@ class RequisitionController extends Controller
         // review step shows what's on the requisition instead of an empty
         // table. Without this the page looked like the items had been lost,
         // and re-saving from here would have written a second copy of them.
-        $order->load('orderItems.item');
+        $order->load('orderItems.item', 'orderItems.attachments.uploader');
 
         $liveStock = app(StockService::class)
             ->snapshotFor($order->vessel_id, $order->orderItems->pluck('item_id')->all());
@@ -130,6 +132,15 @@ class RequisitionController extends Controller
         // of every line each time through.
         OrderItem::where('order_id', $order->id)->delete();
 
+        // Every attachment currently shown for an item - saved or only just
+        // staged - rides along as a hidden attachment_ids[itemId][] input
+        // (see requisition-step2.blade.php). Restricted to the caller's own
+        // files: a legitimately-preserved id always passes this since it was
+        // only ever addable by this same officer, and this is what stops
+        // someone linking another user's upload by editing form fields.
+        $ownedAttachmentIds = Attachment::where('uploaded_by', auth()->id())->pluck('id')->all();
+        $attachmentIdsByItem = (array) $request->input('attachment_ids', []);
+
         foreach ($request->item_id as $index => $itemId) {
             $orderItem = new OrderItem;
             $orderItem->order_id = $order->id;
@@ -139,6 +150,9 @@ class RequisitionController extends Controller
             $orderItem->last_supply_qty = $snapshot[$itemId]['last_supply_qty'] ?? null;
             $orderItem->last_supply_date = $snapshot[$itemId]['last_supply_date'] ?? null;
             $orderItem->save();
+
+            $requestedIds = array_map('intval', $attachmentIdsByItem[$itemId] ?? []);
+            $orderItem->attachments()->sync(array_intersect($requestedIds, $ownedAttachmentIds));
         }
 
         return redirect()->route('requisition.step3', $order);
@@ -184,9 +198,16 @@ class RequisitionController extends Controller
     {
         $this->authorizeDraft($order);
 
-        $order->load(['orderItems.item', 'category', 'budgetGroup', 'vessel']);
+        // Same table as step 2, minus the inputs - by now storeStep2() has
+        // already persisted everything (items and their attachments alike),
+        // so this is a plain read of what's actually saved, not a mix of
+        // saved-vs-staged state the way step 2 has to handle.
+        $order->load(['orderItems.item', 'orderItems.attachments.uploader', 'category', 'budgetGroup', 'vessel']);
 
-        return view('layouts.requisition-step3', compact('order'));
+        $liveStock = app(StockService::class)
+            ->snapshotFor($order->vessel_id, $order->orderItems->pluck('item_id')->all());
+
+        return view('layouts.requisition-step3', compact('order', 'liveStock'));
     }
 
     public function submit(Order $order)
@@ -226,7 +247,7 @@ class RequisitionController extends Controller
         $order->save();
         $orderApproval->save();
 
-        return redirect('/home/order')->with('message', 'Requisition '.$order->req_no.' submitted successfully!');
+        return redirect('/pending/requisition')->with('message', 'Requisition '.$order->req_no.' submitted successfully!');
     }
 
     /**

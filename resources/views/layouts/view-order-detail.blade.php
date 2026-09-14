@@ -76,6 +76,17 @@
 						// one here - previously every role saw Approve on every
 						// order forever, including ones they'd already signed off.
 						$canAct = $order->hasPendingActionFor($currentRole, auth()->id());
+						// Once GM has delegated AND that reviewer has actually sent
+						// it back, there's nothing left to delegate - GM just
+						// approves it. Before that (no delegation yet, or one still
+						// out for review) the delegate option stays available
+						// alongside Approve, since GM can still choose either.
+						$srdDelegateReviewed = $currentRole == 'gm-srd' && (
+							!empty($order->orderApproval->dgm_srd_app)
+							|| !empty($order->orderApproval->agm_app)
+							|| !empty($order->orderApproval->ast_m_app)
+							|| !empty($order->orderApproval->superintendent_srd_app)
+						);
 					@endphp
 					<div class="right-button">
 						@if($canAct && $currentRole != 'operator' && $currentRole != 'am-ssm' && $currentRole != 'dgm-ssm')
@@ -101,12 +112,21 @@
 						<button type="button" class="btn btn-primary" id="assign_ssm" data-id="{{$order->id}}"><i class="fas fa-user-plus"></i> Assign</button>
 						@endif
 
-						@if($canAct && $currentRole == 'gm-srd')
+						{{-- GM (SRD) delegates to one named reviewer - DGM/AGM/AM/
+						     Superintendent (SRD) can each be more than one real
+						     person, so picking the role alone isn't enough. Hidden
+						     once a delegate has already reviewed and sent it back -
+						     at that point GM just approves, above. --}}
+						@if($canAct && $currentRole == 'gm-srd' && !$srdDelegateReviewed)
 						<select class="form-control" id="srd_delegate_target">
-							<option value="agm-srd">Delegate to AGM (SRD)</option>
-							<option value="am-srd">Delegate to AM (SRD)</option>
-							<option value="dgm-srd">Delegate to DGM (SRD)</option>
-							<option value="superintendent-srd">Delegate to Superintendent (SRD)</option>
+							<option value="">Delegate to…</option>
+							@foreach($srdOfficers ?? [] as $roleName => $officers)
+							<optgroup label="{{ strtoupper(str_replace('-', ' ', $roleName)) }}">
+								@foreach($officers as $officer)
+								<option value="{{ $officer->user->id }}">{{ $officer->user->name }}</option>
+								@endforeach
+							</optgroup>
+							@endforeach
 						</select>
 						<button type="button" class="btn btn-info" id="forward_toagm" data-id="{{$order->id}}"><i class="fas fa-angle-double-right"></i> Forward</button>
 						@endif
@@ -118,7 +138,13 @@
 					<form class="form mb-3" id="deliveredQtyForm">
 						@csrf
 						@endif
-						<table id="example" class="table table-striped table-bordered orderedItemTable OrderDetailsTable" style="width:100%">
+						{{-- This table now runs Item No./IMPA/Item Name/Unit/Opening Stock/
+							 Last Supply/In Stock/Total Supply/Req Qty/Attachments/Deliverd
+							 Qty/Rcv Qty(/Action) - forcing that to 100% width squeezes every
+							 header and pushes the whole page wider than the viewport. Scroll
+							 horizontally inside this box instead, never the page itself. --}}
+						<div class="table-responsive">
+						<table id="example" class="table table-striped table-bordered orderedItemTable OrderDetailsTable" style="width:auto; min-width:100%;">
 							<div class="row mb-3 justify-content-between" id="order-print-header2">
 								<div class="col">
 									<strong>Vessel:</strong> {{$order->vessel->name}}
@@ -136,14 +162,22 @@
 									<strong>Stage:</strong> <span class="badge badge-info">{{ $order->currentStageLabel() }}</span>
 								</div>
 							</div>
+							{{-- Reason is originally stated by whoever raises the requisition
+								 (the wizard requires it before this page is ever reached, for
+								 a pre-wizard order this manual textarea is where it gets set).
+								 Master/Chief Engineer can refine it at their own review turn
+								 once the officer has actually written one - correcting wording
+								 before it goes ashore, not writing it from scratch. --}}
 							@php
-								$canEditReason = (auth()->user()->role->role == 'master' && empty($order->orderApproval->master_app))
-									|| (auth()->user()->role->role == 'chief-engineer' && empty($order->orderApproval->chief_eng_app));
+								$canEditReason = (auth()->user()->role->role == 'chief-officer' && empty($order->orderApproval->cheif_ofcr_app))
+									|| (auth()->user()->role->role == 'second-engineer' && empty($order->orderApproval->second_eng_app))
+									|| ($canAct && $currentRole == 'chief-engineer' && !empty($order->reason))
+									|| ($canAct && $currentRole == 'master' && $order->status != 'delivered' && !empty($order->reason));
 							@endphp
 							@if($canEditReason)
 							<div class="row mb-3">
 								<div class="col-md-12">
-									<label for="requisition_reason"><strong>Reason of Requisition</strong> (filled by Master/Chief Engineer)</label>
+									<label for="requisition_reason"><strong>Reason of Requisition</strong></label>
 									<textarea class="form-control" id="requisition_reason" rows="3" placeholder="Why is this requisition needed?">{{ $order->reason }}</textarea>
 								</div>
 							</div>
@@ -182,7 +216,18 @@
 								<tr>
 									<td><b class="serial">{{$loop->iteration}}</b></td>
 									<td>{{$orderItem->item->impa_code}}</td>
-									<td class="item-name-td">{{$orderItem->item->name}}</td>
+									<td class="item-name-td">
+										{{$orderItem->item->name}}
+										@if($orderItem->attachments->isNotEmpty())
+										<br>
+										<button type="button" class="btn btn-link p-0 see-attachments-link" data-toggle="modal" data-target="#view-attachments-modal"
+											data-item-name="{{ $orderItem->item->name }}"
+											data-attachments="{{ $orderItem->attachments->map(fn($a) => ['title'=>$a->title,'kind'=>$a->kind,'uploaded_by'=>$a->uploader->name ?? '','uploaded_at'=>optional($a->pivot->created_at)->diffForHumans() ?? $a->created_at->diffForHumans(),'view_url'=>url('/attachments/'.$a->id.'/view')])->toJson() }}"
+											style="font-size:12px;">
+											<i class="fas fa-paperclip"></i> See attachments ({{ $orderItem->attachments->count() }})
+										</button>
+										@endif
+									</td>
 									<td class="item-unit">{{$orderItem->item->unit}}</td>
 									{{-- Opening Stock and Last Supply are the figures captured when this
 										 requisition was raised, so an old form still prints what justified
@@ -201,7 +246,20 @@
 									<td>{{ $liveStock[$orderItem->item_id]['stock_qty'] ?? 0 }}</td>
 									<td>{{ $totalSupplied[$orderItem->item_id] ?? 0 }}</td>
 									<td class='req_qty'>
+										{{-- Master/Chief Engineer can correct the deck/engine officer's
+											 requested quantity at their own review turn, before
+											 forwarding it ashore - excluding Master's receipt-confirmation
+											 turn (status 'delivered'), where the original ask is no longer
+											 what's being acted on. --}}
 										@if(auth()->user()->role->role=='am-srd' && $order->ast_m_app==null)
+										<div class="form-group" style="margin: 0">
+											<input type="number" data-id="{{$orderItem->id}}" class="form-control req-qty" name="req_qty[{{$orderItem->id}}]" value="{{$orderItem->item_qty}}">
+										</div>
+										@elseif($canAct && $currentRole=='chief-engineer')
+										<div class="form-group" style="margin: 0">
+											<input type="number" data-id="{{$orderItem->id}}" class="form-control req-qty" name="req_qty[{{$orderItem->id}}]" value="{{$orderItem->item_qty}}">
+										</div>
+										@elseif($canAct && $currentRole=='master' && $order->status != 'delivered')
 										<div class="form-group" style="margin: 0">
 											<input type="number" data-id="{{$orderItem->id}}" class="form-control req-qty" name="req_qty[{{$orderItem->id}}]" value="{{$orderItem->item_qty}}">
 										</div>
@@ -238,6 +296,7 @@
 								@endif
 							</tbody>
 						</table>
+						</div>
 						@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered')|| (auth()->user()->role->role=='am-srd' && $order->ast_m_app==null))
 						<input type="hidden" class="form-control" value="{{$order->id}}" name="orderId">
 						<button class="btn btn-info float-right mt-2" type="submit"> Save All </button>
@@ -372,6 +431,40 @@
 	</table>
 </div>
 <!-- ./print header -->
+
+<!-- See Attachments modal: view-only list for whoever is reviewing this
+	 requisition. Populated straight from the clicked link's data-attachments
+	 attribute (rendered server-side above) - no round trip needed just to
+	 look at what's already on the page. -->
+<div class="modal fade" id="view-attachments-modal" tabindex="-1" role="dialog">
+	<div class="modal-dialog" role="document" style="max-width:460px;">
+		<div class="modal-content">
+			<div class="modal-header">
+				<div>
+					<div style="font-size:11.5px;color:#6b7a82;font-weight:600;margin-bottom:2px;">Attachments for</div>
+					<h5 class="modal-title" id="view-attachments-item-name">&nbsp;</h5>
+				</div>
+				<button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+			</div>
+			<div class="modal-body" id="view-attachments-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+		</div>
+	</div>
+</div>
+<style>
+	.att-list-row{
+		display:flex; align-items:center; gap:12px; border:1px solid #e3e8e7; border-radius:10px;
+		padding:10px 12px; background:#fff; text-decoration:none; width:100%; text-align:left;
+	}
+	.att-list-row:hover{ border-color:#7fb8c2; background:#f4f6f6; text-decoration:none; }
+	.att-list-thumb{
+		width:38px; height:38px; border-radius:8px; display:flex; align-items:center; justify-content:center;
+		color:#fff; font-size:9px; font-weight:800; flex-shrink:0;
+	}
+	.att-list-row .info{ flex:1; min-width:0; }
+	.att-list-row .t{ font-size:13.5px; font-weight:600; color:#17242b; }
+	.att-list-row .m{ font-size:11.5px; color:#6b7a82; margin-top:1px; }
+	.att-list-row .view{ font-size:12px; font-weight:700; color:#005866; flex-shrink:0; }
+</style>
 @endsection
 
 @section('home-js')
@@ -386,6 +479,30 @@ $(function () {
 		paging: false,
 		searching: false,
 		info: false,
+		// This is a requisition's fixed line items, not a sortable list -
+		// and with as many columns as this table has, a sort-icon glyph in
+		// every header was the other half of why they wrapped so badly.
+		ordering: false,
+	});
+
+	function esc(value) {
+		return $('<div>').text(value === null || value === undefined ? '' : value).html();
+	}
+
+	var thumbColor = { image: '#2f6fed', pdf: '#e5486b', doc: '#5b4fd6' };
+
+	$(document).on('click', '.see-attachments-link', function () {
+		$('#view-attachments-item-name').text($(this).data('item-name'));
+		var attachments = $(this).data('attachments') || [];
+		$('#view-attachments-list').html(attachments.map(function (a) {
+			var label = a.kind === 'image' ? 'IMG' : a.kind.toUpperCase();
+			return '<a class="att-list-row" href="' + a.view_url + '" target="_blank" rel="noopener">'
+				+ '<div class="att-list-thumb" style="background:' + thumbColor[a.kind] + ';">' + label + '</div>'
+				+ '<div class="info"><div class="t">' + esc(a.title) + '</div>'
+				+ '<div class="m">Attached by ' + esc(a.uploaded_by) + ' &middot; ' + esc(a.uploaded_at) + '</div></div>'
+				+ '<span class="view">View</span>'
+				+ '</a>';
+		}).join(''));
 	});
 });
 </script>

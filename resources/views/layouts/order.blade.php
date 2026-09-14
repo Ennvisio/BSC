@@ -32,7 +32,7 @@ position: absolute;
 			</strong>
 			@else
 			<strong class="pptitle">
-				Requisition List 
+				{{ $listTitle ?? 'Requisition List' }}
 			</strong>
 			@endif
 			@if(auth()->user()->role->vessel_id==null)

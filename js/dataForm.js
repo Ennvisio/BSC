@@ -1488,20 +1488,26 @@ $(document).on('submit','#add_order_form',function(event){
 // approve order 
 $(document).on('click', '#approve_order', function(){
   var id = $(this).data('id');
-  // Master/Chief Engineer's "Reason of Requisition" textarea is only
-  // rendered for them, at the origin-review stage - required before their
-  // approval goes through (see RoleController@approveRequisition).
+  // Chief Officer/Second Engineer's "Reason of Requisition" textarea is only
+  // rendered for them, at their own origin-approval stage - required before
+  // it goes through (see RoleController@approveRequisition). Only matters for
+  // a pre-wizard order; the wizard itself already requires this up front.
   var reasonField = $('#requisition_reason');
   var reason = reasonField.length ? reasonField.val().trim() : null;
   if (reasonField.length && reason === '') {
     swal('Reason required', 'Please fill in the Reason of Requisition before approving.', 'warning');
     return;
   }
-  // The assigned SSM officer (AGM/AM/Superintendent SSM) can adjust each
-  // line's Deliver Qty (defaults to Req Qty), and Master can adjust Rcv Qty
-  // (defaults to Deliver Qty) when confirming receipt - both right on this
-  // same Approve click. See td.deliver_qty / td.rcv_qty in
-  // view-order-detail.blade.php.
+  // Master/Chief Engineer can correct the deck/engine officer's requested
+  // quantities before forwarding; the assigned SSM officer (AGM/AM/
+  // Superintendent SSM) can adjust each line's Deliver Qty (defaults to Req
+  // Qty); Master can adjust Rcv Qty (defaults to Deliver Qty) when confirming
+  // receipt - all three right on this same Approve click. See td.req_qty /
+  // td.deliver_qty / td.rcv_qty in view-order-detail.blade.php.
+  var reqQty = {};
+  $('input.req-qty').each(function () {
+    reqQty[$(this).data('id')] = $(this).val();
+  });
   var deliverQty = {};
   $('input.deliver-qty').each(function () {
     deliverQty[$(this).data('id')] = $(this).val();
@@ -1528,6 +1534,7 @@ $(document).on('click', '#approve_order', function(){
             _token: CSRF_TOKEN,
             'id':id,
             'reason':reason,
+            'req_qty':reqQty,
             'deliver_qty':deliverQty,
             'rcv_qty':rcvQty,
           },
@@ -1535,7 +1542,10 @@ $(document).on('click', '#approve_order', function(){
         })
         .done(function(response){
           swal('Congratulation!',response[0],'success').then(function(){
-            window.location.href='/approved/requisition'
+            // Master/Chief Engineer get their own approval history back in
+            // `redirect` (see RoleController@approveRequisition) - everyone
+            // else keeps going to the shared Approved Requisition page.
+            window.location.href = response.redirect || '/approved/requisition'
           });
         })
         .fail(function(response){
@@ -1581,7 +1591,7 @@ $(document).on('click', '#assign_ssm', function(){
         })
         .done(function(response){
           swal('Assigned!', response[0], 'success').then(function(){
-            window.location.href='/approved/requisition'
+            window.location.href = response.redirect || '/approved/requisition'
           });
         })
         .fail(function(response){
@@ -1594,21 +1604,25 @@ $(document).on('click', '#assign_ssm', function(){
   });
 });
 
-// approve order
+// GM (SRD) delegates the requisition to one named reviewer within
+// DGM/AGM/AM/Superintendent (SRD) - each of those roles can be more than one
+// real person, so a role alone isn't enough to say who it goes to.
 $(document).on('click', '#forward_toagm', function(){
   var id = $(this).data('id');
-  // Only present for GM (SRD), who picks any one of the 4 delegate
-  // targets; AGM (SRD)'s own forward has just the one fixed target
-  // (AM SRD) so the select doesn't exist for them.
-  var targetRole = $('#srd_delegate_target').length ? $('#srd_delegate_target').val() : null;
+  var assignedTo = $('#srd_delegate_target').val();
+  if (!assignedTo) {
+    swal('Choose a reviewer', 'Please select who to delegate this requisition to.', 'warning');
+    return;
+  }
+  var assigneeName = $('#srd_delegate_target option:selected').text();
   swal({
-    title: 'Are you sure?',
-    text: "You want to forward down this Requisition!",
+    title: 'Delegate this requisition?',
+    text: 'It will go to ' + assigneeName + ' for review.',
     type: 'info',
     showCancelButton: true,
     confirmButtonColor: '#5DADE2',
     cancelButtonColor: '#CD6155',
-    confirmButtonText: 'Yes, Forward it!',
+    confirmButtonText: 'Yes, delegate it!',
     showLoaderOnConfirm: true,
     preConfirm: function() {
       return new Promise(function(resolve) {
@@ -1618,17 +1632,18 @@ $(document).on('click', '#forward_toagm', function(){
           data: {
             _token: CSRF_TOKEN,
             'id':id,
-            'target_role':targetRole,
+            'assigned_to':assignedTo,
           },
           dataType: 'json'
         })
         .done(function(response){
           swal('Congratulation!',response[0],'success').then(function(){
-            window.location.href='/approved/requisition'
+            window.location.href = response.redirect || '/approved/requisition'
           });
         })
         .fail(function(response){
-          swal('Oops...', 'Something went wrong!' , 'error');
+          var message = (response.responseJSON && response.responseJSON.message) || 'Something went wrong!';
+          swal('Oops...', message, 'error');
         });
       });
     },

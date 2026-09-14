@@ -49,22 +49,25 @@ class HomeController extends Controller
   public function index()
   {
     if(!empty(auth()->user()->role->role && auth()->user()->role->user_type=='ship')){
-      if(in_array(auth()->user()->role->role, ['second-engineer', 'chief-officer'])){
-        // A real dashboard for the two roles that raise requisitions:
-        // their own vessel's requisition activity, catalog size, and a
-        // low-stock count - never another vessel's data. Everything else
-        // with user_type 'ship' (master, chief-engineer, operator) keeps
-        // its existing landing page below, unchanged.
+      if(in_array(auth()->user()->role->role, ['second-engineer', 'chief-officer', 'chief-engineer', 'master'])){
+        // A real dashboard, landing on login instead of bouncing straight to
+        // Pending: their own vessel's requisition activity, catalog size, and
+        // a low-stock count - never another vessel's data.
         $vesselId = auth()->user()->role->vessel_id;
+
+        // Same scope RoleController@pendingRequisition/approvedRequisition
+        // actually query - a stat card whose number disagrees with the list
+        // it links to is worse than not showing a count at all. Chief
+        // Officer/Second Engineer see only what they raised; Chief Engineer
+        // sees the engine room's; Master sees the whole vessel (they close
+        // the loop on every delivery regardless of origin).
+        $scoped = fn () => app(RoleController::class)->shipTrackingScope();
 
         $stats = [
           'draft' => Order::where('status', 'draft')->where('created_by', auth()->user()->id)->count(),
-          'in_progress' => Order::where('vessel_id', $vesselId)->where('ord_status', true)
-            ->whereNotIn('status', ['delivered', 'received'])->count(),
-          'delivered' => Order::where('vessel_id', $vesselId)->where('ord_status', true)
-            ->where('status', 'delivered')->count(),
-          'received' => Order::where('vessel_id', $vesselId)->where('ord_status', true)
-            ->where('status', 'received')->count(),
+          'in_progress' => $scoped()->whereNotIn('status', ['delivered', 'received'])->count(),
+          'delivered' => $scoped()->where('status', 'delivered')->count(),
+          'received' => $scoped()->where('status', 'received')->count(),
           'items' => DB::table('vessel_items')->where('vessel_id', $vesselId)->count(),
           'low_stock' => DB::table('vessel_items')->where('vessel_id', $vesselId)
             ->whereNotNull('min_qty')->whereColumn('stock_qty', '<=', 'min_qty')->count(),
@@ -825,13 +828,22 @@ public function viewVesselDetail($id){
  return view('layouts.view-vessel-detail',compact('vessel'));
 }
 public function viewOrderDetail($id){
- $order=Order::findOrFail($id);
+ $order=Order::with('orderItems.attachments.uploader')->findOrFail($id);
    // return $vessel->vesselDetail->type;
    // {{!empty($vessel->vesselDetail->type)?$vessel->vesselDetail->type:''}}
 
  // DGM (SSM) assigns the requisition to one named officer - the picker is
  // grouped by role, so hand the view the officers keyed by their role.
  $ssmOfficers = Role::whereIn('role', ['agm-ssm', 'am-ssm', 'superintendent-ssm'])
+   ->where('status', true)
+   ->with('user')
+   ->get()
+   ->filter(fn($role) => $role->user !== null)
+   ->groupBy('role');
+
+ // GM (SRD) delegates to one named reviewer, same reasoning as $ssmOfficers
+ // above - DGM/AGM/AM/Superintendent (SRD) are each more than one real person.
+ $srdOfficers = Role::whereIn('role', ['dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd'])
    ->where('status', true)
    ->with('user')
    ->get()
@@ -856,7 +868,7 @@ public function viewOrderDetail($id){
    ->groupBy('order_items.item_id')
    ->pluck('total', 'order_items.item_id');
 
- return view('layouts.view-order-detail',compact('order','ssmOfficers','liveStock','totalSupplied'));
+ return view('layouts.view-order-detail',compact('order','ssmOfficers','srdOfficers','liveStock','totalSupplied'));
 }
 
 public function allTrash(){
@@ -1263,7 +1275,7 @@ public function deliverReqForAll(){
 			})
    
    ->where('vessel_id', auth()->user()->role->vessel->id)
-   ->orderBy('created_at','desc')
+   ->orderBy('updated_at','desc')
    ->get();
  }else{
   $orders=Order::
@@ -1283,58 +1295,43 @@ public function deliverReqForAll(){
     ->where('agm_app_ssm','!=',null)
     ->where('am_app_ssm','!=',null);
   })
-  ->orderBy('created_at','desc')
+  ->orderBy('updated_at','desc')
   ->get();
 }
 return view('layouts.order',compact('orders','items','categories','vessels'));
 }
+/**
+ * Delivered/Received - the closed loop: Master or Chief Engineer has
+ * confirmed the quantities that actually arrived.
+ *
+ * This used to require ast_m_app, agm_app, dgm_app_ssm, agm_app_ssm AND
+ * am_app_ssm to all be non-null at once. A real requisition passes through
+ * exactly ONE SRD reviewer and ONE SSM final-actor, never all of them, so
+ * that condition could never be satisfied and the page was permanently
+ * empty for every role. status='received' is set in exactly one place
+ * (RoleController@approveRequisition, Master's receipt confirmation), which
+ * makes it the reliable thing to key off.
+ */
 public function rcvReqForAll(){
   $items =Item::orderBy('created_at','desc')->where('status',true)->get();
   $categories =Category::orderBy('created_at','desc')->where('status',true)->get();
   $vessels =Vessel::orderBy('created_at','desc')->where('status',true)->get();
+  $drafts = collect();
+
   if(auth()->user()->role->user_type=='ship'){
-   $orders=Order::
-   where('ord_status',true)
-   ->whereHas('orderApproval', function($q){
-     $q->where(function($query){
-      $query->where('master_app','!=',null)
-      ->orWhere('chief_eng_app','!=',null);
-    }) 
-     ->where('status','received')
-     ->where('cheif_ofcr_app','!=',null)
-     ->where('ord_status',true)
-     ->where('ast_m_app','!=',null)
-     ->where('agm_app','!=',null)
-     ->where('gm_app','!=',null)
-     ->where('dgm_app_ssm','!=',null)
-     ->where('agm_app_ssm','!=',null)
-     ->where('am_app_ssm','!=',null);
-   })
-   ->where('vessel_id', auth()->user()->role->vessel->id)
-   ->orderBy('created_at','desc')
-   ->get();
- }else{
-  $orders=Order::
-  where('ord_status',true)
-  ->whereHas('orderApproval', function($q){
-    $q->where(function($query){
-      $query->where('master_app','!=',null)
-      ->orWhere('chief_eng_app','!=',null);
-    })
+    $orders = app(RoleController::class)->shipReceivedRequisitions();
+    $listTitle = 'Delivered Requisitions';
+
+    return view('layouts.ship-home',compact('orders','drafts','listTitle'));
+  }
+
+  // Shore side sees the whole fleet's closed requisitions.
+  $orders=Order::where('ord_status',true)
     ->where('status','received')
-    ->where('cheif_ofcr_app','!=',null)
-    ->where('ord_status',true)
-    ->where('ast_m_app','!=',null)
-    ->where('agm_app','!=',null)
-    ->where('gm_app','!=',null)
-    ->where('dgm_app_ssm','!=',null)
-    ->where('agm_app_ssm','!=',null)
-    ->where('am_app_ssm','!=',null);
-  })
-  ->orderBy('created_at','desc')
-  ->get();
-}
-return view('layouts.order',compact('orders','items','categories','vessels'));
+    ->orderBy('updated_at','desc')
+    ->get();
+
+  return view('layouts.order',compact('orders','items','categories','vessels'));
 }
 public function updateStatusByAM(Request $req){
   $order=Order::findOrFail($req->id);

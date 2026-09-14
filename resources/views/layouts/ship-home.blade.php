@@ -23,6 +23,10 @@
 	 they render exactly as before. --}}
 @isset($stats)
 <div class="row mb-3">
+	{{-- Only Chief Officer/Second Engineer can ever start a draft (they're the
+		 only roles the wizard's "Add Requisition" link is shown to) - Master
+		 and Chief Engineer would always see a meaningless permanent 0 here. --}}
+	@if(in_array(auth()->user()->role->role, ['chief-officer', 'second-engineer']))
 	<div class="col-6 col-md-4 mb-3">
 		<a href="{{url('/home')}}" class="text-decoration-none">
 			<div class="srd-stat-card">
@@ -34,12 +38,13 @@
 			</div>
 		</a>
 	</div>
+	@endif
 	<div class="col-6 col-md-4 mb-3">
 		<a href="{{url('/pending/requisition')}}" class="text-decoration-none">
 			<div class="srd-stat-card">
 				<div class="srd-stat-icon is-blue"><i class="fas fa-hourglass-half"></i></div>
 				<div class="srd-stat-body">
-					<div class="srd-stat-label">In Progress</div>
+					<div class="srd-stat-label">Pending</div>
 					<div class="srd-stat-value">{{ $stats['in_progress'] }}</div>
 				</div>
 			</div>
@@ -50,7 +55,7 @@
 			<div class="srd-stat-card">
 				<div class="srd-stat-icon is-green"><i class="fas fa-truck"></i></div>
 				<div class="srd-stat-body">
-					<div class="srd-stat-label">Delivered - Awaiting Receipt</div>
+					<div class="srd-stat-label">Approved by SSM</div>
 					<div class="srd-stat-value">{{ $stats['delivered'] }}</div>
 				</div>
 			</div>
@@ -61,7 +66,7 @@
 			<div class="srd-stat-card">
 				<div class="srd-stat-icon is-slate"><i class="fas fa-inbox"></i></div>
 				<div class="srd-stat-body">
-					<div class="srd-stat-label">Received</div>
+					<div class="srd-stat-label">Delivered</div>
 					<div class="srd-stat-value">{{ $stats['received'] }}</div>
 				</div>
 			</div>
@@ -104,7 +109,7 @@
 					<tr>
 						<th>Title</th>
 						<th>Port</th>
-						<th>Started</th>
+						<th>Category</th>
 						<th></th>
 					</tr>
 				</thead>
@@ -113,12 +118,12 @@
 					<tr>
 						<td>{{ $draft->title }}</td>
 						<td>{{ $draft->port_name }}</td>
-						<td>{{ $draft->created_at->format('Y-m-d H:i') }}</td>
+						<td>{{ $draft->category->name ?? '—' }}</td>
 						<td>
 							@if(empty($draft->category_id))
-							<a href="{{ route('requisition.step2', $draft) }}" class="btn btn-sm btn-info">Continue - Add Items</a>
+							<a href="{{ route('requisition.step2', $draft) }}" class="btn btn-sm btn-info" style="color:#fff;">Continue - Add Items</a>
 							@else
-							<a href="{{ route('requisition.step3', $draft) }}" class="btn btn-sm btn-info">Continue - Review &amp; Submit</a>
+							<a href="{{ route('requisition.step3', $draft) }}" class="btn btn-sm btn-info" style="color:#fff;">Continue - Review &amp; Submit</a>
 							@endif
 						</td>
 					</tr>
@@ -132,8 +137,11 @@
 <div class="col-lg-6 col-xl-12">
 	<div class="card">
 		<div class="card-header pv-card-hader">
+			{{-- Pending / Approved / Delivered all render this same view, so the
+				 heading has to say which bucket this is - otherwise the three
+				 pages are indistinguishable. --}}
 			<strong class="pptitle">
-				Requisition List of
+				{{ $listTitle ?? 'Requisition List' }} of
 				<span style="color:red;display: inline-block;padding-left: 5px;">
 					{{auth()->user()->role->vessel->name}}
 				</span>

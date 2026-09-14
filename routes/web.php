@@ -65,12 +65,29 @@ Route::group(['middleware' => 'member'],function(){
 	Route::post('/requisition/{order}/items', 'RequisitionController@storeStep2')->name('requisition.step2.store');
 	Route::post('/requisition/{order}/items/{item}/remove', 'RequisitionController@destroyStep2Item')->name('requisition.step2.item.remove');
 	Route::post('/requisition/{order}/items/{item}/qty', 'RequisitionController@updateStep2ItemQty')->name('requisition.step2.item.qty');
+
+	// Per-item attachments. {item} is the catalog item id, matching the two
+	// routes above - not order_items' own primary key.
+	Route::get('/attachments/my-files', 'AttachmentController@myFiles')->name('attachments.my-files');
+	// A row the wizard has staged but not yet saved has no order_items id to
+	// link an attachment to - this uploads into the library only, and the
+	// wizard carries the id forward as a hidden input until Save & Next.
+	Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name('attachments.upload-to-library');
+	Route::post('/attachments/{attachment}/delete', 'AttachmentController@destroy')->name('attachments.destroy');
+	Route::get('/requisition/{order}/items/{item}/attachments', 'AttachmentController@forItem')->name('attachments.for-item');
+	Route::post('/requisition/{order}/items/{item}/attachments/upload', 'AttachmentController@upload')->name('attachments.upload');
+	Route::post('/requisition/{order}/items/{item}/attachments/attach', 'AttachmentController@attach')->name('attachments.attach');
+	Route::post('/requisition/{order}/items/{item}/attachments/{attachment}/detach', 'AttachmentController@detach')->name('attachments.detach');
 	Route::get('/requisition/{order}/review', 'RequisitionController@step3')->name('requisition.step3');
 	Route::post('/requisition/{order}/submit', 'RequisitionController@submit')->name('requisition.submit');
 });
 Route::get('/home/order', 'HomeController@getOrder')->name('get.all.order');//superadmin // operator
 
 Route::get('/order/detail/{order_id}', 'HomeController@viewOrderDetail')->name('view.order.detail');
+// Viewing/downloading one attachment - open to every approval-chain role,
+// not just the ship officers who upload them, since anyone reviewing the
+// requisition needs to be able to open what was attached to it.
+Route::get('/attachments/{attachment}/view', 'AttachmentController@view')->name('attachments.view');
 /* 
   Order Detail Shown Should be Restricted.......... do later 
 */
@@ -114,6 +131,9 @@ Route::get('/order/detail/{order_id}', 'HomeController@viewOrderDetail')->name('
   Route::post('/change/file','HomeController@changeFile');
   Route::get('/delivered/requisition','HomeController@deliverReqForAll');
   Route::get('/received/requisition','HomeController@rcvReqForAll');
+  // Master/Chief Engineer's own approval history - where the "Approve" click
+  // redirects them, separate from the vessel-wide lifecycle pages above.
+  Route::get('/my/approvals','RoleController@myApprovals')->name('my.approvals');
   
   Route::post('/order/status/update','HomeController@updateStatusByAM');
   

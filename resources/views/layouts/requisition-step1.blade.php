@@ -89,10 +89,13 @@
 							</div>
 						</div>
 
+						{{-- Stated by whoever is raising the requisition, not by Master/Chief
+							 Engineer reviewing it afterwards - they read this, they don't
+							 write it. --}}
 						<div class="form-group row">
 							<div class="col-md-11">
-								<label for="remarks">Remarks</label>
-								<textarea class="form-control" name="remarks" id="remarks" rows="4">{{ old('remarks', $order->remarks ?? '') }}</textarea>
+								<label for="reason">Reason of Requisition <span class="text-danger">*</span></label>
+								<textarea class="form-control" name="reason" id="reason" rows="4" placeholder="Why is this requisition needed?" required>{{ old('reason', $order->reason ?? '') }}</textarea>
 							</div>
 						</div>
 

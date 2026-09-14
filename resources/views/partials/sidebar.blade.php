@@ -32,8 +32,10 @@
   <a href="{{url('/catalog/browse')}}" class="srd-nav-item {{Route::current()->uri() == 'catalog/browse' ? 'active' : ''}}"><i class="fas fa-th"></i>Browse Catalog</a>
   @endif
 
-  @if(!empty(auth()->user()->role->role) &&
-  (auth()->user()->role->role=='second-engineer' || auth()->user()->role->role=='chief-officer'))
+  {{-- Ship side follows the requisition's LIFECYCLE - Pending -> Approved ->
+       Delivered, every requisition in exactly one of them - rather than the
+       "what needs my action" queues the shore roles below get. --}}
+  @if(!empty(auth()->user()->role->user_type) && auth()->user()->role->user_type == 'ship')
 
   <div class="srd-nav-label">Overview</div>
   <a href="{{url('/home')}}" class="srd-nav-item {{Route::current()->uri() == 'home' ? 'active' : ''}}"><i class="fas fa-th-large"></i>Dashboard</a>
@@ -41,15 +43,24 @@
   {{-- No Stores section for ship officers: Categories is super-admin only
        and Items is no longer surfaced anywhere. --}}
   <div class="srd-nav-label">Requisitions</div>
-  {{-- Straight to the wizard, not the /home/order list - the Dashboard
-       above already shows the full vessel-wide requisition list, so this
-       nav item's job is purely "start a new one" now. Route::is() rather
-       than comparing Route::current()->uri() since the wizard's later
-       steps carry a dynamic {order} id in the path. --}}
+  {{-- Only the officers who actually raise requisitions get the wizard.
+       Straight to it rather than the /home/order list - the Dashboard above
+       already shows the vessel's requisitions, so this nav item's job is
+       purely "start a new one". Route::is() rather than comparing
+       Route::current()->uri() since the wizard's later steps carry a dynamic
+       {order} id in the path. --}}
+  @if(in_array(auth()->user()->role->role, ['chief-officer', 'second-engineer']))
   <a href="{{ route('requisition.step1') }}" class="srd-nav-item {{ Route::is('requisition.*') ? 'active' : '' }}"><i class="fas fa-list-alt"></i>Add Requisition</a>
-  <a href="{{url('/approved/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'approved/requisition' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Approved/Sent Requisition</a>
-  <a href="{{url('/pending/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'pending/requisition' ? 'active' : ''}}"><i class="fas fa-hourglass-half"></i>Pending Requisition From SSM</a>
-  <a href="{{url('/received/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'received/requisition' ? 'active' : ''}}"><i class="fas fa-inbox"></i>Received Requisition</a>
+  @endif
+  <a href="{{url('/pending/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'pending/requisition' ? 'active' : ''}}"><i class="fas fa-hourglass-half"></i>Pending Requisition</a>
+  {{-- Only Master/Chief Engineer approve someone else's requisition, so only
+       they get a "did I approve this" view - separate from the vessel-wide
+       lifecycle pages below. --}}
+  @if(in_array(auth()->user()->role->role, ['master', 'chief-engineer']))
+  <a href="{{ route('my.approvals') }}" class="srd-nav-item {{Route::current()->uri() == 'my/approvals' ? 'active' : ''}}"><i class="fas fa-check-circle"></i>My Approvals</a>
+  @endif
+  <a href="{{url('/approved/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'approved/requisition' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Approved Requisition</a>
+  <a href="{{url('/received/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'received/requisition' ? 'active' : ''}}"><i class="fas fa-inbox"></i>Delivered Requisition</a>
   @endif
 
   @if(!empty(auth()->user()->role->user_type) && auth()->user()->role->user_type == 'ship')
@@ -65,15 +76,25 @@
   @endif
   @endif
 
+  {{-- Shore side keeps ACTION QUEUES: "Pending" here means "waiting on me",
+       which is a different question from the ship's lifecycle view above.
+       Excluded by user_type rather than by listing every ship role, so a new
+       ship role can't accidentally end up with both sets of links. --}}
   @if(!empty(auth()->user()->role->role) && (auth()->user()->role->role!='super-admin') &&
-   (auth()->user()->role->role!='second-engineer') &&
-   (auth()->user()->role->role!='chief-officer'))
+   (auth()->user()->role->user_type != 'ship'))
 
   <div class="srd-nav-label">Requisitions</div>
   @if(in_array(auth()->user()->role->role, ['technical-superintendent', 'marine-superintendent']))
   <a href="{{url('/home/order')}}" class="srd-nav-item {{Route::current()->uri() == 'home/order' ? 'active' : ''}}"><i class="fas fa-list-alt"></i>All Requisitions</a>
   @endif
   <a href="{{url('/pending/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'pending/requisition' ? 'active' : ''}}"><i class="fas fa-hourglass-half"></i>Pending Requisition</a>
+  {{-- Every role that personally approves or delegates a requisition (GM
+       and its four SRD delegates, DGM and its three SSM final-actors) gets
+       a "did I act on this" view of their own, same reasoning as Master/
+       Chief Engineer's version above. --}}
+  @if(in_array(auth()->user()->role->role, ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd', 'dgm-ssm', 'agm-ssm', 'am-ssm', 'superintendent-ssm']))
+  <a href="{{ route('my.approvals') }}" class="srd-nav-item {{Route::current()->uri() == 'my/approvals' ? 'active' : ''}}"><i class="fas fa-check-circle"></i>My Approvals</a>
+  @endif
   <a href="{{url('/approved/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'approved/requisition' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Approved Requisition</a>
   <a href="{{url('/received/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'received/requisition' ? 'active' : ''}}"><i class="fas fa-inbox"></i>Received Requisition</a>
   @endif

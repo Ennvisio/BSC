@@ -1,5 +1,87 @@
 @extends('layouts.admin-master')
 @section('main-content')
+<style>
+	/* ---- Attachments column: chips on a saved line, an Add trigger, a
+		 quiet hint on a line that hasn't been saved yet. ---- */
+	.attachments-cell{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:150px; }
+	.att-chip{
+		display:inline-flex; align-items:center; gap:5px; border-radius:7px; padding:4px 6px 4px 5px;
+		font-size:11.5px; font-weight:600; white-space:nowrap;
+	}
+	.att-chip .ico{
+		width:17px; height:17px; border-radius:4px; display:flex; align-items:center; justify-content:center;
+		font-size:8.5px; font-weight:800; color:#fff; flex-shrink:0;
+	}
+	.att-chip.image{ background:#e6f0fe; color:#2f6fed; } .att-chip.image .ico{ background:#2f6fed; }
+	.att-chip.pdf{ background:#fde9ec; color:#e5486b; } .att-chip.pdf .ico{ background:#e5486b; }
+	.att-chip.doc{ background:#eceafd; color:#5b4fd6; } .att-chip.doc .ico{ background:#5b4fd6; }
+	.att-chip-title{ max-width:90px; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+	.att-chip-remove{
+		appearance:none; border:none; background:none; font:inherit; line-height:1; cursor:pointer;
+		color:inherit; opacity:.55; padding:0 0 0 2px; font-size:13px;
+	}
+	.att-chip-remove:hover{ opacity:1; }
+	.add-att-btn{
+		display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:600;
+		color:#005866; background:#e3f2f4; border:1px dashed rgba(0,113,132,.4);
+		border-radius:7px; padding:5px 8px 5px 6px; cursor:pointer;
+	}
+	.add-att-btn:hover{ background:#d3ecee; }
+	.add-att-btn svg{ width:11px; height:11px; }
+
+	/* ---- Add Attachment modal ---- */
+	#attach-modal .item-tag{ font-size:11.5px; color:#6b7a82; font-weight:600; margin-bottom:2px; }
+	#attach-modal .tabs{ display:flex; gap:2px; padding:0 1.5rem; border-bottom:1px solid #edf1f0; }
+	#attach-modal .tab-btn{
+		appearance:none; border:none; background:none; font:inherit; cursor:pointer;
+		font-size:13.5px; font-weight:600; color:#6b7a82; padding:9px 4px 12px; margin-right:22px;
+		border-bottom:2px solid transparent;
+	}
+	#attach-modal .tab-btn.active{ color:#005866; border-bottom-color:#007184; }
+	#attach-modal .tab-panel{ display:none; }
+	#attach-modal .tab-panel.active{ display:block; }
+	#attach-modal .dropzone{
+		border:1.5px dashed #e3e8e7; border-radius:10px; padding:26px 18px; text-align:center;
+		background:#f4f6f6; transition:border-color .15s, background .15s; cursor:pointer;
+	}
+	#attach-modal .dropzone.drag{ border-color:#007184; background:#e3f2f4; }
+	#attach-modal .dropzone svg{ width:26px; height:26px; color:#6b7a82; margin-bottom:8px; }
+	#attach-modal .dropzone p{ margin:0 0 3px; font-size:13.5px; font-weight:600; color:#3d4b52; }
+	#attach-modal .dropzone span{ font-size:12px; color:#6b7a82; }
+	#attach-modal .browse-link{ color:#005866; font-weight:700; text-decoration:underline; }
+	#attach-modal .picked-file{ font-size:12.5px; color:#3d4b52; margin-top:10px; }
+	#attach-modal .search-row{ margin-bottom:12px; }
+	#attach-modal .search-row input{ font-size:13px; }
+	#attach-modal .file-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:9px; max-height:260px; overflow-y:auto; padding-right:2px; }
+	#attach-modal .file-card{
+		border:1.5px solid #e3e8e7; border-radius:9px; padding:9px; cursor:pointer; text-align:left;
+		background:#fff; position:relative;
+	}
+	#attach-modal .file-card:hover{ border-color:#7fb8c2; }
+	#attach-modal .file-card.selected{ border-color:#007184; background:#e3f2f4; }
+	#attach-modal .file-thumb{
+		height:44px; border-radius:6px; display:flex; align-items:center; justify-content:center;
+		font-size:9px; font-weight:800; color:#fff; margin-bottom:7px;
+	}
+	#attach-modal .file-card .fname{ font-size:11.5px; font-weight:600; color:#17242b; line-height:1.3; }
+	#attach-modal .file-card .fmeta{ font-size:10px; color:#6b7a82; margin-top:2px; }
+	#attach-modal .file-check{
+		position:absolute; top:6px; right:6px; width:15px; height:15px; border-radius:4px;
+		border:1.5px solid #e3e8e7; background:#fff; display:flex; align-items:center; justify-content:center;
+	}
+	#attach-modal .file-card.selected .file-check{ background:#007184; border-color:#007184; color:#fff; }
+	#attach-modal .file-check svg{ width:9px; height:9px; display:none; }
+	#attach-modal .file-card.selected .file-check svg{ display:block; }
+	#attach-modal .file-delete{
+		position:absolute; top:5px; left:5px; width:17px; height:17px; border-radius:4px;
+		border:none; background:rgba(197,48,48,.08); color:#c0392b; display:flex; align-items:center;
+		justify-content:center; cursor:pointer; opacity:0; transition:opacity .1s;
+	}
+	#attach-modal .file-card:hover .file-delete{ opacity:1; }
+	#attach-modal .file-delete:hover{ background:#c0392b; color:#fff; }
+	#attach-modal .file-delete svg{ width:9px; height:9px; }
+	#attach-modal .empty-files{ font-size:13px; color:#6b7a82; padding:20px 0; text-align:center; }
+</style>
 <div class="order-section container">
 	<div class="row">
 		<div class="col-xl-12">
@@ -73,7 +155,14 @@
 							<hr>
 							<div class="form-group row">
 								<div class="col-md-12 item-list-shown">
-									<table id="example1" class="table table-striped table-bordered orderedItemTable" style="width:100%">
+								{{-- This table has 12 columns once Attachments is in the mix -
+									 wide enough that forcing it to 100% squeezed every header
+									 into an unreadable wrap ("Quantit/y of Last/Supply") and
+									 pushed the whole page wider than the viewport. Let it take
+									 the width its content actually needs and scroll horizontally
+									 inside this box instead - never the page itself. --}}
+								<div class="table-responsive">
+									<table id="example1" class="table table-striped table-bordered orderedItemTable" style="width:auto; min-width:100%;">
 										<thead>
 											<tr>
 												<th>SL NO</th>
@@ -85,6 +174,7 @@
 												<th>Date of Last Supply</th>
 												<th>In Stock</th>
 												<th>Required</th>
+												<th>Attachments</th>
 												<th>Office Use</th>
 												<th class="action">Action</th>
 											</tr>
@@ -113,6 +203,25 @@
 													 span + hidden pair: it still submits as item_qty[] in row
 													 order alongside item_id[]. --}}
 												<td><input type="number" min="1" class="form-control form-control-sm required-qty" name="item_qty[]" style="width:80px;" value="{{ $orderItem->item_qty }}" data-original="{{ $orderItem->item_qty }}" required></td>
+												{{-- Hidden attachment_ids[itemId][] inputs mirror the visible chips
+													 exactly - kept in sync by renderAttachmentsCell() on every
+													 add/remove. Save & Next resubmits this whole draft's items
+													 (see storeStep2's delete-and-recreate), which would otherwise
+													 cascade-delete every item's attachment links on ANY save, not
+													 just the row that changed - these inputs are what lets
+													 storeStep2() re-link exactly what was already here. --}}
+												<td class="attachments-cell" data-item-id="{{ $orderItem->item_id }}">
+													@foreach($orderItem->attachments as $att)
+													<span class="att-chip {{ $att->kind }}" data-id="{{ $att->id }}" data-view-url="{{ url('/attachments/'.$att->id.'/view') }}" title="{{ $att->title }}">
+														<span class="ico">{{ strtoupper($att->kind === 'image' ? 'img' : $att->kind) }}</span><span class="att-chip-title">{{ \Illuminate\Support\Str::limit($att->title, 16) }}</span>
+														<button type="button" class="att-chip-remove" data-id="{{ $att->id }}" title="Remove">&times;</button>
+														<input type="hidden" name="attachment_ids[{{ $orderItem->item_id }}][]" value="{{ $att->id }}">
+													</span>
+													@endforeach
+													<button type="button" class="add-att-btn" data-item-id="{{ $orderItem->item_id }}" data-item-name="{{ $orderItem->item->name ?? '' }}">
+														<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Add
+													</button>
+												</td>
 												<td></td>
 												<td><button type="button" class="btn btn-danger btn-sm delete-order-item-row"><i class="fas fa-trash-alt"></i></button></td>
 											</tr>
@@ -121,8 +230,9 @@
 									</table>
 								</div>
 							</div>
-							<div class="form-group row">
-								<div class="col-md-12 text-right">
+						</div>
+						<div class="form-group row">
+							<div class="col-md-12 text-right">
 									{{-- Back to step 1 for THIS draft, not to a blank new-requisition
 										 form - that would strand this draft and its items. --}}
 									<a href="{{ route('requisition.step1.edit', $order) }}" class="btn btn-srd-outline"><i class="fas fa-arrow-left"></i> Back</a>
@@ -190,6 +300,55 @@
 		</div>
 	</div>
 </div>
+
+<!-- Add Attachment modal: upload a new file, or reuse one already in the
+	 officer's personal library. Reused for whichever row's "Add" button was
+	 clicked - see openAttachModal() below. -->
+<div class="modal fade" id="attach-modal" tabindex="-1" role="dialog">
+	<div class="modal-dialog" role="document" style="max-width:600px;">
+		<div class="modal-content">
+			<div class="modal-header" style="display:block; padding-bottom:0;">
+				<button type="button" class="close" data-dismiss="modal" style="position:absolute; right:1.2rem; top:1rem;"><span>&times;</span></button>
+				<div class="item-tag">Attaching to</div>
+				<h5 class="modal-title" id="attach-modal-item-name">&nbsp;</h5>
+				<div class="tabs" style="margin:0 -1.5rem;">
+					<button type="button" class="tab-btn active" id="attach-tab-upload-btn">Upload new</button>
+					<button type="button" class="tab-btn" id="attach-tab-files-btn">Choose from my files</button>
+				</div>
+			</div>
+			<div class="modal-body">
+				<div class="tab-panel active" id="attach-tab-upload">
+					<div class="dropzone" id="attach-dropzone">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15V3m0 0L7 8m5-5l5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+						<p>Drop an image, PDF or document here</p>
+						<span>or <span class="browse-link">browse your device</span> &middot; up to 15MB</span>
+						{{-- position:absolute + 1px, not display:none - some browsers refuse
+							 to open the file picker on a programmatic click if the input
+							 was never actually rendered. --}}
+						<input type="file" id="attach-file-input" style="position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0;" accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.txt">
+						<div class="picked-file" id="attach-picked-file" style="display:none;"></div>
+					</div>
+					<div class="form-group mt-3 mb-0">
+						<label for="attach-title" style="font-size:12.5px; font-weight:700; color:#3d4b52;">Title</label>
+						<input type="text" class="form-control" id="attach-title" placeholder="What is this file?">
+						<small class="form-text text-muted">Shown to every approver next to the item &mdash; keep it short and specific.</small>
+					</div>
+				</div>
+				<div class="tab-panel" id="attach-tab-files">
+					<div class="search-row">
+						<input type="text" class="form-control" id="attach-files-search" placeholder="Search your files&hellip;">
+					</div>
+					<div class="file-grid" id="attach-files-grid"></div>
+				</div>
+			</div>
+			<div class="modal-footer">
+				<span class="text-muted mr-auto" style="font-size:12.5px; font-weight:600;" id="attach-sel-count"></span>
+				<button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+				<button type="button" class="btn btn-primary" id="attach-submit-btn">Upload &amp; attach</button>
+			</div>
+		</div>
+	</div>
+</div>
 @endsection
 
 @section('home-js')
@@ -205,6 +364,12 @@ $(function () {
 		paging: false,
 		lengthChange: false,
 		info: false,
+		// Sorting by any column made no sense here anyway (SL NO is just the
+		// order items were added in, not a stable id to sort by) - and with
+		// 12 columns already tight for space, cramming a sort-icon glyph into
+		// every header on top of that was the other half of why they were
+		// wrapping unreadably ("Quantit / y of Last / Supply").
+		ordering: false,
 		dom: 'frt',
 	});
 
@@ -337,18 +502,26 @@ $(function () {
 
 		var badgeClass = item.low_stock ? 'badge-warning' : 'badge-success';
 
-		return '<div class="mb-2 small">'
-			+ '<span class="badge ' + badgeClass + '">In stock: ' + esc(String(item.stock_qty)) + ' ' + esc(item.unit) + '</span> '
+		return '<div class="mb-2" style="font-size:14px;">'
+			+ '<span class="badge ' + badgeClass + '" style="font-size:13px;padding:6px 10px;">In stock: ' + esc(String(item.stock_qty)) + ' ' + esc(item.unit) + '</span> '
 			+ '<span class="text-muted">' + lastSupply + '</span>'
 			+ '</div>';
 	}
 
 	function itemCardHtml(item) {
 		var existingQty = staged[item.id] ? staged[item.id].qty : 1;
+		// Stock figures ride along as data attributes so the "Add" click below
+		// can carry them into the staged item, and from there into the table
+		// row - without this, In Stock stayed blank for anything added through
+		// the picker even though the card right above it showed the figure.
 		return '<div class="item-picker-card" data-id="' + item.id + '" data-name="' + esc(item.name) + '" data-unit="' + esc(item.unit) + '" data-article="' + esc(item.article_number) + '" '
+			+ 'data-stock-qty="' + (item.stock_qty === undefined ? '' : item.stock_qty) + '" '
+			+ 'data-opening-stock="' + (item.opening_stock === undefined || item.opening_stock === null ? '' : item.opening_stock) + '" '
+			+ 'data-last-supply-qty="' + (item.last_supply_qty === undefined || item.last_supply_qty === null ? '' : item.last_supply_qty) + '" '
+			+ 'data-last-supply-date="' + (item.last_supply_date === undefined || item.last_supply_date === null ? '' : esc(item.last_supply_date)) + '" '
 			+ 'style="border:1px solid #dee2e6;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:16px;margin-bottom:14px;background:#fff;">'
-			+ '<h6 class="mb-2">' + esc(item.name) + '</h6>'
-			+ '<div class="row small text-muted mb-2">'
+			+ '<h5 class="mb-2" style="font-weight:600;">' + esc(item.name) + '</h5>'
+			+ '<div class="row mb-2" style="font-size:14px;color:#6c757d;">'
 			+ '<div class="col">Article no.<br><span class="text-dark">' + esc(item.article_number || 'n/a') + '</span></div>'
 			+ '<div class="col">Drawing no.<br><span class="text-dark">' + esc(item.drawing_number || 'n/a') + '</span></div>'
 			+ '<div class="col">Part no.<br><span class="text-dark">' + esc(item.part_number || 'n/a') + '</span></div>'
@@ -445,7 +618,11 @@ $(function () {
 		var id = card.data('id');
 		var qty = parseInt(card.find('.item-picker-qty').val(), 10) || 1;
 
-		staged[id] = { id: id, name: card.data('name'), unit: card.data('unit'), article_number: card.data('article'), qty: qty };
+		staged[id] = {
+			id: id, name: card.data('name'), unit: card.data('unit'), article_number: card.data('article'), qty: qty,
+			stockQty: card.data('stock-qty'), openingStock: card.data('opening-stock'),
+			lastSupplyQty: card.data('last-supply-qty'), lastSupplyDate: card.data('last-supply-date')
+		};
 		$(this).text('Added').removeClass('btn-primary').addClass('btn-success');
 		refreshStagedFooter();
 	});
@@ -473,19 +650,35 @@ $(function () {
 			// DOM query doesn't (that was the earlier bug behind duplicate
 			// serial numbers when adding more than one item at once).
 			var idx = pageOrderTable.rows().count() + 1;
+			var orBlank = function (value) {
+				return (value === undefined || value === null || value === '') ? '' : esc(String(value));
+			};
 			// Column order matches the paper-form layout (SL NO / Item Name /
 			// IMPA Code / Unit / Opening Stock / Qty of Last Supply / Date of
-			// Last Supply / In Stock / Required / Office Use / Action) - the
-			// stock-history columns have no data source yet, so they render
-			// blank for now. Article Number stands in for IMPA Code since
-			// imported items always carry the '-' placeholder for the latter.
+			// Last Supply / In Stock / Required / Attachments / Office Use /
+			// Action). The four stock figures come from the same data the
+			// picker card showed - carried onto the card as data attributes,
+			// then into `staged` on Add (see itemCardHtml / .item-picker-add).
+			// Article Number stands in for IMPA Code since imported items
+			// always carry the '-' placeholder for the latter.
+			//
+			// A staged row's own order_items id doesn't exist until Save & Next,
+			// so a file can't be LINKED yet - but it can still be UPLOADED right
+			// now (see uploadToLibrary()), and carried forward as a hidden
+			// attachment_ids[itemId][] input for storeStep2() to link once the
+			// row is real. attachmentsCellHtml (defined below) builds the same
+			// chip+hidden-input markup this cell will be re-rendered with.
 			pageOrderTable.row.add([
 				'<b class="serial">' + idx + '</b>',
 				esc(item.name) + '<input type="hidden" name="item_id[]" value="' + item.id + '">',
 				esc(item.article_number),
 				esc(item.unit),
-				'', '', '', '',
+				orBlank(item.openingStock),
+				orBlank(item.lastSupplyQty),
+				orBlank(item.lastSupplyDate),
+				orBlank(item.stockQty),
 				'<input type="number" min="1" class="form-control form-control-sm required-qty" name="item_qty[]" style="width:80px;" value="' + item.qty + '" data-original="' + item.qty + '" required>',
+				attachmentsCellHtml(item.id, [], esc(item.name)),
 				'',
 				'<button type="button" class="btn btn-danger btn-sm delete-order-item-row"><i class="fas fa-trash-alt"></i></button>',
 			]).draw().node().id = 'row_ordered_item-' + item.id;
@@ -583,6 +776,368 @@ $(function () {
 	// right "Add Item" control would stay hidden and no more items could be
 	// added to an existing requisition.
 	$('select#cate_name').trigger('change');
+
+	/* ---------- Attachments: upload new, or reuse from "my files" ---------- */
+
+	var attachItemId = null;   // which row's "Add" button opened the modal
+	var attachItemName = '';
+	var attachRowSaved = false;   // is that row already an order_items row on the server?
+	var attachSelectedFiles = {}; // my-files tab: id -> {id, title, kind}, for the multi-select
+	var attachPickedFile = null;  // upload tab: the File object staged for upload
+	var attachTitleAutoFilled = true; // false once the officer actually types into Title
+	var myFilesLoaded = false;
+
+	function attachBaseUrl(itemId) {
+		return '{{ url("/requisition/".$order->id."/items") }}/' + itemId + '/attachments';
+	}
+	function attachUrl(action) {
+		return attachBaseUrl(attachItemId) + (action ? '/' + action : '');
+	}
+	function fileViewUrl(id) {
+		return '{{ url("/attachments") }}/' + id + '/view';
+	}
+
+	// A hidden attachment_ids[itemId][] input rides along with every chip -
+	// on a saved row it's a mirror of what the AJAX calls already did for
+	// real; on an unsaved row it's the ONLY record of the link until Save &
+	// Next creates the row and RequisitionController::storeStep2() reads it.
+	function attChipHtml(itemId, a) {
+		var icoLabel = a.kind === 'image' ? 'IMG' : a.kind.toUpperCase();
+		return '<span class="att-chip ' + a.kind + '" data-id="' + a.id + '" data-view-url="' + a.view_url + '" title="' + esc(a.title) + '">'
+			+ '<span class="ico">' + icoLabel + '</span>'
+			+ '<span class="att-chip-title">' + esc(a.title) + '</span>'
+			+ '<button type="button" class="att-chip-remove" data-id="' + a.id + '" title="Remove">&times;</button>'
+			+ '<input type="hidden" name="attachment_ids[' + itemId + '][]" value="' + a.id + '">'
+			+ '</span>';
+	}
+
+	function attachmentsCellHtml(itemId, attachments, itemName) {
+		var html = attachments.map(function (a) { return attChipHtml(itemId, a); }).join('');
+		html += '<button type="button" class="add-att-btn" data-item-id="' + itemId + '" data-item-name="' + esc(itemName) + '">'
+			+ '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Add</button>';
+		return html;
+	}
+
+	// Re-renders one row's whole Attachments cell - from a fresh server
+	// payload on a saved row (so the page shows exactly what's actually
+	// linked, not a guess), or from the cell's own current chips plus
+	// whatever just changed on an unsaved one (there is no server copy yet).
+	function renderAttachmentsCell(itemId, attachments, itemName) {
+		$('.attachments-cell[data-item-id="' + itemId + '"]').html(attachmentsCellHtml(itemId, attachments, itemName));
+	}
+
+	// Reads what a cell's chips already show, straight from the DOM - the
+	// only source of truth for an unsaved row, since nothing has a
+	// server-side record yet.
+	function currentAttachmentsFromCell(cell) {
+		var kinds = ['image', 'pdf', 'doc'];
+		return cell.find('.att-chip').map(function () {
+			var el = $(this);
+			var kind = kinds.filter(function (k) { return el.hasClass(k); })[0];
+			return { id: el.data('id'), kind: kind, title: el.attr('title'), view_url: el.data('view-url') };
+		}).get();
+	}
+
+	function resetAttachModal() {
+		$('#attach-tab-upload-btn').addClass('active');
+		$('#attach-tab-files-btn').removeClass('active');
+		$('#attach-tab-upload').addClass('active');
+		$('#attach-tab-files').removeClass('active');
+		$('#attach-title').val('');
+		$('#attach-file-input').val('');
+		$('#attach-picked-file').hide().text('');
+		$('#attach-dropzone').removeClass('drag');
+		attachPickedFile = null;
+		attachTitleAutoFilled = true;
+		attachSelectedFiles = {};
+		$('#attach-sel-count').text('');
+		myFilesLoaded = false;
+	}
+
+	$(document).on('click', '.add-att-btn', function () {
+		attachItemId = $(this).data('item-id');
+		attachItemName = $(this).data('item-name');
+		attachRowSaved = !!$(this).closest('tr').data('saved');
+		resetAttachModal();
+		$('#attach-modal-item-name').text(attachItemName);
+		$('#attach-modal').modal('show');
+	});
+
+	$('#attach-tab-upload-btn').on('click', function () {
+		$(this).addClass('active');
+		$('#attach-tab-files-btn').removeClass('active');
+		$('#attach-tab-upload').addClass('active');
+		$('#attach-tab-files').removeClass('active');
+	});
+
+	$('#attach-tab-files-btn').on('click', function () {
+		$(this).addClass('active');
+		$('#attach-tab-upload-btn').removeClass('active');
+		$('#attach-tab-files').addClass('active');
+		$('#attach-tab-upload').removeClass('active');
+		if (!myFilesLoaded) {
+			loadMyFiles('');
+		}
+	});
+
+	// Dropzone: click-to-browse, or drag-and-drop. Either way the filename
+	// (minus its extension) becomes the default title - the officer can still
+	// change it, but a title is required either way.
+	//
+	// The file input is INSIDE the dropzone, so a real click on it would
+	// bubble straight back into this same handler - guard against re-opening
+	// the picker on top of itself. And this calls the native .click() rather
+	// than jQuery's .trigger('click'): jQuery dispatches through its own
+	// event system first, which is one more layer between the user gesture
+	// and the browser's file-picker permission check than is worth risking.
+	$('#attach-dropzone').on('click', function (e) {
+		if (e.target.id === 'attach-file-input') {
+			return;
+		}
+		document.getElementById('attach-file-input').click();
+	});
+	$('#attach-dropzone').on('dragover', function (e) {
+		e.preventDefault();
+		$(this).addClass('drag');
+	});
+	$('#attach-dropzone').on('dragleave drop', function (e) {
+		e.preventDefault();
+		$(this).removeClass('drag');
+	});
+	$('#attach-dropzone').on('drop', function (e) {
+		var files = e.originalEvent.dataTransfer.files;
+		if (files && files.length) {
+			pickAttachFile(files[0]);
+		}
+	});
+	$('#attach-file-input').on('change', function () {
+		if (this.files && this.files.length) {
+			pickAttachFile(this.files[0]);
+		}
+	});
+
+	function pickAttachFile(file) {
+		attachPickedFile = file;
+		$('#attach-picked-file').show().text(file.name + ' (' + Math.round(file.size / 1024) + ' KB)');
+		// Re-derives the title from whichever file is picked NOW, as long as
+		// the officer hasn't typed a title of their own - .val() alone can't
+		// tell "still showing the last auto-fill" apart from "the officer
+		// deliberately kept this exact text", so picking a second file used
+		// to leave the first file's title behind instead of updating it.
+		if (attachTitleAutoFilled) {
+			$('#attach-title').val(file.name.replace(/\.[^.]+$/, ''));
+		}
+	}
+
+	// A real user keystroke is the only thing that should ever mark the title
+	// as "theirs" - setting .val() programmatically (as pickAttachFile does)
+	// never fires 'input', so this can't misfire from our own auto-fill.
+	$('#attach-title').on('input', function () {
+		attachTitleAutoFilled = false;
+	});
+
+	var myFilesSearchTimer = null;
+	$('#attach-files-search').on('keyup', function () {
+		var term = $(this).val();
+		clearTimeout(myFilesSearchTimer);
+		myFilesSearchTimer = setTimeout(function () { loadMyFiles(term); }, 250);
+	});
+
+	function fileThumbHtml(kind) {
+		var label = kind === 'image' ? 'IMG' : kind.toUpperCase();
+		var bg = kind === 'image' ? '#2f6fed' : (kind === 'pdf' ? '#e5486b' : '#5b4fd6');
+		return '<div class="file-thumb" style="background:' + bg + ';">' + label + '</div>';
+	}
+
+	function loadMyFiles(term) {
+		$('#attach-files-grid').html('<div class="empty-files">Loading&hellip;</div>');
+		$.getJSON('{{ route("attachments.my-files") }}', { q: term }, function (files) {
+			myFilesLoaded = true;
+			if (files.length === 0) {
+				$('#attach-files-grid').html('<div class="empty-files">' + (term ? 'No files match that search.' : "You haven't uploaded any files yet.") + '</div>');
+				return;
+			}
+			// A plain div, not a button: it needs to contain a real delete
+			// <button> of its own, and a button can't nest inside a button.
+			$('#attach-files-grid').html(files.map(function (f) {
+				var checked = attachSelectedFiles[f.id] ? ' selected' : '';
+				return '<div class="file-card' + checked + '" data-id="' + f.id + '" data-title="' + esc(f.title) + '" data-kind="' + f.kind + '" tabindex="0" role="button">'
+					+ '<button type="button" class="file-delete" data-id="' + f.id + '" title="Delete this file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18"/></svg></button>'
+					+ '<div class="file-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div>'
+					+ fileThumbHtml(f.kind)
+					+ '<div class="fname">' + esc(f.title) + '</div>'
+					+ '<div class="fmeta">' + esc(f.uploaded_at) + '</div>'
+					+ '</div>';
+			}).join(''));
+		});
+	}
+
+	$(document).on('click', '#attach-files-grid .file-card', function () {
+		var id = $(this).data('id');
+		$(this).toggleClass('selected');
+		if ($(this).hasClass('selected')) {
+			attachSelectedFiles[id] = { id: id, title: $(this).data('title'), kind: $(this).data('kind'), view_url: fileViewUrl(id) };
+		} else {
+			delete attachSelectedFiles[id];
+		}
+		var n = Object.keys(attachSelectedFiles).length;
+		$('#attach-sel-count').text(n ? (n + (n === 1 ? ' file selected' : ' files selected')) : '');
+	});
+
+	// Permanently removes a file from the officer's library - separate from
+	// detaching it off one item. stopPropagation so this doesn't also toggle
+	// the card's own selection (it's nested inside that same card).
+	$(document).on('click', '.file-delete', function (e) {
+		e.stopPropagation();
+		var button = $(this);
+		var card = button.closest('.file-card');
+		var id = button.data('id');
+
+		function reallyDelete() {
+			button.prop('disabled', true);
+			$.ajax({
+				url: '{{ url("/attachments") }}/' + id + '/delete',
+				method: 'POST',
+				data: { _token: $('meta[name="csrf-token"]').attr('content') },
+			}).done(function () {
+				delete attachSelectedFiles[id];
+				var n = Object.keys(attachSelectedFiles).length;
+				$('#attach-sel-count').text(n ? (n + (n === 1 ? ' file selected' : ' files selected')) : '');
+				card.remove();
+				if (!$('#attach-files-grid .file-card').length) {
+					$('#attach-files-grid').html('<div class="empty-files">You haven\'t uploaded any files yet.</div>');
+				}
+			}).fail(function (xhr) {
+				button.prop('disabled', false);
+				var msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Could not delete that file.';
+				if (typeof swal === 'function') { swal('Not deleted', msg, 'error'); } else { alert(msg); }
+			});
+		}
+
+		if (typeof swal === 'function') {
+			swal({
+				title: 'Delete this file?',
+				text: 'This removes it from your library for good.',
+				type: 'warning',
+				showCancelButton: true,
+				confirmButtonColor: '#c0392b',
+				confirmButtonText: 'Yes, delete it',
+			}).then(function (result) {
+				if (result === true || (result && result.value)) { reallyDelete(); }
+			});
+		} else if (confirm('Delete this file for good?')) {
+			reallyDelete();
+		}
+	});
+
+	$('#attach-submit-btn').on('click', function () {
+		var button = $(this).prop('disabled', true);
+		var uploading = $('#attach-tab-upload').hasClass('active');
+
+		function doneFromServer(response) {
+			// Saved row: the server already has the full, authoritative list -
+			// show exactly that rather than guessing at what changed.
+			renderAttachmentsCell(attachItemId, response, attachItemName);
+			$('#attach-modal').modal('hide');
+			button.prop('disabled', false);
+		}
+		function doneLocally(newAttachments) {
+			// Unsaved row: there is no server copy of this link yet, so the
+			// new full list is whatever the cell already showed plus what was
+			// just added.
+			var cell = $('.attachments-cell[data-item-id="' + attachItemId + '"]');
+			var merged = currentAttachmentsFromCell(cell).concat(newAttachments);
+			renderAttachmentsCell(attachItemId, merged, attachItemName);
+			$('#attach-modal').modal('hide');
+			button.prop('disabled', false);
+		}
+		function failed(xhr) {
+			button.prop('disabled', false);
+			var msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Could not save that attachment.';
+			if (typeof swal === 'function') { swal('Not saved', msg, 'error'); } else { alert(msg); }
+		}
+
+		if (uploading) {
+			if (!attachPickedFile) {
+				button.prop('disabled', false);
+				return swal ? swal('Choose a file', 'Pick a file to upload first.', 'warning') : alert('Pick a file to upload first.');
+			}
+			var title = $('#attach-title').val().trim();
+			if (!title) {
+				button.prop('disabled', false);
+				return swal ? swal('Title required', 'Give this file a short title.', 'warning') : alert('Give this file a short title.');
+			}
+			var formData = new FormData();
+			formData.append('_token', $('meta[name="csrf-token"]').attr('content'));
+			formData.append('title', title);
+			formData.append('file', attachPickedFile);
+
+			// The FILE can always be uploaded right away, whether or not this
+			// row is saved yet - only the link to a specific item has to wait.
+			$.ajax({
+				url: attachRowSaved ? attachUrl('upload') : '{{ route("attachments.upload-to-library") }}',
+				method: 'POST',
+				data: formData,
+				processData: false,
+				contentType: false,
+			}).done(function (response) {
+				if (attachRowSaved) { doneFromServer(response); } else { doneLocally([response]); }
+			}).fail(failed);
+		} else {
+			var files = Object.values(attachSelectedFiles);
+			if (files.length === 0) {
+				button.prop('disabled', false);
+				return swal ? swal('Choose a file', 'Select at least one file to attach.', 'warning') : alert('Select at least one file to attach.');
+			}
+			if (attachRowSaved) {
+				$.ajax({
+					url: attachUrl('attach'),
+					method: 'POST',
+					data: { _token: $('meta[name="csrf-token"]').attr('content'), attachment_ids: files.map(function (f) { return f.id; }) },
+				}).done(doneFromServer).fail(failed);
+			} else {
+				// Nothing to link server-side yet - the files already exist in
+				// the library, so this is purely a local addition to the cell.
+				doneLocally(files);
+			}
+		}
+	});
+
+	// Remove one file from this line - the file itself stays in the officer's
+	// library, only the link to this item goes away. On a saved row that's a
+	// real server-side unlink; on an unsaved one there was never a link to
+	// begin with, so it's just removed from the cell.
+	$(document).on('click', '.att-chip-remove', function (e) {
+		e.stopPropagation();
+		var row = $(this).closest('tr');
+		var chip = $(this).closest('.att-chip');
+		var cell = chip.closest('.attachments-cell');
+		var itemId = cell.data('item-id');
+		var itemName = cell.find('.add-att-btn').data('item-name') || '';
+		var attachmentId = $(this).data('id');
+
+		if (!row.data('saved')) {
+			chip.remove();
+			return;
+		}
+
+		$.ajax({
+			url: attachBaseUrl(itemId) + '/' + attachmentId + '/detach',
+			method: 'POST',
+			data: { _token: $('meta[name="csrf-token"]').attr('content') },
+		}).done(function (response) {
+			renderAttachmentsCell(itemId, response, itemName);
+		}).fail(function () {
+			if (typeof swal === 'function') { swal('Not removed', 'Could not remove that attachment.', 'error'); } else { alert('Could not remove that attachment.'); }
+		});
+	});
+
+	// Clicking a chip's title previews the file in a new tab - it's the only
+	// file on this click, so there's nothing to list first.
+	$(document).on('click', '.att-chip-title', function () {
+		var url = $(this).closest('.att-chip').data('view-url');
+		window.open(url, '_blank');
+	});
 });
 </script>
 @endsection

@@ -49,7 +49,7 @@ class RoleController extends Controller
 		return $orders = Order::where('status', 'ready')
 			->where('vessel_id', auth()->user()->role->vessel->id)
 			->where('created_by_role', auth()->user()->role->role)
-			->orderBy('created_at', 'desc')
+			->orderBy('updated_at', 'desc')
 			->where('ord_status', true)
 			->get();
 	}
@@ -74,9 +74,151 @@ class RoleController extends Controller
 					->where('am_app_ssm', '!=', null);
 			})
 			->where('vessel_id', auth()->user()->role->vessel->id)
-			->orderBy('created_at', 'desc')
+			->orderBy('updated_at', 'desc')
 			->get();
 	}
+	/**
+	 * Which requisitions a ship user tracks, before any lifecycle filtering.
+	 *
+	 * Always their own vessel, then narrowed by department: the officer who
+	 * raises them sees their own, and the officer who signs them off sees the
+	 * ones they're responsible for. Master is the exception - they close the
+	 * loop on EVERY delivery regardless of origin (deck or engine room), so
+	 * scoping them to deck alone would hide engine-room deliveries they still
+	 * have to confirm receipt for.
+	 *
+	 * Public so HomeController@index can build the dashboard's stat-card
+	 * counts from the exact same scope - otherwise a card's number and the
+	 * list it links to can disagree, which is worse than not having the
+	 * count at all.
+	 */
+	public function shipTrackingScope()
+	{
+		$role = auth()->user()->role->role;
+
+		$query = Order::where('ord_status', true)
+			->where('vessel_id', auth()->user()->role->vessel_id);
+
+		if ($role === 'chief-officer' || $role === 'second-engineer') {
+			// Only what this officer raised themselves.
+			return $query->where('created_by_role', $role);
+		}
+
+		if ($role === 'chief-engineer') {
+			// The engine room's - what they approve and forward.
+			return $query->where('created_by_role', 'second-engineer');
+		}
+
+		// Master: the whole vessel.
+		return $query;
+	}
+
+	/**
+	 * Delivered/Received bucket for a ship user - the loop is closed.
+	 *
+	 * Lives here rather than in HomeController (which owns the route) so all
+	 * three ship buckets share one definition of who-sees-what.
+	 */
+	public function shipReceivedRequisitions()
+	{
+		return $this->shipTrackingScope()
+			->where('status', 'received')
+			->orderBy('updated_at', 'desc')
+			->get();
+	}
+
+	/**
+	 * Every role's own approval history - every requisition THEY personally
+	 * approved or delegated, at whatever stage it's at now. Deliberately
+	 * separate from the Pending/Approved/Delivered lifecycle pages and the
+	 * shore-side action queues: "did I act on this" and "has the NEXT stage
+	 * acted on it" are different questions, and conflating them meant landing
+	 * someone on a page where the order they just acted on wasn't there yet
+	 * (it hadn't reached whoever comes after them). Not meaningful for Chief
+	 * Officer/Second Engineer - they don't approve anyone else's
+	 * requisition, so they never reach this page. DGM (SSM)'s "action" is
+	 * assigning to a named officer (see assignToSsm()) rather than approving
+	 * through approveRequisition(), but it still counts here the same way.
+	 */
+	public function myApprovals()
+	{
+		$role = auth()->user()->role->role;
+		$userId = auth()->user()->id;
+
+		$roleLabels = [
+			'master' => 'Master',
+			'chief-engineer' => 'Chief Engineer',
+			'gm-srd' => 'GM (SRD)',
+			'dgm-srd' => 'DGM (SRD)',
+			'agm-srd' => 'AGM (SRD)',
+			'am-srd' => 'AM (SRD)',
+			'superintendent-srd' => 'Superintendent (SRD)',
+			'dgm-ssm' => 'DGM (SSM)',
+			'agm-ssm' => 'AGM (SSM)',
+			'am-ssm' => 'AM (SSM)',
+			'superintendent-ssm' => 'Superintendent (SSM)',
+		];
+		$listTitle = ($roleLabels[$role] ?? ucfirst(str_replace('-', ' ', (string) $role))).' Approvals';
+
+		// Ship side: Master/Chief Engineer, scoped to their own vessel only,
+		// same as every other ship-side list.
+		if (in_array($role, ['master', 'chief-engineer'], true)) {
+			$column = $role === 'master' ? 'master_app' : 'chief_eng_app';
+
+			$orders = Order::where('ord_status', true)
+				->where('vessel_id', auth()->user()->role->vessel_id)
+				->whereHas('orderApproval', fn ($q) => $q->where($column, $userId))
+				->orderBy('updated_at', 'desc')
+				->get();
+
+			$drafts = collect();
+
+			return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle'));
+		}
+
+		// Shore side: not vessel-scoped, one column per role except GM (SRD),
+		// who can act two different ways - approving directly (gm_app) or
+		// delegating to one of the four SRD reviewers (forwarded_to_*) - so
+		// either counts as "GM acted on this".
+		$shoreColumns = [
+			'dgm-srd' => 'dgm_srd_app',
+			'agm-srd' => 'agm_app',
+			'am-srd' => 'ast_m_app',
+			'superintendent-srd' => 'superintendent_srd_app',
+			'dgm-ssm' => 'dgm_app_ssm',
+			'agm-ssm' => 'agm_app_ssm',
+			'am-ssm' => 'am_app_ssm',
+			'superintendent-ssm' => 'superintendent_ssm_app',
+		];
+
+		if ($role === 'gm-srd') {
+			$orders = Order::where('ord_status', true)
+				->whereHas('orderApproval', function ($q) use ($userId) {
+					$q->where('gm_app', $userId)
+						->orWhere('forwarded_to_dgm_srd', $userId)
+						->orWhere('forwarded_to_agm_by_gm_srd', $userId)
+						->orWhere('forwarded_to_am_by_agm_srd', $userId)
+						->orWhere('forwarded_to_superintendent_srd', $userId);
+				})
+				->orderBy('updated_at', 'desc')
+				->get();
+		} elseif (array_key_exists($role, $shoreColumns)) {
+			$column = $shoreColumns[$role];
+			$orders = Order::where('ord_status', true)
+				->whereHas('orderApproval', fn ($q) => $q->where($column, $userId))
+				->orderBy('updated_at', 'desc')
+				->get();
+		} else {
+			$orders = collect();
+		}
+
+		$items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
+		$categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
+		$vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
+
+		return view('layouts.order', compact('orders', 'items', 'categories', 'vessels', 'listTitle'));
+	}
+
 	public function pendingRequisition()
 	{
 		$items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
@@ -84,142 +226,110 @@ class RoleController extends Controller
 		$vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
 		$drafts = collect();
 		if (auth()->user()->role->user_type == 'ship') {
-			// The multi-page requisition wizard (RequisitionController) saves
-			// a draft (status='draft', ord_status=false) after step 1, deliberately
-			// invisible everywhere else so it doesn't pollute the real approval
-			// queues - but the person who started it still needs to find and
-			// resume it.
+			// Ship side tracks a requisition's LIFECYCLE rather than running an
+			// approval queue: Pending -> Approved -> Delivered, with every
+			// requisition in exactly one of the three at any moment. See
+			// shipTrackingScope() for who sees which requisitions.
+			//
+			// Drafts (status='draft', ord_status=false) live here too, in their
+			// own table - they're deliberately invisible in the approval
+			// queries, but whoever started one still needs to find and resume it.
 			$drafts = Order::where('status', 'draft')
 				->where('created_by', auth()->user()->id)
-				->orderBy('created_at', 'desc')
+				->orderBy('updated_at', 'desc')
 				->get();
-			if (auth()->user()->role->role == 'chief-officer' || auth()->user()->role->role == 'second-engineer') {
-				$orders = Order::
-					// where('status',$this->approved_by_cfiefOfcr)
-					// where('master_app',null)
-					// ->where('chief_eng_app',null)
-					where('ord_status', true)
-					->where('created_by_role', auth()->user()->role->role)
-					->whereHas('orderApproval', function ($q) {
-						$q->where('master_app', null)
-							->where('chief_eng_app', null)
-							->where('second_eng_app', null)
-							->where('cheif_ofcr_app', null);
-					})
-					// ->where('cheif_ofcr_app','=',null)
-					->where('vessel_id', auth()->user()->role->vessel->id)
-					->orderBy('created_at', 'desc')
-					->get();
-				// return $orders;
-			}
-			if (auth()->user()->role->role == 'master') {
-				// Master's pending queue is two different things at once: their
-				// own initial-approval step for chief-officer-originated orders,
-				// and - per the target workflow - receipt confirmation for
-				// EVERY delivered order on this vessel regardless of who
-				// originated it (deck or engine-room), since Master always
-				// closes the loop, not just second-engineer for their own.
-				$orders = Order::where('ord_status', true)
-					->where('vessel_id', auth()->user()->role->vessel->id)
-					->where(function ($query) {
-						$query->where('status', 'delivered')
-							->orWhereHas('orderApproval', function ($q) {
-								$q->where('cheif_ofcr_app', '!=', null)
-									->where('master_app', null);
-							});
-					})
-					->orderBy('created_at', 'desc')
-					->get();
-			}
-			if (auth()->user()->role->role == 'chief-engineer') {
-				$orders = Order::where('ord_status', true)
-					->whereHas('orderApproval', function ($q) {
-						$q->where('second_eng_app', '!=', null)
-							->where('chief_eng_app', null);
-					})
-					->where('vessel_id', auth()->user()->role->vessel->id)
-					->orderBy('created_at', 'desc')
-					->get();
-			}
-			// if(auth()->user()->role->role=='second-engineer'){
-			// 	$orders=Order::where('status',$this->approved_by_ssm_a_m)
-			// 	->where('ord_status',true)
-			// 	->whereHas('orderApproval', function($q){
-			// 		$q->where(function($query){
-			// 			$query->where('master_app','!=',null)
-			// 			->orWhere('chief_eng_app','!=',null);
-			// 		})
-			// 		->where('cheif_ofcr_app','!=',null)
-			// 		->where('ord_status',true)
-			// 		->where('ast_m_app','!=',null)
-			// 		->where('agm_app','!=',null)
-			// 		->where('gm_app','!=',null)
-			// 		->where('dgm_app_ssm','!=',null)
-			// 		->where('agm_app_ssm','!=',null)
-			// 		->where('am_app_ssm','!=',null);
-			// 	})
-			// 	->where('vessel_id', auth()->user()->role->vessel->id)
-			// 	->orderBy('created_at','desc')
-			// 	->get();
-			// }
-			return view('layouts.ship-home', compact('orders', 'drafts'));
+
+			// Pending: submitted and still moving through the chain - anything
+			// that hasn't reached SSM's final action yet.
+			$orders = $this->shipTrackingScope()
+				->whereNotIn('status', ['draft', 'delivered', 'received'])
+				->orderBy('updated_at', 'desc')
+				->get();
+
+			$listTitle = 'Pending Requisitions';
+
+			return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle'));
 		} else {
+			// The four SRD delegate roles share one shape: only orders GM
+			// actually delegated to that role, that this specific person hasn't
+			// reviewed yet, and that GM hasn't already approved past. Scoped to
+			// whoever GM actually named (assigned_to_srd) - null means it was
+			// delegated before named assignment existed, so it still falls back
+			// to visible-to-everyone-in-that-role rather than stranding it.
 			if (auth()->user()->role->role == 'am-srd') {
+				$userId = auth()->user()->id;
 				$orders = Order::where('ord_status', true)
-					->whereHas('orderApproval', function ($q) {
+					->whereHas('orderApproval', function ($q) use ($userId) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
 								->orWhere('chief_eng_app', '!=', null);
 						})
 							->where('forwarded_to_am_by_agm_srd', '!=', null)
+							->where(function ($query) use ($userId) {
+								$query->where('assigned_to_srd', $userId)
+									->orWhereNull('assigned_to_srd');
+							})
 							->where('ast_m_app', '=', null);
 					})
-					->orderBy('created_at', 'desc')
+					->orderBy('updated_at', 'desc')
 					->get();
 			} elseif (auth()->user()->role->role == 'agm-srd') {
-				// Same shape as every other SRD delegate queue: only orders GM
-				// actually delegated to AGM, that AGM hasn't reviewed yet, and
-				// that GM hasn't already approved past. (This previously
-				// carried an orWhere() for the old "AM sends it back up to
-				// AGM" hop - AGM no longer forwards to AM at all, and because
-				// AND binds tighter than OR in SQL that stray clause collapsed
-				// the whole filter down to just "master or chief engineer
-				// approved it", so AGM was seeing effectively every order.)
+				// (This previously carried an orWhere() for the old "AM sends it
+				// back up to AGM" hop - AGM no longer forwards to AM at all, and
+				// because AND binds tighter than OR in SQL that stray clause
+				// collapsed the whole filter down to just "master or chief
+				// engineer approved it", so AGM was seeing effectively every
+				// order.)
+				$userId = auth()->user()->id;
 				$orders = Order::where('ord_status', true)
-					->whereHas('orderApproval', function ($q) {
+					->whereHas('orderApproval', function ($q) use ($userId) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
 								->orWhere('chief_eng_app', '!=', null);
 						})
 							->where('forwarded_to_agm_by_gm_srd', '!=', null)
+							->where(function ($query) use ($userId) {
+								$query->where('assigned_to_srd', $userId)
+									->orWhereNull('assigned_to_srd');
+							})
 							->where('gm_app', '=', null)
 							->where('agm_app', '=', null);
 					})
-					->orderBy('created_at', 'desc')
+					->orderBy('updated_at', 'desc')
 					->get();
 			} elseif (auth()->user()->role->role == 'dgm-srd') {
+				$userId = auth()->user()->id;
 				$orders = Order::where('ord_status', true)
-					->whereHas('orderApproval', function ($q) {
+					->whereHas('orderApproval', function ($q) use ($userId) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
 								->orWhere('chief_eng_app', '!=', null);
 						})
 							->where('forwarded_to_dgm_srd', '!=', null)
+							->where(function ($query) use ($userId) {
+								$query->where('assigned_to_srd', $userId)
+									->orWhereNull('assigned_to_srd');
+							})
 							->where('dgm_srd_app', '=', null);
 					})
-					->orderBy('created_at', 'desc')
+					->orderBy('updated_at', 'desc')
 					->get();
 			} elseif (auth()->user()->role->role == 'superintendent-srd') {
+				$userId = auth()->user()->id;
 				$orders = Order::where('ord_status', true)
-					->whereHas('orderApproval', function ($q) {
+					->whereHas('orderApproval', function ($q) use ($userId) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
 								->orWhere('chief_eng_app', '!=', null);
 						})
 							->where('forwarded_to_superintendent_srd', '!=', null)
+							->where(function ($query) use ($userId) {
+								$query->where('assigned_to_srd', $userId)
+									->orWhereNull('assigned_to_srd');
+							})
 							->where('superintendent_srd_app', '=', null);
 					})
-					->orderBy('created_at', 'desc')
+					->orderBy('updated_at', 'desc')
 					->get();
 			} elseif (auth()->user()->role->role == 'gm-srd') {
 				$orders = Order::where('ord_status', true)
@@ -230,7 +340,7 @@ class RoleController extends Controller
 						})
 							->where('gm_app', '=', null);
 					})
-					->orderBy('created_at', 'desc')
+					->orderBy('updated_at', 'desc')
 					->get();
 			} elseif (auth()->user()->role->role == 'dgm-ssm') {
 				$orders = Order::where('ord_status', true)
@@ -242,7 +352,7 @@ class RoleController extends Controller
 							->where('gm_app', '!=', null)
 							->where('dgm_app_ssm', '=', null);
 					})
-					->orderBy('created_at', 'desc')
+					->orderBy('updated_at', 'desc')
 					->get();
 			}
 			// SSM final action. DGM (SSM) assigns the requisition to one named
@@ -268,7 +378,7 @@ class RoleController extends Controller
 							->where('am_app_ssm', '=', null)
 							->where('superintendent_ssm_app', '=', null);
 					})
-					->orderBy('created_at', 'desc')
+					->orderBy('updated_at', 'desc')
 					->get();
 			}
 			// Technical/Marine Superintendent: standing, cross-vessel visibility
@@ -278,7 +388,7 @@ class RoleController extends Controller
 			elseif (auth()->user()->role->role == 'technical-superintendent' || auth()->user()->role->role == 'marine-superintendent') {
 				$orders = Order::where('ord_status', true)
 					->where('status', '!=', 'received')
-					->orderBy('created_at', 'desc')
+					->orderBy('updated_at', 'desc')
 					->get();
 			}
 			return view('layouts.order', compact('orders', 'items', 'categories', 'vessels'));
@@ -290,60 +400,24 @@ class RoleController extends Controller
 		$categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
 		$vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
 		$drafts = collect();
+
+		// Ship side: "Approved" means SSM has taken the final action. That's
+		// the same moment the order becomes status='delivered' - SSM approving
+		// and the goods being supplied are one event in this workflow, so the
+		// bucket keys off that. Drafts belong on Pending only, so none are
+		// loaded here.
 		if (auth()->user()->role->user_type == 'ship') {
-			$drafts = Order::where('status', 'draft')
-				->where('created_by', auth()->user()->id)
-				->orderBy('created_at', 'desc')
+			$orders = $this->shipTrackingScope()
+				->where('status', 'delivered')
+				->orderBy('updated_at', 'desc')
 				->get();
+
+			$listTitle = 'Approved Requisitions';
+
+			return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle'));
 		}
 
-		if (auth()->user()->role->role == 'second-engineer') {
-			$orders = Order::where('ord_status', true)
-				->where('created_by_role', auth()->user()->role->role)
-				->where('vessel_id', auth()->user()->role->vessel->id)
-				->whereHas('orderApproval', function ($q) {
-					$q->where('second_eng_app', '!=', null);
-				})
-				->orderBy('created_at', 'desc')
-				->get();
-		}
-		elseif (auth()->user()->role->role == 'chief-officer') {
-			$orders = Order::where('ord_status', true)
-				->whereHas('orderApproval', function ($q) {
-					$q->where('cheif_ofcr_app', '!=', null);
-				})
-				->where('created_by_role', auth()->user()->role->role)
-				->where('vessel_id', auth()->user()->role->vessel->id)
-				->orderBy('created_at', 'desc')
-				->get();
-		}
-		elseif (auth()->user()->role->role == 'chief-engineer') {
-			$orders = Order::where('ord_status', true)
-				->whereHas('orderApproval', function ($q) {
-					$q->where(function ($query) {
-						$query->where('chief_eng_app', auth()->user()->id);
-					})
-						->where('second_eng_app', '!=', null);
-				})
-				->where('vessel_id', auth()->user()->role->vessel->id)
-				->where('ord_status', true)
-				->orderBy('created_at', 'desc')
-				->get();
-		}
-		elseif (auth()->user()->role->role == 'master') {
-			$orders = Order::where('ord_status', true)
-				->where('vessel_id', auth()->user()->role->vessel->id)
-				->where(function ($query) {
-					$query->where('status', 'received')
-						->orWhereHas('orderApproval', function ($q) {
-							$q->where('master_app', auth()->user()->id)
-								->where('cheif_ofcr_app', '!=', null);
-						});
-				})
-				->orderBy('created_at', 'desc')
-				->get();
-		}
-		elseif (auth()->user()->role->role == 'am-srd') {
+		if (auth()->user()->role->role == 'am-srd') {
 			$orders = Order::where('ord_status', true)
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
@@ -353,7 +427,7 @@ class RoleController extends Controller
 						->where('forwarded_to_am_by_agm_srd', '!=', null)
 						->where('ast_m_app', '!=', null);
 				})
-				->orderBy('created_at', 'desc')
+				->orderBy('updated_at', 'desc')
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'agm-srd') {
@@ -366,7 +440,7 @@ class RoleController extends Controller
 						->where('forwarded_to_agm_by_gm_srd', '!=', null)
 						->where('agm_app', '!=', null);
 				})
-				->orderBy('created_at', 'desc')
+				->orderBy('updated_at', 'desc')
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'dgm-srd') {
@@ -379,7 +453,7 @@ class RoleController extends Controller
 						->where('forwarded_to_dgm_srd', '!=', null)
 						->where('dgm_srd_app', '!=', null);
 				})
-				->orderBy('created_at', 'desc')
+				->orderBy('updated_at', 'desc')
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'superintendent-srd') {
@@ -392,7 +466,7 @@ class RoleController extends Controller
 						->where('forwarded_to_superintendent_srd', '!=', null)
 						->where('superintendent_srd_app', '!=', null);
 				})
-				->orderBy('created_at', 'desc')
+				->orderBy('updated_at', 'desc')
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'gm-srd') {
@@ -404,7 +478,7 @@ class RoleController extends Controller
 					})
 						->where('gm_app', '!=', null);
 				})
-				->orderBy('created_at', 'desc')
+				->orderBy('updated_at', 'desc')
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'dgm-ssm') {
@@ -417,7 +491,7 @@ class RoleController extends Controller
 						->where('gm_app', '!=', null)
 						->where('dgm_app_ssm', '!=', null);
 				})
-				->orderBy('created_at', 'desc')
+				->orderBy('updated_at', 'desc')
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'agm-ssm') {
@@ -431,7 +505,7 @@ class RoleController extends Controller
 						->where('dgm_app_ssm', '!=', null)
 						->where('agm_app_ssm', '!=', null);
 				})
-				->orderBy('created_at', 'desc')
+				->orderBy('updated_at', 'desc')
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'am-ssm') {
@@ -445,7 +519,7 @@ class RoleController extends Controller
 						->where('dgm_app_ssm', '!=', null)
 						->where('am_app_ssm', '!=', null);
 				})
-				->orderBy('created_at', 'desc')
+				->orderBy('updated_at', 'desc')
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'superintendent-ssm') {
@@ -459,7 +533,7 @@ class RoleController extends Controller
 						->where('dgm_app_ssm', '!=', null)
 						->where('superintendent_ssm_app', '!=', null);
 				})
-				->orderBy('created_at', 'desc')
+				->orderBy('updated_at', 'desc')
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'technical-superintendent') {
@@ -467,7 +541,7 @@ class RoleController extends Controller
 				->whereHas('orderApproval', function ($q) {
 					$q->where('tech_superintendent_app', '!=', null);
 				})
-				->orderBy('created_at', 'desc')
+				->orderBy('updated_at', 'desc')
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'marine-superintendent') {
@@ -475,14 +549,11 @@ class RoleController extends Controller
 				->whereHas('orderApproval', function ($q) {
 					$q->where('marine_superintendent_app', '!=', null);
 				})
-				->orderBy('created_at', 'desc')
+				->orderBy('updated_at', 'desc')
 				->get();
 		}
-		if (auth()->user()->role->user_type != 'ship') {
-			return view('layouts.order', compact('orders', 'items', 'categories', 'vessels'));
-		} else {
-			return view('layouts.ship-home', compact('orders', 'drafts'));
-		}
+		// Ship users returned above; everything reaching here is shore side.
+		return view('layouts.order', compact('orders', 'items', 'categories', 'vessels'));
 	}
 	public function approveRequisition(Request $req)
 	{
@@ -541,11 +612,32 @@ class RoleController extends Controller
 		}
 
 		if (auth()->user()->role->role == 'second-engineer' || auth()->user()->role->role == 'chief-officer') {
+			// Reason of Requisition belongs to whoever is raising the
+			// requisition, not to Master/Chief Engineer reviewing it
+			// afterwards. The wizard (RequisitionController::storeStep1)
+			// already requires it and sets it before this is ever reached, so
+			// this only matters for a pre-wizard order still being manually
+			// approved through here.
+			$reason = trim((string) $req->reason);
+			if ($reason === '' && empty($order->reason)) {
+				// A plain array() response here would come back as a 200 OK,
+				// which the JS treats as success and redirects away without
+				// ever actually saving an approval - a real error status is
+				// what lets the client tell the difference and show it as
+				// an actual error instead of a fake "Congratulation!".
+				return response()->json([
+					'message' => 'Please fill in the Reason of Requisition before approving.',
+				], 422);
+			}
+
 			if (auth()->user()->role->role == 'second-engineer') {
 				if ($order_approval->second_eng_app != null) {
 					$already_approved = true;
 				} else {
 					$order->status = $this->approved_by_second_eng;
+					if ($reason !== '') {
+						$order->reason = $reason;
+					}
 					$order->update();
 					$order_approval->second_eng_app = auth()->user()->id;
 					$order_approval->update();
@@ -555,33 +647,33 @@ class RoleController extends Controller
 					$already_approved = true;
 				} else {
 					$order->status = $this->approved_by_cfiefOfcr;
+					if ($reason !== '') {
+						$order->reason = $reason;
+					}
 					$order->update();
 					$order_approval->cheif_ofcr_app = auth()->user()->id;
 					$order_approval->update();
 				}
 			}
 		} elseif (auth()->user()->role->role == 'chief-engineer' || auth()->user()->role->role == 'master') {
-			// Every revised requisition form has a "Reason of Requisition
-			// (filled by Master/Chief Engineer)" field - required before they
-			// can forward it ashore, matching the paper process.
+			// Master/Chief Engineer don't have to state the reason - the
+			// originator already did - but they CAN refine what's there
+			// (correcting wording before it goes ashore) once one actually
+			// exists. Never required, and never overwrites a reason with
+			// blank: the textarea for them is only ever shown once
+			// $order->reason is already set (see view-order-detail's
+			// $canEditReason), so an empty submit here means the field wasn't
+			// touched, not that they're trying to erase it.
 			$reason = trim((string) $req->reason);
-			if ($reason === '') {
-				// A plain array() response here would come back as a 200 OK,
-				// which the JS treats as success and redirects away without
-				// ever actually saving an approval - a real error status is
-				// what lets the client tell the difference and show it as
-				// an actual error instead of a fake "Congratulation!".
-				return response()->json([
-					'message' => 'Please fill in the Reason of Requisition before forwarding.',
-				], 422);
-			}
 
 			if (auth()->user()->role->role == 'chief-engineer') {
 				if ($order_approval->chief_eng_app != null) {
 					$already_approved = true;
 				} else {
 					$order->status = $this->approved_by_chief_eng;
-					$order->reason = $reason;
+					if ($reason !== '') {
+						$order->reason = $reason;
+					}
 					$order_approval->chief_eng_app = auth()->user()->id;
 					$order->update();
 					$order_approval->update();
@@ -591,11 +683,26 @@ class RoleController extends Controller
 					$already_approved = true;
 				} else {
 					$order->status = $this->approved_by_master;
-					$order->reason = $reason;
+					if ($reason !== '') {
+						$order->reason = $reason;
+					}
 					$order_approval->master_app = auth()->user()->id;
 					$order->update();
 					$order_approval->update();
 				}
+			}
+
+			// Master/Chief Engineer can correct the deck/engine officer's
+			// requested quantities before forwarding ashore - the same
+			// pattern Deliver Qty and Rcv Qty already use elsewhere in this
+			// same approve click.
+			foreach ((array) $req->req_qty as $orderItemId => $qty) {
+				if ($qty === '' || $qty === null) {
+					continue;
+				}
+				OrderItem::where('id', $orderItemId)->where('order_id', $order->id)->update([
+					'item_qty' => $qty,
+				]);
 			}
 		} elseif (auth()->user()->role->role == 'am-srd') {
 			$order->status = $this->approved_by_srd_ast_m;
@@ -695,41 +802,75 @@ class RoleController extends Controller
 
 			return array($data);
 		}
-		if ($already_approved == true) {
-			$data = "Requested Requisition already approved!";
-			return array($data);
-		} else {
-			$data = "Requested Requisition has been approved successfully!";
-			return array($data);
+		$data = $already_approved
+			? "Requested Requisition already approved!"
+			: "Requested Requisition has been approved successfully!";
+
+		// Everyone who takes a personal approve/review action here lands on
+		// their own approval history next, not the generic Approved
+		// Requisition page - the order they just acted on may not even be
+		// there yet (e.g. it's still with GM, not SSM). DGM (SSM) is the one
+		// exception in this chain: they never approve here at all (see
+		// assignToSsm() instead), so they're deliberately left out below. A
+		// plain array() JSON-encodes as a list and response[0] in the JS
+		// still works once 'redirect' is added, since PHP encodes a
+		// mixed-key array as an object rather than dropping the string key.
+		$landsOnMyApprovals = [
+			'master', 'chief-engineer',
+			'gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd',
+			'agm-ssm', 'am-ssm', 'superintendent-ssm',
+		];
+
+		if (in_array(auth()->user()->role->role, $landsOnMyApprovals, true)) {
+			return [$data, 'redirect' => route('my.approvals')];
 		}
+
+		return array($data);
 	}
 	public function forwardToAgm(Request $req)
 	{
-		$order=Order::findOrFail($req->id);
-		$order_approval=OrderApproval::where('order_id', $order->id)->firstOrFail();
-
 		// Delegation is GM (SRD)'s alone: they pick any ONE of DGM/AGM/AM/
 		// Superintendent (SRD), and that delegate reviews and returns it to
 		// GM. Delegates never hand it sideways to another delegate - AGM used
 		// to be able to forward on to AM here, a leftover from the old fixed
 		// GM -> AGM -> AM chain, which the target workflow doesn't have.
-		if (auth()->user()->role->role == 'gm-srd') {
-			$column = match ($req->target_role) {
-				'dgm-srd' => 'forwarded_to_dgm_srd',
-				'am-srd' => 'forwarded_to_am_by_agm_srd',
-				'superintendent-srd' => 'forwarded_to_superintendent_srd',
-				default => 'forwarded_to_agm_by_gm_srd',
-			};
-			$order_approval->{$column} = auth()->user()->id;
-			$order_approval->update();
-			$order->status = $this->forwarded_by_srd_gm;
-			$order->update();
-			$data = "Requested Requisition has been forwarded successfully!";
-			return array($data);
+		if (auth()->user()->role->role !== 'gm-srd') {
+			return response()->json(['message' => 'Only GM (SRD) can delegate a requisition for review.'], 422);
 		}
 
-		$data = "Only GM (SRD) can delegate a requisition for review.";
-		return array($data);
+		$order = Order::findOrFail($req->id);
+		$order_approval = OrderApproval::where('order_id', $order->id)->firstOrFail();
+
+		// Each of DGM/AGM/AM/Superintendent (SRD) can be more than one real
+		// person (confirmed: 2 AGM-SRD, 4 AM-SRD in this fleet), so GM picks a
+		// named person, not just a role - same pattern as assignToSsm() below.
+		// The chosen person's own role is what decides which forwarded_to_*
+		// column gets set, so there's no separate role field to keep in sync.
+		$assignee = User::find($req->assigned_to);
+		$srdColumns = [
+			'dgm-srd' => 'forwarded_to_dgm_srd',
+			'agm-srd' => 'forwarded_to_agm_by_gm_srd',
+			'am-srd' => 'forwarded_to_am_by_agm_srd',
+			'superintendent-srd' => 'forwarded_to_superintendent_srd',
+		];
+		$assigneeRole = $assignee->role->role ?? null;
+
+		if (! $assignee || ! array_key_exists($assigneeRole, $srdColumns)) {
+			return response()->json([
+				'message' => 'Please choose a reviewer to delegate this requisition to.',
+			], 422);
+		}
+
+		$order_approval->assigned_to_srd = $assignee->id;
+		$order_approval->{$srdColumns[$assigneeRole]} = auth()->user()->id;
+		$order_approval->update();
+
+		$order->status = $this->forwarded_by_srd_gm;
+		$order->update();
+
+		$data = 'Requisition delegated to '.$assignee->name.' successfully!';
+
+		return [$data, 'redirect' => route('my.approvals')];
 	}
 
 	/**
@@ -770,6 +911,6 @@ class RoleController extends Controller
 
 		$data = 'Requisition assigned to '.$assignee->name.' ('.$roleLabel.') successfully!';
 
-		return array($data);
+		return [$data, 'redirect' => route('my.approvals')];
 	}
 }
