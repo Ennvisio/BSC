@@ -6,6 +6,8 @@ use App\Category;
 use App\Item;
 use App\Order;
 use App\OrderItem;
+use App\ProcurementStage;
+use App\ProcurementStep;
 use App\Services\StockService;
 use App\User;
 use App\Vessel;
@@ -362,21 +364,38 @@ class RoleController extends Controller
 			// those fall back to the old behaviour of all three seeing it.
 			elseif (in_array(auth()->user()->role->role, ['agm-ssm', 'am-ssm', 'superintendent-ssm'], true)) {
 				$userId = auth()->user()->id;
+				$assignedToMe = function ($query) use ($userId) {
+					$query->where('assigned_to_ssm', $userId)->orWhereNull('assigned_to_ssm');
+				};
+
 				$orders = Order::where('ord_status', true)
-					->whereHas('orderApproval', function ($q) use ($userId) {
-						$q->where(function ($query) {
-							$query->where('master_app', '!=', null)
-								->orWhere('chief_eng_app', '!=', null);
+					->where(function ($outer) use ($assignedToMe) {
+						// In procurement, the stage alone says whose turn it
+						// is - and it comes BACK to this queue after the ship
+						// confirms receipt, for Invoice Verification onwards.
+						$outer->where(function ($q) use ($assignedToMe) {
+							$q->whereIn('procurement_stage', ProcurementStage::ssmStages())
+								->whereHas('orderApproval', fn ($a) => $a->where($assignedToMe));
 						})
-							->where('gm_app', '!=', null)
-							->where('dgm_app_ssm', '!=', null)
-							->where(function ($query) use ($userId) {
-								$query->where('assigned_to_ssm', $userId)
-									->orWhereNull('assigned_to_ssm');
-							})
-							->where('agm_app_ssm', '=', null)
-							->where('am_app_ssm', '=', null)
-							->where('superintendent_ssm_app', '=', null);
+							// Predates the procurement workflow: fall back to
+							// the old "assigned, and nobody has taken the final
+							// action yet" condition so nothing in flight is
+							// stranded.
+							->orWhere(function ($q) use ($assignedToMe) {
+								$q->whereNull('procurement_stage')
+									->whereHas('orderApproval', function ($a) use ($assignedToMe) {
+										$a->where(function ($query) {
+											$query->where('master_app', '!=', null)
+												->orWhere('chief_eng_app', '!=', null);
+										})
+											->where('gm_app', '!=', null)
+											->where('dgm_app_ssm', '!=', null)
+											->where($assignedToMe)
+											->where('agm_app_ssm', '=', null)
+											->where('am_app_ssm', '=', null)
+											->where('superintendent_ssm_app', '=', null);
+									});
+							});
 					})
 					->orderBy('updated_at', 'desc')
 					->get();
@@ -387,7 +406,17 @@ class RoleController extends Controller
 			// (see approveRequisition()) - never gates the normal chain.
 			elseif (auth()->user()->role->role == 'technical-superintendent' || auth()->user()->role->role == 'marine-superintendent') {
 				$orders = Order::where('ord_status', true)
-					->where('status', '!=', 'received')
+					// "Not yet closed" used to be status != 'received'. Once a
+					// requisition is in procurement that's no longer the end of
+					// it: 'received' means the goods are on board, with Invoice
+					// Verification, Finance Clearance and Payment still to run.
+					->where(function ($q) {
+						$q->where('status', '!=', 'received')
+							->orWhere(function ($inner) {
+								$inner->whereNotNull('procurement_stage')
+									->where('procurement_stage', '!=', ProcurementStage::CLOSED);
+							});
+					})
 					->orderBy('updated_at', 'desc')
 					->get();
 			}
@@ -581,6 +610,18 @@ class RoleController extends Controller
 			DB::transaction(function () use ($order, $req) {
 				$order->status = 'received';
 				$order->rcv_date = Carbon::now();
+				// Receipt & Verification in procurement terms - the goods are
+				// confirmed on board and it goes back to the SSM officer for
+				// Invoice Verification. 'received' therefore no longer means
+				// closed for anything in procurement; see Order::currentStageLabel().
+				if ($order->procurement_stage === ProcurementStage::RECEIPT_VERIFICATION) {
+					$this->recordProcurementStep(
+						$order,
+						ProcurementStage::RECEIPT_VERIFICATION,
+						$req->rcv_remarks,
+						(array) $req->input('attachment_ids', [])
+					);
+				}
 				$order->update();
 
 				// Master can adjust each line's Rcv Qty (defaults to Deliver Qty
@@ -748,6 +789,14 @@ class RoleController extends Controller
 
 			$order->status = $this->approved_by_ssm_a_m;
 			$order->deliver_date = Carbon::now();
+			// This IS the Delivery stage of the procurement workflow - taking
+			// it hands the requisition to the Master for Receipt &
+			// Verification. Guarded on actually being at that stage so a
+			// legacy order mid-flight (no procurement_stage) still behaves
+			// exactly as it did before.
+			if ($order->procurement_stage === ProcurementStage::DELIVERY) {
+				$this->recordProcurementStep($order, ProcurementStage::DELIVERY);
+			}
 			$order->update();
 			$order_approval->{$column} = auth()->user()->id;
 			$order_approval->update();
@@ -827,6 +876,37 @@ class RoleController extends Controller
 
 		return array($data);
 	}
+	/**
+	 * Records a procurement step for the two stages that are taken through the
+	 * approve flow rather than ProcurementController - Delivery and Receipt &
+	 * Verification - and advances the stage pointer.
+	 *
+	 * Sets procurement_stage on the passed model without saving: both callers
+	 * are mid-update and save it themselves, and saving twice here would just
+	 * burn an extra write.
+	 */
+	private function recordProcurementStep(Order $order, string $stage, ?string $remarks = null, array $attachmentIds = []): void
+	{
+		if ($order->hasCompletedStage($stage)) {
+			return;
+		}
+
+		$step = ProcurementStep::create([
+			'order_id' => $order->id,
+			'step' => $stage,
+			'outcome' => ProcurementStep::OUTCOME_DONE,
+			'completed_by' => auth()->user()->id,
+			'completed_at' => Carbon::now(),
+			'remarks' => $remarks !== null && trim($remarks) !== '' ? trim($remarks) : null,
+		]);
+
+		// The ship's acknowledgement receipt - uploaded to the Master's own
+		// library while confirming receipt, linked here once the step exists.
+		$step->syncOwnedAttachments($attachmentIds, auth()->user()->id);
+
+		$order->procurement_stage = ProcurementStage::next($stage);
+	}
+
 	public function forwardToAgm(Request $req)
 	{
 		// Delegation is GM (SRD)'s alone: they pick any ONE of DGM/AGM/AM/
@@ -907,6 +987,9 @@ class RoleController extends Controller
 		][$assignee->role->role];
 
 		$order->status = 'assigned to '.$roleLabel.' by DGM (ssm)';
+		// Assignment is what starts the procurement workflow - from here the
+		// stage, not the status, decides whose queue it sits in.
+		$order->procurement_stage = ProcurementStage::first();
 		$order->update();
 
 		$data = 'Requisition assigned to '.$assignee->name.' ('.$roleLabel.') successfully!';

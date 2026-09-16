@@ -1,6 +1,13 @@
 @extends('layouts.admin-master')
 @section('main-content')
 
+{{-- GM (SRD)'s own requisition queue - HomeController@index only computes
+     $stats for that role, so this stays invisible for super-admin (not
+     part of the approval chain) without an extra check here. --}}
+@isset($stats)
+@include('partials.requisition-stat-cards')
+@endisset
+
 <div class="col-lg-12">
     <div class="row">
         <div class="col-6 col-md-3 mb-3">

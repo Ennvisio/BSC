@@ -83,6 +83,15 @@
   @if(!empty(auth()->user()->role->role) && (auth()->user()->role->role!='super-admin') &&
    (auth()->user()->role->user_type != 'ship'))
 
+  {{-- SSM (DGM/AGM/AM/Superintendent) and GM (SRD)'s four named SRD
+       delegates land on a real dashboard now instead of a bare redirect
+       straight to Pending Requisition - same "Overview" treatment
+       super-admin/GM (SRD) and the ship roles already get above. --}}
+  @if(auth()->user()->role->user_type == 'ssm' || in_array(auth()->user()->role->role, ['dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd']))
+  <div class="srd-nav-label">Overview</div>
+  <a href="{{url('/home')}}" class="srd-nav-item {{Route::current()->uri() == 'home' ? 'active' : ''}}"><i class="fas fa-th-large"></i>Dashboard</a>
+  @endif
+
   <div class="srd-nav-label">Requisitions</div>
   @if(in_array(auth()->user()->role->role, ['technical-superintendent', 'marine-superintendent']))
   <a href="{{url('/home/order')}}" class="srd-nav-item {{Route::current()->uri() == 'home/order' ? 'active' : ''}}"><i class="fas fa-list-alt"></i>All Requisitions</a>

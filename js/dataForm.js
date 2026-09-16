@@ -1516,6 +1516,12 @@ $(document).on('click', '#approve_order', function(){
   $('input.rcv-qty').each(function () {
     rcvQty[$(this).data('id')] = $(this).val();
   });
+  // Receipt & Verification is a procurement stage taken through this same
+  // button, so the Master's remarks and acknowledgement receipt ride along
+  // with it (see the procurement panel in view-order-detail).
+  var rcvRemarks = $('#rcv_remarks').length ? $('#rcv_remarks').val() : null;
+  var attachmentIds = (typeof window.procurementDocumentIds === 'function')
+    ? window.procurementDocumentIds() : [];
   swal({
     title: 'Are you sure?',
     text: "You want to approve this Requisition!",
@@ -1537,6 +1543,8 @@ $(document).on('click', '#approve_order', function(){
             'req_qty':reqQty,
             'deliver_qty':deliverQty,
             'rcv_qty':rcvQty,
+            'rcv_remarks':rcvRemarks,
+            'attachment_ids':attachmentIds,
           },
           dataType: 'json'
         })
@@ -1796,45 +1804,6 @@ $(document).on('click', '.delete-user', function(){
         });
       });
 
-// delete survey function()
-$(document).on('click', '#update_order_status', function(e){
-  e.preventDefault();
-  var id = $(this).data('id');
-  var status = $('#order_status').children("option:selected").val();
-  swal({
-    title: 'Are you sure?',
-    text: "You want to update this order status!",
-    type: 'warning',
-    showCancelButton: true,
-    confirmButtonColor: '#3085d6',
-    cancelButtonColor: '#d33',
-    confirmButtonText: 'Yes, update it!',
-    showLoaderOnConfirm: true,
-    preConfirm: function() {
-      return new Promise(function(resolve) {
-        $.ajax({
-          url: '/order/status/update',
-          type: 'post',
-          data: {
-            _token: CSRF_TOKEN,
-            'id':id,
-            'status':status,
-          },
-          dataType: 'json'
-        })
-        .done(function(response){
-          swal('Wel Done!',response[0],'success').then(function(){
-            // window.location.href='/delivered/requisition';
-          })
-          .fail(function(response){
-            swal('Oops...', 'Something went wrong!' , 'error');
-          });
-        });
-      });
-    },
-    allowOutsideClick: false
-  });
-});
 $(document).on('click','.edit-user',function(e){
   e.preventDefault();
   var id = $(this).data('id');

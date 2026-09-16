@@ -69,10 +69,6 @@ Route::group(['middleware' => 'member'],function(){
 	// Per-item attachments. {item} is the catalog item id, matching the two
 	// routes above - not order_items' own primary key.
 	Route::get('/attachments/my-files', 'AttachmentController@myFiles')->name('attachments.my-files');
-	// A row the wizard has staged but not yet saved has no order_items id to
-	// link an attachment to - this uploads into the library only, and the
-	// wizard carries the id forward as a hidden input until Save & Next.
-	Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name('attachments.upload-to-library');
 	Route::post('/attachments/{attachment}/delete', 'AttachmentController@destroy')->name('attachments.destroy');
 	Route::get('/requisition/{order}/items/{item}/attachments', 'AttachmentController@forItem')->name('attachments.for-item');
 	Route::post('/requisition/{order}/items/{item}/attachments/upload', 'AttachmentController@upload')->name('attachments.upload');
@@ -88,6 +84,15 @@ Route::get('/order/detail/{order_id}', 'HomeController@viewOrderDetail')->name('
 // not just the ship officers who upload them, since anyone reviewing the
 // requisition needs to be able to open what was attached to it.
 Route::get('/attachments/{attachment}/view', 'AttachmentController@view')->name('attachments.view');
+// Uploading a file into your OWN library. Deliberately outside the 'member'
+// group: that middleware only admits chief-officer and second-engineer, which
+// was right when the requisition wizard was the only thing uploading, but the
+// SSM officer attaches procurement documents at almost every stage and the
+// Master attaches the acknowledgement receipt. Nothing here is requisition-
+// specific - the file is stored under the uploader's own id and recorded as
+// theirs (AttachmentController::storeUploadedFile), and linking it to a
+// requisition is a separate, separately-authorised step.
+Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name('attachments.upload-to-library');
 /* 
   Order Detail Shown Should be Restricted.......... do later 
 */
@@ -135,8 +140,6 @@ Route::get('/attachments/{attachment}/view', 'AttachmentController@view')->name(
   // redirects them, separate from the vessel-wide lifecycle pages above.
   Route::get('/my/approvals','RoleController@myApprovals')->name('my.approvals');
   
-  Route::post('/order/status/update','HomeController@updateStatusByAM');
-  
   Route::post('/restore','HomeController@restore');
   
   Route::post('/permanent-delete','HomeController@permanentDelete');
@@ -145,5 +148,10 @@ Route::get('/attachments/{attachment}/view', 'AttachmentController@view')->name(
 
   Route::post('/order/forward','RoleController@forwardToAgm');
   Route::post('/order/assign','RoleController@assignToSsm')->name('order.assign.ssm');
+
+  // SSM procurement workflow - the stages between DGM (SSM) assigning a
+  // requisition and it being Closed. Delivery and Receipt & Verification are
+  // not here: they're the existing approve action (see ProcurementController).
+  Route::post('/procurement/{order}/complete','ProcurementController@completeStep')->name('procurement.complete');
 
   // Route::get('/home/deliver/order', 'HomeController@deliverReq');

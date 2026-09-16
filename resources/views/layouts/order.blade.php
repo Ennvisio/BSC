@@ -16,6 +16,18 @@ position: absolute;
     padding: 0;
 }
 </style>
+{{-- Only present when HomeController@index built the SSM dashboard - the
+	 Pending/Approved/My Approvals pages themselves reuse this same view
+	 without passing $stats, so they render exactly as before. Same
+	 @isset($stats) guard layouts/ship-home.blade.php uses for its own
+	 dashboard row. --}}
+@isset($stats)
+@include('partials.requisition-stat-cards')
+@endisset
+{{-- The dashboard (HomeController@index, $stats passed) is stat cards only -
+	 no list underneath. Every other page reusing this view (Pending/
+	 Approved/My Approvals) never passes $stats, so they're unaffected. --}}
+@unless(isset($stats))
 <div class="col-lg-6 col-xl-12">
 	<div class="card">
 		<div class="card-header pv-card-hader">
@@ -130,6 +142,7 @@ position: absolute;
 		</div>
 	</div>
 </div>
+@endunless
 
 <!-- Edit order Template Modal -->
 <div class="modal fade" id="edit_template_modal" tabindex="-1" role="dialog" aria-labelledby="" aria-hidden="true">

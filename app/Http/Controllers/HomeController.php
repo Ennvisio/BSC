@@ -93,7 +93,32 @@ class HomeController extends Controller
       }
     }
     elseif(!empty(auth()->user()->role->role && auth()->user()->role->user_type=='ssm')){
-      return redirect('/pending/requisition');
+      // A real landing dashboard instead of a bare redirect - stat cards for
+      // Pending/My Approvals/Approved/Received (one per SSM sidebar item).
+      // No list underneath (see partials.requisition-stat-cards and the
+      // @unless(isset($stats)) guard on layouts/order.blade.php's list) -
+      // items/categories/vessels are still needed because that view's
+      // (now-hidden) filter form references them.
+      $stats = $this->requisitionDashboardStats();
+      $items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
+      $categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
+      $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
+
+      return view('layouts.order', compact('items', 'categories', 'vessels', 'stats'));
+    }
+    // GM (SRD)'s four named delegates: each reviews only what GM actually
+    // delegated to them (RoleController::pendingRequisition()'s dgm-srd/
+    // agm-srd/am-srd/superintendent-srd branches), so their job is the same
+    // shape as an SSM officer's - a personal queue, not fleet
+    // administration. Same stats-only dashboard as SSM, not the certificate/
+    // survey/vessel matrix GM (SRD) and super-admin get below.
+    elseif(in_array(auth()->user()->role->role, ['dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd'], true)){
+      $stats = $this->requisitionDashboardStats();
+      $items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
+      $categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
+      $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
+
+      return view('layouts.order', compact('items', 'categories', 'vessels', 'stats'));
     }
     elseif(!empty(auth()->user()->role->role && auth()->user()->role->user_type=='srd')||!empty(auth()->user()->role->role && auth()->user()->role->role=='super-admin')){
       $surveys=Survey::where('status',true)->orderBy('name','asc')->get();
@@ -102,8 +127,42 @@ class HomeController extends Controller
       $vessel_surveys=VesselSurvey::orderBy('created_at','desc')->where('status',true)->get();
       $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
 
-      return view('home',compact('surveys','certificates','vessels')); 
+      // GM (SRD) is the only remaining srd-family role reaching this branch
+      // with a personal seat in the approval chain - Technical/Marine
+      // Superintendent sit alongside the chain rather than in it (see
+      // Order::hasPendingActionFor), and super-admin isn't part of it at
+      // all, so neither gets the requisition stat cards. GM's four
+      // delegates are handled above, before this branch.
+      $stats = auth()->user()->role->role === 'gm-srd' ? $this->requisitionDashboardStats() : null;
+
+      return view('home',compact('surveys','certificates','vessels','stats'));
     }
+  }
+
+  /**
+   * Requisition dashboard stat cards - Pending My Action/My Approvals/
+   * Approved/Received - for any role with a personal queue in the approval
+   * chain (GM (SRD); DGM/AGM/AM (SSM)). Every count is read off the SAME
+   * view instances RoleController itself builds for those destination pages
+   * (->getData()['orders']->count()), not a hand-rolled copy of their
+   * per-role branching queries - so a card's number can never drift from
+   * the list it links to, the exact failure mode already called out for
+   * the ship dashboard above. The Item/Category/Vessel queries those
+   * methods also run are cheap and re-run a few times over here; trivial
+   * cost for that guarantee.
+   */
+  private function requisitionDashboardStats(): array
+  {
+    $roleController = app(RoleController::class);
+
+    return [
+      'pending_action' => $roleController->pendingRequisition()->getData()['orders']->count(),
+      'my_approvals' => $roleController->myApprovals()->getData()['orders']->count(),
+      'approved' => $roleController->approvedRequisition()->getData()['orders']->count(),
+      // Fleet-wide, not per-officer - matches what /received/requisition
+      // itself shows the shore side (HomeController@rcvReqForAll).
+      'received' => Order::where('ord_status', true)->where('status', 'received')->count(),
+    ];
   }
   public function getSurvey()
   {
@@ -828,7 +887,12 @@ public function viewVesselDetail($id){
  return view('layouts.view-vessel-detail',compact('vessel'));
 }
 public function viewOrderDetail($id){
- $order=Order::with('orderItems.attachments.uploader')->findOrFail($id);
+ $order=Order::with([
+   'orderItems.attachments.uploader',
+   'procurementSteps.completedBy',
+   'procurementSteps.attachments',
+   'invoice',
+ ])->findOrFail($id);
    // return $vessel->vesselDetail->type;
    // {{!empty($vessel->vesselDetail->type)?$vessel->vesselDetail->type:''}}
 
@@ -1332,13 +1396,6 @@ public function rcvReqForAll(){
     ->get();
 
   return view('layouts.order',compact('orders','items','categories','vessels'));
-}
-public function updateStatusByAM(Request $req){
-  $order=Order::findOrFail($req->id);
-  $order->status = $req->status;
-  $order->update();
-  $data ="Requested order status has been updated successfully!";
-  return array($data);
 }
 public function searchSurvey(Request $r)
 {

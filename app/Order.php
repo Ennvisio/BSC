@@ -33,6 +33,37 @@ class Order extends Model
 		return $this->belongsTo(User::class, 'created_by');
 	}
 
+	/** Completed procurement stages, oldest first - the timeline. */
+	public function procurementSteps()
+	{
+		return $this->hasMany(ProcurementStep::class)->orderBy('completed_at');
+	}
+
+	public function invoice()
+	{
+		return $this->hasOne(OrderInvoice::class);
+	}
+
+	/** Has this requisition entered the SSM procurement workflow at all? */
+	public function inProcurement(): bool
+	{
+		return ProcurementStage::exists($this->procurement_stage);
+	}
+
+	public function procurementClosed(): bool
+	{
+		return $this->procurement_stage === ProcurementStage::CLOSED;
+	}
+
+	/**
+	 * Whether a procurement stage has already been completed - the guard
+	 * against completing the same stage twice from a stale page.
+	 */
+	public function hasCompletedStage(string $stage): bool
+	{
+		return $this->procurementSteps()->where('step', $stage)->exists();
+	}
+
 	/**
 	 * A human-readable label for where this requisition currently sits in
 	 * the approval chain - computed from orderApproval's columns, never
@@ -43,6 +74,21 @@ class Order extends Model
 	 */
 	public function currentStageLabel(): string
 	{
+		// Once it's in procurement, the sub-stage IS the answer - otherwise
+		// this reported a static "With SSM Officers for Final Action" for the
+		// weeks a tender actually takes.
+		if ($this->inProcurement()) {
+			if ($this->procurementClosed()) {
+				return 'Closed';
+			}
+
+			return ProcurementStage::owner($this->procurement_stage) === ProcurementStage::OWNER_SHIP
+				? 'Delivered — Awaiting Master Confirmation'
+				: ProcurementStage::label($this->procurement_stage);
+		}
+
+		// Requisitions that never entered procurement (they predate it, or
+		// haven't reached DGM SSM yet) keep the original status-based labels.
 		if ($this->status === 'received') {
 			return 'Closed';
 		}
@@ -135,7 +181,16 @@ class Order extends Model
 	{
 		$approval = $this->orderApproval;
 
-		if (! $approval || $role === null || $this->status === 'received') {
+		if (! $approval || $role === null) {
+			return false;
+		}
+
+		// 'received' only means finished for requisitions that never entered
+		// procurement. Once they do, it means goods are confirmed on board and
+		// there are still four stages to run (Invoice Verification onwards) -
+		// returning false here was what would have left the SSM officer with
+		// no button at all and no visible reason why.
+		if (! $this->inProcurement() && $this->status === 'received') {
 			return false;
 		}
 
@@ -146,6 +201,24 @@ class Order extends Model
 		}
 		if ($role === 'marine-superintendent') {
 			return $approval->marine_superintendent_app === null;
+		}
+
+		// In procurement the current stage decides everything: Receipt &
+		// Verification belongs to the Master, every other stage to the officer
+		// DGM assigned it to, and 'closed' to nobody.
+		if ($this->inProcurement()) {
+			$owner = ProcurementStage::owner($this->procurement_stage);
+
+			if ($owner === ProcurementStage::OWNER_SHIP) {
+				return $role === 'master';
+			}
+
+			if ($owner === ProcurementStage::OWNER_SSM) {
+				return in_array($role, ['agm-ssm', 'am-ssm', 'superintendent-ssm'], true)
+					&& ($approval->assigned_to_ssm === null || $approval->assigned_to_ssm === $userId);
+			}
+
+			return false;
 		}
 
 		// Master always closes the loop once it's delivered, whoever raised
