@@ -243,4 +243,16 @@ class ProcurementStage
     {
         return self::CATEGORY_LABELS[self::category($stage)];
     }
+
+    /**
+     * True from Invoice Verification onwards (Invoice Verification, Finance
+     * Clearance, Payment, Closed) - the goods are already on board and
+     * confirmed by then, so rejecting the requisition no longer means
+     * anything: there's nothing left to turn away, only money left to
+     * account for. Used to hide/refuse Reject once it would be ambiguous.
+     */
+    public static function isPostReceipt(?string $stage): bool
+    {
+        return in_array(self::category($stage), [self::CATEGORY_FINANCE, self::CATEGORY_CLOSED], true);
+    }
 }

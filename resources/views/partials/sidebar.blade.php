@@ -51,6 +51,14 @@
        {order} id in the path. --}}
   @if(in_array(auth()->user()->role->role, ['chief-officer', 'second-engineer']))
   <a href="{{ route('requisition.step1') }}" class="srd-nav-item {{ Route::is('requisition.*') ? 'active' : '' }}"><i class="fas fa-list-alt"></i>Add Requisition</a>
+  {{-- Certificate servicing, surveys, equipment maintenance, IT support -
+       work that isn't an item pick-list. Its approval chain ends at SRD
+       level (no SSM/procurement leg), but raising one still starts here,
+       same as an item requisition. UI only for now - see
+       ServiceRequisitionController. --}}
+  {{-- fa-wrench, not fa-tools: this app loads Font Awesome 5.0.6, and
+       fa-tools only exists from 5.0.9 onwards (it renders as nothing). --}}
+  <a href="{{ route('service-requisition.create') }}" class="srd-nav-item {{ Route::is('service-requisition.*') ? 'active' : '' }}"><i class="fas fa-wrench"></i>Add Service Requisition</a>
   @endif
   <a href="{{url('/pending/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'pending/requisition' ? 'active' : ''}}"><i class="fas fa-hourglass-half"></i>Pending Requisition</a>
   {{-- Only Master/Chief Engineer approve someone else's requisition, so only
@@ -74,6 +82,15 @@
        fa-boxes only exists from 5.2 onwards (it renders as nothing). --}}
   <a href="{{url('/stock/upload')}}" class="srd-nav-item {{in_array(Route::current()->uri(), ['stock/upload', 'stock/history']) ? 'active' : ''}}"><i class="fas fa-archive"></i>Update Stock</a>
   @endif
+  {{-- Consuming stock is the officers' own to log - chief-officer/second-
+       engineer are the ones actually using items day to day (same two roles
+       who raise item requisitions above), Master keeps the separate
+       "restate the real figure" authority via Update Stock instead. The log
+       itself is visible to every ship role on the vessel for oversight. --}}
+  @if(in_array(auth()->user()->role->role, ['chief-officer', 'second-engineer']))
+  <a href="{{ route('stock-consumption.create') }}" class="srd-nav-item {{ Route::current()->uri() == 'stock/consumption/create' ? 'active' : '' }}"><i class="fas fa-wrench"></i>Log Consumption</a>
+  @endif
+  <a href="{{ route('stock-consumption.index') }}" class="srd-nav-item {{ Route::current()->uri() == 'stock/consumption' ? 'active' : '' }}"><i class="fas fa-list"></i>Consumption Log</a>
   @endif
 
   {{-- Shore side keeps ACTION QUEUES: "Pending" here means "waiting on me",

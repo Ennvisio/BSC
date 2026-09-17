@@ -76,6 +76,9 @@ Route::group(['middleware' => 'member'],function(){
 	Route::post('/requisition/{order}/items/{item}/attachments/{attachment}/detach', 'AttachmentController@detach')->name('attachments.detach');
 	Route::get('/requisition/{order}/review', 'RequisitionController@step3')->name('requisition.step3');
 	Route::post('/requisition/{order}/submit', 'RequisitionController@submit')->name('requisition.submit');
+
+	// UI only for now - no store route yet (see ServiceRequisitionController).
+	Route::get('/service-requisition/create', 'ServiceRequisitionController@create')->name('service-requisition.create');
 });
 Route::get('/home/order', 'HomeController@getOrder')->name('get.all.order');//superadmin // operator
 
@@ -99,6 +102,9 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   /* Role Based Access/Action  */
   Route::get('/pending/requisition', 'RoleController@pendingRequisition');
   Route::post('/order/approve', 'RoleController@approveRequisition');
+  // Rejection is terminal and open to whoever currently holds the
+  // requisition - the same rule the Approve button uses.
+  Route::post('/order/reject', 'RoleController@rejectRequisition')->name('order.reject');
   Route::get('/approved/requisition', 'RoleController@approvedRequisition');
 
   Route::get('/home/trash', 'HomeController@allTrash');
@@ -119,6 +125,15 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   Route::post('/stock/upload', 'StockController@store')->name('stock.upload.store');
   Route::get('/stock/history', 'StockController@history')->name('stock.history');
   Route::post('/stock/update', 'StockController@update')->name('stock.update');
+
+  // Stock consumption. Write access (create/search-items/store) is
+  // chief-officer/second-engineer only - enforced in the controller, same
+  // pattern as the Master-only stock routes just above. index() (the
+  // read-only log) is open to every ship role on that vessel.
+  Route::get('/stock/consumption', 'StockConsumptionController@index')->name('stock-consumption.index');
+  Route::get('/stock/consumption/create', 'StockConsumptionController@create')->name('stock-consumption.create');
+  Route::get('/stock/consumption/search-items', 'StockConsumptionController@searchItems')->name('stock-consumption.search-items');
+  Route::post('/stock/consumption', 'StockConsumptionController@store')->name('stock-consumption.store');
 
   Route::get('/ports/search', 'PortController@search')->name('ports.search');
 

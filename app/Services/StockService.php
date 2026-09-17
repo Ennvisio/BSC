@@ -2,9 +2,11 @@
 
 namespace App\Services;
 
+use App\StockConsumption;
 use App\VesselItem;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /**
  * The single funnel every stock write goes through.
@@ -78,6 +80,64 @@ class StockService
         $row->save();
 
         return $row;
+    }
+
+    /**
+     * The third way stock moves - and the only one that takes it DOWN. An
+     * officer stating an item was used/damaged/expired/lost deducts it from
+     * ROB immediately (no approval chain - see StockConsumption's own doc
+     * comment) and leaves a permanent record of why, unlike setStock() which
+     * just restates a figure with no reason attached.
+     *
+     * Blocks consuming more than what's actually on board rather than
+     * letting stock_qty go negative - a real discrepancy between the books
+     * and the store gets resolved through setStock() (the Master's own
+     * "declare the real figure" tool), not silently absorbed here.
+     *
+     * Wrapped in a transaction: the balance and the ledger row have to move
+     * together, or a failure partway through would silently deduct stock
+     * with no record of why, or record a consumption that never actually
+     * happened to the balance.
+     *
+     * $consumedOn takes either a string ('Y-m-d', straight from the form) or
+     * a real date object - StockConsumption's own 'consumed_on' => 'date'
+     * cast normalizes whichever it gets, so this doesn't have to.
+     *
+     * @param  array{order_id?:?int,department?:?string,remarks?:?string}  $details
+     */
+    public function consume(int $vesselId, int $itemId, int $qty, string $consumptionType, string $purpose, \DateTimeInterface|string $consumedOn, int $userId, array $details = []): StockConsumption
+    {
+        if ($qty <= 0) {
+            throw new RuntimeException('Quantity must be greater than zero.');
+        }
+
+        return DB::transaction(function () use ($vesselId, $itemId, $qty, $consumptionType, $purpose, $consumedOn, $userId, $details) {
+            $row = $this->rowFor($vesselId, $itemId);
+
+            if ($qty > $row->stock_qty) {
+                throw new RuntimeException(
+                    "Only {$row->stock_qty} in stock - cannot log consuming {$qty}."
+                );
+            }
+
+            $row->stock_qty -= $qty;
+            $row->stock_updated_at = now();
+            $row->stock_updated_by = $userId;
+            $row->save();
+
+            return StockConsumption::create([
+                'vessel_id' => $vesselId,
+                'item_id' => $itemId,
+                'order_id' => $details['order_id'] ?? null,
+                'consumption_type' => $consumptionType,
+                'qty' => $qty,
+                'consumed_on' => $consumedOn,
+                'department' => $details['department'] ?? null,
+                'purpose' => $purpose,
+                'remarks' => $details['remarks'] ?? null,
+                'recorded_by' => $userId,
+            ]);
+        });
     }
 
     /**

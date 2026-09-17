@@ -65,7 +65,7 @@ class HomeController extends Controller
 
         $stats = [
           'draft' => Order::where('status', 'draft')->where('created_by', auth()->user()->id)->count(),
-          'in_progress' => $scoped()->whereNotIn('status', ['delivered', 'received'])->count(),
+          'in_progress' => $scoped()->whereNotIn('status', ['delivered', 'received', 'rejected'])->count(),
           'delivered' => $scoped()->where('status', 'delivered')->count(),
           'received' => $scoped()->where('status', 'received')->count(),
           'items' => DB::table('vessel_items')->where('vessel_id', $vesselId)->count(),
@@ -1198,10 +1198,13 @@ public function addsingleDelQty(Request $r){
 }elseif (auth()->user()->role->role=='second-engineer') {
  $colname ='rcv_item_qty';
  $data='Requested Received Quantity Updated Successfully!';
-}elseif (auth()->user()->role->role=='am-srd') {
- $colname ='item_qty';
- $data='Requested Required Quantity Updated Successfully!';
 }
+// am-srd used to have a branch here (editing item_qty with no order-state
+// check at all - any live order, any time), but it only ever reachable
+// through a view-order-detail.blade.php bug that made an unrelated button
+// render for am-srd unconditionally. That markup is gone (see
+// view-order-detail.blade.php and dataForm.js #indSave), so this branch is
+// removed too rather than leaving an unused door open on a real endpoint.
 $orderitem=OrderItem::findOrFail($r->itemId);
 $orderitem->$colname=$r->itemValue;
 $orderitem->update();

@@ -85,10 +85,57 @@
 }
 .od-actions .btn-outline-secondary:hover, .od-actions .btn-secondary:hover{ background: var(--od-ground); }
 .od-actions .form-control{
-	height: auto; padding: 9px 12px; font-size: 13px; border: 1px solid #D3DBDA;
+	/* Bootstrap's own .form-control sets width:100% - inside this flex row
+	   that makes the element claim the whole line by itself (its "100%" is
+	   measured against the flex container, not the page), which is exactly
+	   what pushed Forward/Print/Reject onto their own row below it. Give it
+	   back an intrinsic width so it sits inline with the buttons. */
+	width: auto; height: auto; padding: 9px 12px; font-size: 13px; border: 1px solid #D3DBDA;
 	border-radius: var(--od-radius-sm); color: var(--od-ink);
 }
-.od-actions select.form-control{ min-width: 200px; }
+.od-actions select.form-control{ min-width: 200px; max-width: 260px; }
+/* ---- Reject ----
+   Solid red in its resting state, darkening on hover - it reads as the
+   destructive action without needing to be hovered first.
+
+   Every colour here is a literal, NOT a var(--od-*): the reject modal is
+   rendered outside .order-section (down with the other modals), and custom
+   properties only inherit down the tree - so inside the modal those tokens
+   resolve to nothing and the button silently fell back to Bootstrap's
+   default dark-on-white. */
+.od-btn-reject{
+	background: #c0392b; border: 1px solid #c0392b;
+	color: #fff; font-weight: 600;
+}
+.od-btn-reject:hover, .od-btn-reject:focus, .od-btn-reject:active{
+	background: #9c2d21; border-color: #9c2d21; color: #fff;
+}
+.modal-footer .od-btn-reject{ padding: 8px 16px; border-radius: 8px; }
+.od-reject-warning{
+	font-size: 13px; line-height: 1.55; color: #c0392b;
+	background: #fbeae8; border: 1px solid rgba(192,57,43,.22);
+	border-radius: 8px; padding: 11px 13px; margin: 0 0 16px;
+}
+.od-reject-error{ font-size: 12.5px; color: #c0392b; margin-top: 8px; }
+.od-reject-error:empty{ display: none; }
+
+/* The banner on an already-rejected requisition. */
+.od-rejected{
+	background: #fbeae8; border: 1px solid color-mix(in srgb, var(--od-danger) 28%, transparent);
+	border-left: 4px solid var(--od-danger); border-radius: var(--od-radius);
+	padding: 16px 20px; margin-bottom: 20px;
+}
+.od-rejected-head{
+	display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+	color: var(--od-danger); font-weight: 700; font-size: 15px;
+}
+.od-rejected-reason{
+	font-size: 14.5px; line-height: 1.6; color: var(--od-ink); margin-top: 10px;
+	max-width: 70ch; white-space: pre-line;
+}
+.od-rejected-by{ font-size: 12.5px; color: var(--od-muted); margin-top: 10px; }
+.od-rejected-by .role{ font-family: var(--od-mono); text-transform: uppercase; font-size: 11px; }
+
 .od-receipt-reminder{
 	/* .od-header is flex+wrap with two items (title, actions) already in it -
 	   flex-basis:100% forces this third item onto its own full-width row
@@ -138,7 +185,9 @@
 .od-card-body{ padding: 20px; }
 .od-reason-label{
 	font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
-	color: var(--od-muted-2); font-weight: 600; margin-bottom: 8px;
+	/* Fallback because this label is also used inside the reject modal,
+	   which renders outside .order-section where the token is defined. */
+	color: var(--od-muted-2, #778483); font-weight: 600; margin-bottom: 8px;
 }
 .od-reason-text{ font-size: 14px; line-height: 1.6; color: var(--od-ink-soft); max-width: 70ch; }
 .od-reason-text textarea{ font-family: var(--od-sans); }
@@ -223,25 +272,40 @@
 .od-card table.orderedItemTable tbody td{
 	padding: 13px 12px; border-bottom: 1px solid #F0F3F2 !important;
 	border-top: none !important; vertical-align: top; color: var(--od-ink-soft);
+	text-align: center;
 }
 .od-card table.orderedItemTable tbody tr:hover{ background: #FAFCFB; }
-.od-card table.orderedItemTable td.num{ font-family: var(--od-mono); text-align: right; font-size: 12.5px; }
+.od-card table.orderedItemTable td.num{ font-family: var(--od-mono); font-size: 12.5px; }
 .od-card table.orderedItemTable td.muted{ color: var(--od-faint); }
 .od-card table.orderedItemTable .serial{ font-family: var(--od-mono); font-weight: 400; font-size: 12.5px; color: var(--od-muted); }
 .od-card table.orderedItemTable td:nth-child(2){ font-family: var(--od-mono); font-size: 12.5px; color: var(--od-faint); }
-.od-card table.orderedItemTable td.item-name-td{ font-size: 13.5px; color: var(--od-ink); min-width: 240px; }
+.od-card table.orderedItemTable td.item-name-td{ font-size: 13.5px; color: var(--od-ink); width: 200px; max-width: 200px; }
 .od-card table.orderedItemTable td.item-name-td .see-attachments-link{ font-size: 12px; padding: 0; }
+/* The IMPA header itself - the body cell below it is centred along with
+   the rest of tbody now (see td rule above), this just matches the header
+   to it since headers keep their own left-aligned default otherwise. */
+.od-card table.orderedItemTable th.impa-code{ text-align: center; }
 .od-card table.orderedItemTable td.item-unit span,
 .od-card table.orderedItemTable td.item-unit{
 	font-family: var(--od-mono); font-size: 12px;
 }
+/* Last Supply's date used to ride along at 11px in plain --od-faint text -
+   easy to miss next to the bold quantity above it. A small tinted chip
+   reads as "here's when", at a glance, instead of disappearing into the
+   surrounding grey. */
+.last-supply-date{
+	display: inline-block; margin-top: 4px; font-family: var(--od-mono);
+	font-size: 11px; font-weight: 600; letter-spacing: .01em;
+	color: var(--od-accent-dark); background: var(--od-accent-tint);
+	border-radius: 5px;
+}
 .od-card table.orderedItemTable td.req_qty, .od-card table.orderedItemTable td.deliver_qty,
 .od-card table.orderedItemTable td.rcv_qty, .od-card table.orderedItemTable td.invoice_qty,
 .od-card table.orderedItemTable td.unit_price, .od-card table.orderedItemTable td.line_total{
-	font-family: var(--od-mono); text-align: right; font-size: 12.5px;
+	font-family: var(--od-mono); font-size: 12.5px;
 }
 .od-card table.orderedItemTable input.form-control{
-	font-family: var(--od-mono); text-align: right; font-size: 13px;
+	font-family: var(--od-mono); text-align: center; font-size: 13px;
 	border: 1px solid #D3DBDA; border-radius: 7px; padding: 7px 9px;
 }
 .od-card table.orderedItemTable input.form-control:focus{
@@ -332,6 +396,21 @@
 							&& $inProcurement
 							&& $currentRole == 'master'
 							&& $procStage === \App\ProcurementStage::RECEIPT_VERIFICATION;
+
+						// Rejection is open to whoever currently HOLDS the
+						// requisition, which is broader than who can approve
+						// it: DGM (SSM) assigns rather than approves, and GM
+						// (SRD) may be mid-delegation, but both hold it and
+						// can stop it. $canAct is already false once rejected
+						// (Order::hasPendingActionFor), so this button
+						// disappears along with all the others.
+						//
+						// From Invoice Verification onwards the goods are
+						// already on board - there's nothing left to turn
+						// away, so "reject" no longer means anything. Hidden
+						// rather than left for the SSM officer to puzzle over.
+						$showRejectButton = $canAct && $currentRole != 'operator'
+							&& ! \App\ProcurementStage::isPostReceipt($order->procurement_stage);
 					@endphp
 					<div class="od-actions">
 						@if($showApproveButton)
@@ -375,6 +454,12 @@
 						<button type="button" class="btn btn-info" id="forward_toagm" data-id="{{$order->id}}"><i class="fas fa-angle-double-right"></i> Forward</button>
 						@endif
 						<button type="button" class="btn btn-info btn-bvprint print-order-details"><i class="fa fa-print"></i> Print</button>
+						@if($showRejectButton)
+						<button type="button" class="btn od-btn-reject" id="reject_order" data-id="{{$order->id}}"
+							data-toggle="modal" data-target="#reject-order-modal">
+							<i class="fas fa-times-circle"></i> Reject
+						</button>
+						@endif
 					</div>
 					@if($showReceiptUploadReminder)
 					<p class="od-receipt-reminder">
@@ -384,6 +469,27 @@
 					@endif
 				</div>
 				<div class="card-body">
+					{{-- Terminal state, so it leads the page: the reason is the
+						 only thing anyone opening a rejected requisition is
+						 here to read. --}}
+					@if($order->isRejected())
+					<div class="od-rejected">
+						<div class="od-rejected-head">
+							<i class="fas fa-times-circle"></i>
+							<span>Rejected</span>
+						</div>
+						<div class="od-rejected-reason">{{ $order->rejection_reason }}</div>
+						<div class="od-rejected-by">
+							{{ optional($order->rejectedBy)->name ?? 'Unknown user' }}
+							@if($order->rejected_by_role)
+							<span class="role">{{ str_replace('-', ' ', $order->rejected_by_role) }}</span>
+							@endif
+							@if($order->rejected_at)
+							&middot; {{ \Carbon\Carbon::parse($order->rejected_at)->format('d M Y, h:i A') }}
+							@endif
+						</div>
+					</div>
+					@endif
 					{{-- On-screen only - #order-print-header2 further down carries
 						 the same four fields into the print copy, in the shape
 						 print-pdf-custom.js expects. Kept separate rather than
@@ -409,7 +515,7 @@
 							</div>
 						</div>
 					</div>
-					@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered')|| (auth()->user()->role->role=='am-srd' && $order->ast_m_app==null))
+					@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered'))
 					<form class="form mb-3" id="deliveredQtyForm">
 						@csrf
 						@endif
@@ -446,8 +552,7 @@
 								// table's alignment out.
 								$showInvoiceCols = $showPrices && ($atInvoiceStage || $hasPricing);
 								$showActionCol = (auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship')
-									|| (auth()->user()->role->role=='operator' && $order->status=='delivered')
-									|| (auth()->user()->role->role=='am-srd' && $order->ast_m_app==null);
+									|| (auth()->user()->role->role=='operator' && $order->status=='delivered');
 							@endphp
 							<thead>
 								{{-- Grouping row. DataTables maps columns off the LAST
@@ -461,7 +566,7 @@
 								</tr>
 								<tr>
 									<th>No.</th>
-									<th>IMPA</th>
+									<th class="impa-code">IMPA</th>
 									<th>Item Name
 										<!-- <span class="item-name">Item Name</span> -->
 										<!-- <span class="item-name-print">Description <br> As per IMPA Code 6Th Edn</span> -->
@@ -471,9 +576,9 @@
 									<th class="num">Last supply</th>
 									<th class="num">In stock</th>
 									<th class="num">Total supply</th>
-									<th class="num">Req</th>
+									<th class="num">Required Quantity</th>
 									<th class="num">Delivered</th>
-									<th class="num">Rcv Qty</th>
+									<th class="num">Received</th>
 									{{-- Invoice columns are SSM-side only, and only once
 										 there is something to show (or something to enter). --}}
 									@if($showInvoiceCols)
@@ -482,7 +587,7 @@
 									<th class="num">Line Total</th>
 									@endif
 									<!-- <th class="item-cat">Category</th> -->
-									@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered')|| (auth()->user()->role->role=='am-srd' && $order->ast_m_app==null)) 
+									@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered'))
 									<th class="">Action</th>
 									@endif
 								</tr>
@@ -492,7 +597,7 @@
 								@foreach($order->orderItems as $orderItem)
 								<tr>
 									<td><b class="serial">{{$loop->iteration}}</b></td>
-									<td>{{$orderItem->item->impa_code}}</td>
+									<td class="impa-code">{{$orderItem->item->impa_code}}</td>
 									<td class="item-name-td">
 										{{$orderItem->item->name}}
 										@if($orderItem->attachments->isNotEmpty())
@@ -508,35 +613,42 @@
 									<td class="item-unit">{{$orderItem->item->unit}}</td>
 									{{-- Opening Stock and Last Supply are the figures captured when this
 										 requisition was raised, so an old form still prints what justified
-										 it. In Stock is live - what is on board right now. --}}
-									<td class="num muted">{{ $orderItem->opening_stock !== null ? $orderItem->opening_stock : '—' }}</td>
-									<td class="num muted">
+										 it. In Stock is live - what is on board right now. Same ink colour
+										 as In Stock across all four - "muted" only made sense back when
+										 In Stock was the one live figure among historical ones; it reads
+										 as "these numbers don't matter" now, which isn't true. --}}
+									<td class="num">{{ $orderItem->opening_stock !== null ? $orderItem->opening_stock : '—' }}</td>
+									<td class="num">
 										@if($orderItem->last_supply_qty !== null)
 										{{ $orderItem->last_supply_qty }}
 										@if($orderItem->last_supply_date)
-										<br><span class="text-muted" style="font-size:11px;">{{ \Carbon\Carbon::parse($orderItem->last_supply_date)->format('d M Y') }}</span>
+										<br><span class="last-supply-date">{{ \Carbon\Carbon::parse($orderItem->last_supply_date)->format('d M Y') }}</span>
 										@endif
 										@else
 										—
 										@endif
 									</td>
 									<td class="num">{{ $liveStock[$orderItem->item_id]['stock_qty'] ?? 0 }}</td>
-									<td class="num muted">{{ $totalSupplied[$orderItem->item_id] ?? 0 }}</td>
+									<td class="num">{{ $totalSupplied[$orderItem->item_id] ?? 0 }}</td>
 									<td class='req_qty'>
 										{{-- Master/Chief Engineer can correct the deck/engine officer's
 											 requested quantity at their own review turn, before
 											 forwarding it ashore - excluding Master's receipt-confirmation
 											 turn (status 'delivered'), where the original ask is no longer
-											 what's being acted on. --}}
-										@if(auth()->user()->role->role=='am-srd' && $order->ast_m_app==null)
-										<div class="form-group" style="margin: 0">
-											<input type="number" data-id="{{$orderItem->id}}" class="form-control req-qty" name="req_qty[{{$orderItem->id}}]" value="{{$orderItem->item_qty}}">
-										</div>
-										@elseif($canAct && $currentRole=='chief-engineer')
+											 what's being acted on. GM (SRD) and its four delegates (DGM/
+											 AGM/AM/Superintendent SRD) get the same edit while it's on
+											 their desk - including GM's own final approve turn once a
+											 delegate has already reviewed it, since that's the last stop
+											 before it moves on to DGM (SSM). --}}
+										@if($canAct && $currentRole=='chief-engineer')
 										<div class="form-group" style="margin: 0">
 											<input type="number" data-id="{{$orderItem->id}}" class="form-control req-qty" name="req_qty[{{$orderItem->id}}]" value="{{$orderItem->item_qty}}">
 										</div>
 										@elseif($canAct && $currentRole=='master' && $order->status != 'delivered')
+										<div class="form-group" style="margin: 0">
+											<input type="number" data-id="{{$orderItem->id}}" class="form-control req-qty" name="req_qty[{{$orderItem->id}}]" value="{{$orderItem->item_qty}}">
+										</div>
+										@elseif($canAct && in_array($currentRole, ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd']))
 										<div class="form-group" style="margin: 0">
 											<input type="number" data-id="{{$orderItem->id}}" class="form-control req-qty" name="req_qty[{{$orderItem->id}}]" value="{{$orderItem->item_qty}}">
 										</div>
@@ -554,7 +666,7 @@
 											<input type="number" data-id="{{$orderItem->id}}" class="form-control deliver-qty" name="deliver_qty[{{$orderItem->id}}]" value="{{ $orderItem->del_item_qty ?? $orderItem->item_qty }}">
 										</div>
 										@else
-										{{!empty($orderItem->del_item_qty)?$orderItem->del_item_qty:''}}
+										{{!empty($orderItem->del_item_qty)?$orderItem->del_item_qty:'—'}}
 										@endif
 									</td>
 									<td class='rcv_qty'>
@@ -563,7 +675,7 @@
 											<input type="number" data-id="{{$orderItem->id}}" class="form-control rcv-qty" name="rcv_qty[{{$orderItem->id}}]" value="{{ $orderItem->rcv_item_qty ?? $orderItem->del_item_qty }}">
 										</div>
 										@else
-										{{!empty($orderItem->rcv_item_qty)?$orderItem->rcv_item_qty:''}}
+										{{!empty($orderItem->rcv_item_qty)?$orderItem->rcv_item_qty:'—'}}
 										@endif
 									</td>
 									@if($showPrices && ($atInvoiceStage || $hasPricing))
@@ -596,7 +708,7 @@
 									</td>
 									@endif
 
-									@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered')|| (auth()->user()->role->role=='am-srd' && $order->ast_m_app==null))
+									@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered'))
 									<td class="action">
 										<button class="btn btn-info" id="indSave" data-role="{{auth()->user()->role->role}}"> Save</button>
 									</td>
@@ -608,7 +720,7 @@
 						</table>
 						</div>
 						</div>
-						@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered')|| (auth()->user()->role->role=='am-srd' && $order->ast_m_app==null))
+						@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered'))
 						<input type="hidden" class="form-control" value="{{$order->id}}" name="orderId">
 						<button class="btn btn-info float-right mt-2" type="submit"> Save All </button>
 					</form>
@@ -977,6 +1089,44 @@
 </div>
 <!-- ./print header -->
 
+<!-- Reject modal. A Bootstrap modal rather than a SweetAlert input so the
+	 reason field behaves like every other textarea on this page, and so the
+	 warning about rejection being final has room to be read. Only rendered
+	 for whoever currently holds the requisition. -->
+@if($showRejectButton)
+<div class="modal fade" id="reject-order-modal" tabindex="-1" role="dialog">
+	<div class="modal-dialog" role="document" style="max-width:520px;">
+		<div class="modal-content">
+			<div class="modal-header">
+				<div>
+					<div style="font-size:11.5px;color:#6b7a82;font-weight:600;margin-bottom:2px;">
+						{{ $order->req_no ?: 'This requisition' }}
+					</div>
+					<h5 class="modal-title">Reject requisition</h5>
+				</div>
+				<button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+			</div>
+			<div class="modal-body">
+				<p class="od-reject-warning">
+					Rejecting is final. The requisition stops here and leaves every queue &mdash;
+					it cannot be reopened, and a new one has to be raised in its place.
+				</p>
+				<label class="od-reason-label" for="reject_reason">Reason for rejection</label>
+				<textarea class="form-control" id="reject_reason" rows="4"
+					placeholder="Why is this requisition being rejected?"></textarea>
+				<div class="od-reject-error" id="reject_error"></div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+				<button type="button" class="btn od-btn-reject" id="confirm_reject" data-id="{{$order->id}}">
+					<i class="fas fa-times-circle"></i> Reject requisition
+				</button>
+			</div>
+		</div>
+	</div>
+</div>
+@endif
+
 <!-- See Attachments modal: view-only list for whoever is reviewing this
 	 requisition. Populated straight from the clicked link's data-attachments
 	 attribute (rendered server-side above) - no round trip needed just to
@@ -1180,6 +1330,52 @@ $(function () {
 	function csrfToken() {
 		return $('meta[name="csrf-token"]').attr('content');
 	}
+
+	// --- Reject ---------------------------------------------------------
+	// The reason is required, and checked here before the round trip purely
+	// so the message lands next to the field - the server enforces it too
+	// (RoleController::rejectRequisition), since this check is only a
+	// convenience and can be skipped entirely.
+	$(document).on('click', '#confirm_reject', function () {
+		var $btn = $(this);
+		var reason = $.trim($('#reject_reason').val());
+
+		if (!reason) {
+			$('#reject_error').text('Please give a reason for rejecting this requisition.');
+			$('#reject_reason').focus();
+			return;
+		}
+
+		$('#reject_error').text('');
+		$btn.prop('disabled', true).text('Rejecting…');
+
+		$.ajax({
+			url: '/order/reject',
+			type: 'post',
+			data: { _token: csrfToken(), id: $btn.data('id'), reason: reason },
+			dataType: 'json'
+		})
+		.done(function (response) {
+			$('#reject-order-modal').modal('hide');
+			swal('Rejected', response[0], 'success').then(function () {
+				window.location.href = response.redirect || '/pending/requisition';
+			});
+		})
+		.fail(function (response) {
+			var message = (response.responseJSON && response.responseJSON.message) || 'Something went wrong!';
+			$('#reject_error').text(message);
+		})
+		.always(function () {
+			$btn.prop('disabled', false).html('<i class="fas fa-times-circle"></i> Reject requisition');
+		});
+	});
+
+	// Clear anything left from a previous open, so a reason typed and then
+	// cancelled isn't silently resubmitted next time.
+	$('#reject-order-modal').on('hidden.bs.modal', function () {
+		$('#reject_reason').val('');
+		$('#reject_error').text('');
+	});
 
 	function money(value) {
 		return (isFinite(value) ? value : 0).toLocaleString('en-US', {

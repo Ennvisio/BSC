@@ -1965,12 +1965,13 @@ $(document).on('click','#indSave',function(e){
   }else if(role=='operator'){
     var itemId = $(this).parent('td').parent('tr').find('td.rcv_qty input').data('id');
     var itemValue = $(this).parent('td').parent('tr').find('td.rcv_qty input').val();
-  }else if(role=='am-srd'){
-    var itemId = $(this).parent('td').parent('tr').find('td.req_qty input').data('id');
-    var itemValue = $(this).parent('td').parent('tr').find('td.req_qty input').val();
-    // alert(itemId)
-
   }
+  // am-srd used to have a branch here too, but it only ever rendered because
+  // of a bug in view-order-detail.blade.php (`$order->ast_m_app` reads a
+  // property that doesn't exist on Order - it's `$order->orderApproval->ast_m_app`
+  // - so that check silently evaluated to "always true"). AM-SRD editing Req
+  // Qty was never part of the design; that markup is gone now, so this branch
+  // can no longer fire and has been removed with it.
   var url='/single-qty/update';
   var type='post';
   $.ajax({

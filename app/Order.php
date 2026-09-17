@@ -10,6 +10,22 @@ use Illuminate\Database\Eloquent\Model;
 
 class Order extends Model
 {
+	/**
+	 * GM (SRD)'s four possible delegates, as [forwarded-to column, reviewed
+	 * column]. A forwarded_to_* column set with no matching reviewed column
+	 * means it's currently sitting on that delegate's desk. Single source of
+	 * truth for both currentStageLabel() and hasPendingActionFor() - they used
+	 * to each keep their own copy of this list, which is exactly how GM kept
+	 * seeing Approve/Forward for an order they'd just delegated away.
+	 */
+	private const SRD_DELEGATE_COLUMNS = [
+		'AGM (SRD)' => ['forwarded_to_agm_by_gm_srd', 'agm_app'],
+		'AM (SRD)' => ['forwarded_to_am_by_agm_srd', 'ast_m_app'],
+		'DGM (SRD)' => ['forwarded_to_dgm_srd', 'dgm_srd_app'],
+		'Superintendent (SRD)' => ['forwarded_to_superintendent_srd', 'superintendent_srd_app'],
+	];
+
+
 	public function vessel(){
 		return $this->belongsTo(Vessel::class);
 	}
@@ -31,6 +47,22 @@ class Order extends Model
 	public function creator()
 	{
 		return $this->belongsTo(User::class, 'created_by');
+	}
+
+	/** Whoever rejected it, if anyone did. */
+	public function rejectedBy()
+	{
+		return $this->belongsTo(User::class, 'rejected_by');
+	}
+
+	/**
+	 * Rejection is terminal - nobody acts on it again, it leaves every queue,
+	 * and the originator raises a fresh requisition instead. Checked first by
+	 * both hasPendingActionFor() and currentStageLabel().
+	 */
+	public function isRejected(): bool
+	{
+		return $this->status === 'rejected';
 	}
 
 	/** Completed procurement stages, oldest first - the timeline. */
@@ -74,6 +106,13 @@ class Order extends Model
 	 */
 	public function currentStageLabel(): string
 	{
+		// Terminal, and checked before everything else - a rejected
+		// requisition has no live stage, whatever the chain columns or the
+		// procurement stage it was frozen at still say.
+		if ($this->isRejected()) {
+			return 'Rejected';
+		}
+
 		// Once it's in procurement, the sub-stage IS the answer - otherwise
 		// this reported a static "With SSM Officers for Final Action" for the
 		// weeks a tender actually takes.
@@ -123,14 +162,7 @@ class Order extends Model
 		// a forwarded_to_* column set with no matching *_app means it's still
 		// sitting on their desk. Checked reviewed-first, since once reviewed
 		// both columns are set.
-		$srdDelegates = [
-			'AGM (SRD)' => ['forwarded_to_agm_by_gm_srd', 'agm_app'],
-			'AM (SRD)' => ['forwarded_to_am_by_agm_srd', 'ast_m_app'],
-			'DGM (SRD)' => ['forwarded_to_dgm_srd', 'dgm_srd_app'],
-			'Superintendent (SRD)' => ['forwarded_to_superintendent_srd', 'superintendent_srd_app'],
-		];
-
-		foreach ($srdDelegates as $name => [$forwardedColumn, $reviewedColumn]) {
+		foreach (self::SRD_DELEGATE_COLUMNS as $name => [$forwardedColumn, $reviewedColumn]) {
 			if ($approval->{$reviewedColumn} !== null) {
 				// The column just stores whoever's user id reviewed it - normally
 				// that's the delegate themselves, but a Technical/Marine
@@ -149,7 +181,7 @@ class Order extends Model
 			}
 		}
 
-		foreach ($srdDelegates as $name => [$forwardedColumn, $reviewedColumn]) {
+		foreach (self::SRD_DELEGATE_COLUMNS as $name => [$forwardedColumn, $reviewedColumn]) {
 			if ($approval->{$forwardedColumn} !== null) {
 				return 'With '.$name.' for Review';
 			}
@@ -180,6 +212,14 @@ class Order extends Model
 	public function hasPendingActionFor(?string $role, ?int $userId = null): bool
 	{
 		$approval = $this->orderApproval;
+
+		// Terminal. This single guard is what removes Approve, Forward,
+		// Assign, Confirm Receipt, the procurement stage panel AND the
+		// Reject button itself from a rejected requisition, for every role
+		// at once - they are all gated on this method.
+		if ($this->isRejected()) {
+			return false;
+		}
 
 		if (! $approval || $role === null) {
 			return false;
@@ -239,18 +279,33 @@ class Order extends Model
 			'master' => $approval->cheif_ofcr_app !== null && $approval->master_app === null,
 			'chief-engineer' => $approval->second_eng_app !== null && $approval->chief_eng_app === null,
 
-			// GM (SRD) holds the approval regardless of any delegate review.
-			'gm-srd' => $forwardedAshore && $approval->gm_app === null,
+			// GM (SRD) holds the approval - but only while it's actually on
+			// their desk. Once they've delegated it out, it's on the
+			// delegate's desk instead and GM has nothing to do until that
+			// delegate reviews it (at which point the *_app column is set,
+			// srdDelegationPending() goes false, and Approve reappears).
+			'gm-srd' => $forwardedAshore && $approval->gm_app === null && ! $this->srdDelegationPending($approval),
 
-			// SRD delegates only act on what GM actually delegated to them.
+			// SRD delegates only act on what GM actually delegated to THEM
+			// specifically - assigned_to_srd null means it predates named
+			// assignment (falls back to visible-to-the-whole-role), otherwise
+			// it must match this exact person. Without this check, a second
+			// person sharing the same role (there are 2 AGM-SRD, 4 AM-SRD in
+			// this fleet) would see Approve/Reject for a requisition GM
+			// delegated to their colleague, not to them - disagreeing with
+			// RoleController::pendingRequisition(), which already scopes this way.
 			'agm-srd' => $forwardedAshore && $approval->gm_app === null
-				&& $approval->forwarded_to_agm_by_gm_srd !== null && $approval->agm_app === null,
+				&& $approval->forwarded_to_agm_by_gm_srd !== null && $approval->agm_app === null
+				&& ($approval->assigned_to_srd === null || $approval->assigned_to_srd === $userId),
 			'am-srd' => $forwardedAshore && $approval->gm_app === null
-				&& $approval->forwarded_to_am_by_agm_srd !== null && $approval->ast_m_app === null,
+				&& $approval->forwarded_to_am_by_agm_srd !== null && $approval->ast_m_app === null
+				&& ($approval->assigned_to_srd === null || $approval->assigned_to_srd === $userId),
 			'dgm-srd' => $forwardedAshore && $approval->gm_app === null
-				&& $approval->forwarded_to_dgm_srd !== null && $approval->dgm_srd_app === null,
+				&& $approval->forwarded_to_dgm_srd !== null && $approval->dgm_srd_app === null
+				&& ($approval->assigned_to_srd === null || $approval->assigned_to_srd === $userId),
 			'superintendent-srd' => $forwardedAshore && $approval->gm_app === null
-				&& $approval->forwarded_to_superintendent_srd !== null && $approval->superintendent_srd_app === null,
+				&& $approval->forwarded_to_superintendent_srd !== null && $approval->superintendent_srd_app === null
+				&& ($approval->assigned_to_srd === null || $approval->assigned_to_srd === $userId),
 
 			// DGM (SSM)'s action is assigning it to a named SSM officer.
 			'dgm-ssm' => $approval->gm_app !== null && $approval->dgm_app_ssm === null,
@@ -267,5 +322,21 @@ class Order extends Model
 
 			default => false,
 		};
+	}
+
+	/**
+	 * Whether one of GM (SRD)'s four delegates currently has this requisition
+	 * on their desk - forwarded to them, not yet reviewed. Used to hide GM's
+	 * own Approve/Delegate/Forward buttons while it's out of their hands.
+	 */
+	private function srdDelegationPending(OrderApproval $approval): bool
+	{
+		foreach (self::SRD_DELEGATE_COLUMNS as [$forwardedColumn, $reviewedColumn]) {
+			if ($approval->{$forwardedColumn} !== null && $approval->{$reviewedColumn} === null) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 }

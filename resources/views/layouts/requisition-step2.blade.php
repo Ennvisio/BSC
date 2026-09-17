@@ -668,7 +668,7 @@ $(function () {
 			// attachment_ids[itemId][] input for storeStep2() to link once the
 			// row is real. attachmentsCellHtml (defined below) builds the same
 			// chip+hidden-input markup this cell will be re-rendered with.
-			pageOrderTable.row.add([
+			var stagedRow = pageOrderTable.row.add([
 				'<b class="serial">' + idx + '</b>',
 				esc(item.name) + '<input type="hidden" name="item_id[]" value="' + item.id + '">',
 				esc(item.article_number),
@@ -681,7 +681,20 @@ $(function () {
 				attachmentsCellHtml(item.id, [], esc(item.name)),
 				'',
 				'<button type="button" class="btn btn-danger btn-sm delete-order-item-row"><i class="fas fa-trash-alt"></i></button>',
-			]).draw().node().id = 'row_ordered_item-' + item.id;
+			]).draw().node();
+			stagedRow.id = 'row_ordered_item-' + item.id;
+
+			// row.add() builds the <td> wrappers itself, so the cell contents
+			// above can't carry the class and data-item-id that
+			// renderAttachmentsCell() looks the cell up by - without this,
+			// attaching to a staged row silently wrote to nothing, because
+			// '.attachments-cell[data-item-id=N]' matched only the
+			// server-rendered rows that ship with that wrapper already on
+			// them. Found via .add-att-btn rather than a column index so it
+			// survives a column being inserted before this one.
+			$(stagedRow).find('.add-att-btn').closest('td')
+				.addClass('attachments-cell')
+				.attr('data-item-id', item.id);
 		});
 
 		$('#item-picker-modal').modal('hide');

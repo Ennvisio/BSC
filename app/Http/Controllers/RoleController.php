@@ -98,7 +98,7 @@ class RoleController extends Controller
 	{
 		$role = auth()->user()->role->role;
 
-		$query = Order::where('ord_status', true)
+		$query = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 			->where('vessel_id', auth()->user()->role->vessel_id);
 
 		if ($role === 'chief-officer' || $role === 'second-engineer') {
@@ -260,7 +260,7 @@ class RoleController extends Controller
 			// to visible-to-everyone-in-that-role rather than stranding it.
 			if (auth()->user()->role->role == 'am-srd') {
 				$userId = auth()->user()->id;
-				$orders = Order::where('ord_status', true)
+				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					->whereHas('orderApproval', function ($q) use ($userId) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
@@ -283,7 +283,7 @@ class RoleController extends Controller
 				// engineer approved it", so AGM was seeing effectively every
 				// order.)
 				$userId = auth()->user()->id;
-				$orders = Order::where('ord_status', true)
+				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					->whereHas('orderApproval', function ($q) use ($userId) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
@@ -301,7 +301,7 @@ class RoleController extends Controller
 					->get();
 			} elseif (auth()->user()->role->role == 'dgm-srd') {
 				$userId = auth()->user()->id;
-				$orders = Order::where('ord_status', true)
+				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					->whereHas('orderApproval', function ($q) use ($userId) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
@@ -318,7 +318,7 @@ class RoleController extends Controller
 					->get();
 			} elseif (auth()->user()->role->role == 'superintendent-srd') {
 				$userId = auth()->user()->id;
-				$orders = Order::where('ord_status', true)
+				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					->whereHas('orderApproval', function ($q) use ($userId) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
@@ -334,18 +334,33 @@ class RoleController extends Controller
 					->orderBy('updated_at', 'desc')
 					->get();
 			} elseif (auth()->user()->role->role == 'gm-srd') {
-				$orders = Order::where('ord_status', true)
+				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					->whereHas('orderApproval', function ($q) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
 								->orWhere('chief_eng_app', '!=', null);
 						})
-							->where('gm_app', '=', null);
+							->where('gm_app', '=', null)
+							// Not while it's out with a delegate for review -
+							// see Order::srdDelegationPending(). Mirrors
+							// hasPendingActionFor()'s 'gm-srd' case so this list
+							// and the detail page's buttons never disagree.
+							->where(function ($query) {
+								$query->where(function ($q2) {
+									$q2->whereNull('forwarded_to_agm_by_gm_srd')->orWhereNotNull('agm_app');
+								})->where(function ($q2) {
+									$q2->whereNull('forwarded_to_am_by_agm_srd')->orWhereNotNull('ast_m_app');
+								})->where(function ($q2) {
+									$q2->whereNull('forwarded_to_dgm_srd')->orWhereNotNull('dgm_srd_app');
+								})->where(function ($q2) {
+									$q2->whereNull('forwarded_to_superintendent_srd')->orWhereNotNull('superintendent_srd_app');
+								});
+							});
 					})
 					->orderBy('updated_at', 'desc')
 					->get();
 			} elseif (auth()->user()->role->role == 'dgm-ssm') {
-				$orders = Order::where('ord_status', true)
+				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					->whereHas('orderApproval', function ($q) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
@@ -368,7 +383,7 @@ class RoleController extends Controller
 					$query->where('assigned_to_ssm', $userId)->orWhereNull('assigned_to_ssm');
 				};
 
-				$orders = Order::where('ord_status', true)
+				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					->where(function ($outer) use ($assignedToMe) {
 						// In procurement, the stage alone says whose turn it
 						// is - and it comes BACK to this queue after the ship
@@ -405,7 +420,7 @@ class RoleController extends Controller
 			// regardless of which role currently holds it. Purely informational
 			// (see approveRequisition()) - never gates the normal chain.
 			elseif (auth()->user()->role->role == 'technical-superintendent' || auth()->user()->role->role == 'marine-superintendent') {
-				$orders = Order::where('ord_status', true)
+				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					// "Not yet closed" used to be status != 'received'. Once a
 					// requisition is in procurement that's no longer the end of
 					// it: 'received' means the goods are on board, with Invoice
@@ -447,7 +462,7 @@ class RoleController extends Controller
 		}
 
 		if (auth()->user()->role->role == 'am-srd') {
-			$orders = Order::where('ord_status', true)
+			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -460,7 +475,7 @@ class RoleController extends Controller
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'agm-srd') {
-			$orders = Order::where('ord_status', true)
+			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -473,7 +488,7 @@ class RoleController extends Controller
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'dgm-srd') {
-			$orders = Order::where('ord_status', true)
+			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -486,7 +501,7 @@ class RoleController extends Controller
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'superintendent-srd') {
-			$orders = Order::where('ord_status', true)
+			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -499,7 +514,7 @@ class RoleController extends Controller
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'gm-srd') {
-			$orders = Order::where('ord_status', true)
+			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -511,7 +526,7 @@ class RoleController extends Controller
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'dgm-ssm') {
-			$orders = Order::where('ord_status', true)
+			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -524,7 +539,7 @@ class RoleController extends Controller
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'agm-ssm') {
-			$orders = Order::where('ord_status', true)
+			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -538,7 +553,7 @@ class RoleController extends Controller
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'am-ssm') {
-			$orders = Order::where('ord_status', true)
+			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -552,7 +567,7 @@ class RoleController extends Controller
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'superintendent-ssm') {
-			$orders = Order::where('ord_status', true)
+			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -566,7 +581,7 @@ class RoleController extends Controller
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'technical-superintendent') {
-			$orders = Order::where('ord_status', true)
+			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where('tech_superintendent_app', '!=', null);
 				})
@@ -574,7 +589,7 @@ class RoleController extends Controller
 				->get();
 		}
 		elseif (auth()->user()->role->role == 'marine-superintendent') {
-			$orders = Order::where('ord_status', true)
+			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where('marine_superintendent_app', '!=', null);
 				})
@@ -587,6 +602,17 @@ class RoleController extends Controller
 	public function approveRequisition(Request $req)
 	{
 		$order = Order::findOrFail($req->id);
+
+		// A rejected requisition is finished. The button is already hidden
+		// (hasPendingActionFor returns false), but this endpoint has never
+		// checked whose turn it is - so without this guard a stale tab, a
+		// double-click, or a hand-rolled POST could approve one and bring it
+		// back to life with a fresh status.
+		if ($order->isRejected()) {
+			return response()->json([
+				'message' => 'This requisition was rejected and can no longer be acted on.',
+			], 422);
+		}
 		// Looking this up by order.id as if it were the approval row's own
 		// primary key (rather than matching on order_id) silently breaks the
 		// moment the two tables' auto-increment counters drift apart, which
@@ -851,6 +877,23 @@ class RoleController extends Controller
 
 			return array($data);
 		}
+
+		// GM (SRD) and its four delegates (DGM/AGM/AM/Superintendent SRD) can
+		// also correct the requested quantity while it's on their desk, same
+		// as Master/Chief Engineer above - the input is only ever rendered
+		// for them at their own review turn (see view-order-detail's req_qty
+		// column), so this only ever touches a line they were actually shown.
+		if (in_array(auth()->user()->role->role, ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd'], true)) {
+			foreach ((array) $req->req_qty as $orderItemId => $qty) {
+				if ($qty === '' || $qty === null) {
+					continue;
+				}
+				OrderItem::where('id', $orderItemId)->where('order_id', $order->id)->update([
+					'item_qty' => $qty,
+				]);
+			}
+		}
+
 		$data = $already_approved
 			? "Requested Requisition already approved!"
 			: "Requested Requisition has been approved successfully!";
@@ -876,6 +919,86 @@ class RoleController extends Controller
 
 		return array($data);
 	}
+
+	/**
+	 * Reject a requisition, with a reason, and stop it there.
+	 *
+	 * Terminal by design: the requisition never returns to anyone's queue and
+	 * the originator raises a fresh one instead. Order::isRejected() is what
+	 * enforces that everywhere else - hasPendingActionFor() returns false for
+	 * a rejected requisition, which removes every action button at once, and
+	 * the queue queries below exclude it from the live lists.
+	 *
+	 * Who may reject is exactly who may approve: whoever currently HOLDS it.
+	 * Reusing hasPendingActionFor() rather than a second, parallel rule means
+	 * the two can never disagree about whose turn it is - including the roles
+	 * whose "turn" isn't an approval at all (DGM (SSM) assigns, GM (SRD) may
+	 * be delegating), who can still reject while it sits with them.
+	 */
+	public function rejectRequisition(Request $req)
+	{
+		$reason = trim((string) $req->reason);
+
+		if ($reason === '') {
+			return response()->json([
+				'message' => 'Please give a reason for rejecting this requisition.',
+			], 422);
+		}
+
+		$order = Order::findOrFail($req->id);
+		$role = auth()->user()->role->role ?? null;
+
+		// A draft has not been submitted yet - it belongs to the officer who
+		// is still writing it, and they delete rather than reject it.
+		if (! $order->ord_status) {
+			return response()->json([
+				'message' => 'This requisition has not been submitted yet.',
+			], 422);
+		}
+
+		if ($order->isRejected()) {
+			return response()->json([
+				'message' => 'This requisition has already been rejected.',
+			], 422);
+		}
+
+		// From Invoice Verification onwards the goods are already on board -
+		// there's nothing left to turn away, only money left to account for.
+		// The button is already hidden at this point (see view-order-detail's
+		// $showRejectButton), but this endpoint has never checked the stage
+		// itself, so a stale tab or a hand-rolled POST could still reject a
+		// requisition whose items the ship has already received.
+		if (ProcurementStage::isPostReceipt($order->procurement_stage)) {
+			return response()->json([
+				'message' => 'This requisition has already been received and can no longer be rejected.',
+			], 422);
+		}
+
+		if (! $order->hasPendingActionFor($role, auth()->user()->id)) {
+			return response()->json([
+				'message' => 'This requisition is not with you right now, so you cannot reject it.',
+			], 403);
+		}
+
+		// Captured BEFORE the status changes: once status is 'rejected',
+		// currentStageLabel() reports exactly that and can no longer say
+		// where in the chain it actually died.
+		$stageAtRejection = $order->currentStageLabel();
+
+		$order->status = 'rejected';
+		$order->rejected_by = auth()->user()->id;
+		$order->rejected_by_role = $role;
+		$order->rejected_at_stage = $stageAtRejection;
+		$order->rejected_at = Carbon::now();
+		$order->rejection_reason = $reason;
+		$order->save();
+
+		$data = 'Requisition '.($order->req_no ?: '').' has been rejected.';
+
+		// Back to the pending queue, where it is now conspicuously gone.
+		return [$data, 'redirect' => url('/pending/requisition')];
+	}
+
 	/**
 	 * Records a procurement step for the two stages that are taken through the
 	 * approve flow rather than ProcurementController - Delivery and Receipt &
@@ -919,6 +1042,12 @@ class RoleController extends Controller
 		}
 
 		$order = Order::findOrFail($req->id);
+
+		if ($order->isRejected()) {
+			return response()->json([
+				'message' => 'This requisition was rejected and can no longer be acted on.',
+			], 422);
+		}
 		$order_approval = OrderApproval::where('order_id', $order->id)->firstOrFail();
 
 		// Each of DGM/AGM/AM/Superintendent (SRD) can be more than one real
@@ -940,6 +1069,22 @@ class RoleController extends Controller
 				'message' => 'Please choose a reviewer to delegate this requisition to.',
 			], 422);
 		}
+
+		// Only one delegate can hold this at a time. Without clearing the
+		// other three targets' forwarded_to_* columns first, re-delegating
+		// (e.g. GM picks AGM, then changes their mind and picks AM instead)
+		// leaves the old forwarded_to_agm_by_gm_srd sitting there alongside
+		// the new forwarded_to_am_by_agm_srd - both columns end up "set", so
+		// the AGM-SRD delegate keeps seeing it as pending action (and the
+		// stage label picks whichever column happens to be checked first)
+		// even though assigned_to_srd has already moved on to the AM.
+		foreach ($srdColumns as $column) {
+			$order_approval->{$column} = null;
+		}
+		$order_approval->agm_app = null;
+		$order_approval->ast_m_app = null;
+		$order_approval->dgm_srd_app = null;
+		$order_approval->superintendent_srd_app = null;
 
 		$order_approval->assigned_to_srd = $assignee->id;
 		$order_approval->{$srdColumns[$assigneeRole]} = auth()->user()->id;
@@ -965,6 +1110,12 @@ class RoleController extends Controller
 		}
 
 		$order = Order::findOrFail($req->id);
+
+		if ($order->isRejected()) {
+			return response()->json([
+				'message' => 'This requisition was rejected and can no longer be acted on.',
+			], 422);
+		}
 		$order_approval = OrderApproval::where('order_id', $order->id)->firstOrFail();
 
 		$assignee = User::find($req->assigned_to);

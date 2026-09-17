@@ -36,6 +36,15 @@ class ProcurementController extends Controller
     {
         $stage = $order->procurement_stage;
 
+        // Rejection is terminal and can land mid-procurement, leaving a stage
+        // pointer still set - so inProcurement() alone would let a stale page
+        // carry a rejected requisition on to the next stage.
+        if ($order->isRejected()) {
+            return response()->json([
+                'message' => 'This requisition was rejected and can no longer be acted on.',
+            ], 422);
+        }
+
         if (! $order->inProcurement() || $order->procurementClosed()) {
             return response()->json([
                 'message' => 'This requisition is not in the procurement workflow.',
