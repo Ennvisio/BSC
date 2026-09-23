@@ -23,6 +23,14 @@
                         </div>
 
                         <div class="form-group row">
+                            <label for="vessel_acronym" class="col-sm-3 col-form-label">Vessel Acronym<span class="required">*</span> :</label>
+                            <div class="col-sm-9">
+                                <input type="text" class="form-control text-uppercase" name="vessel_acronym" maxlength="5" placeholder="e.g. JOY" >
+                                <small class="form-text text-muted">2-5 letters. Starts every requisition number, e.g. JOY/DK/STR/08/2026.</small>
+                            </div>
+                        </div>
+
+                        <div class="form-group row">
                             <label for="owner_name" class="col-sm-3 col-form-label">Name of Owner<span class="required">*</span> :</label>
                             <div class="col-sm-9">
                                 <input type="text" class="form-control" name="owner_name" placeholder="" >

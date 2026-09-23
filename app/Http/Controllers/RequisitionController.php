@@ -7,38 +7,109 @@ use App\BudgetGroup;
 use App\Category;
 use App\Order;
 use App\OrderApproval;
+use App\OrderFormPart;
 use App\OrderItem;
+use App\RequisitionForm;
 use App\Services\StockService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 /**
- * The 3-page requisition wizard: header (draft created) -> items (attached to
- * the same draft) -> review + submit (finalizes into the existing approval
- * chain). See app/Http/Controllers/HomeController.php@createOrder/storeOrder
+ * The 4-page requisition wizard: header (draft created) -> items (attached to
+ * the same draft) -> Part A of the approval form (the ship's justification,
+ * see RequisitionForm) -> review + submit (finalizes into the existing
+ * approval chain). See app/Http/Controllers/HomeController.php@createOrder/storeOrder
  * for the older single-page flow this supersedes - left in place, unused, for
  * now rather than deleted.
  */
 class RequisitionController extends Controller
 {
     /**
-     * Step 1 doubles as the edit form for a draft that already exists, so
-     * Back from step 2 returns here with the details filled in rather than
-     * to a blank form that would strand the draft and its items.
+     * Step 1: the justification form (Part A), asked BEFORE anything else.
+     * Nothing exists to attach it to yet, so this renders an unsaved form and
+     * storeStep1() is what creates the draft.
      */
-    public function createStep1(?Order $order = null)
+    public function createStep1()
     {
-        if ($order) {
-            $this->authorizeDraft($order);
+        return view('layouts.requisition-form', [
+            'order' => null,
+            'part' => RequisitionForm::PART_A,
+            'questions' => RequisitionForm::questions(RequisitionForm::PART_A),
+            // Nothing saved yet - but old() carries answers back when the form
+            // comes round again with errors, so a long form isn't retyped.
+            'formPart' => null,
+        ]);
+    }
+
+    /**
+     * Saves step 1. Unlike the later steps there's no draft to save a partial
+     * answer against, so the form has to be complete before it creates one -
+     * an incomplete one comes straight back with the answers still filled in.
+     */
+    public function storeStep1(Request $request)
+    {
+        $part = RequisitionForm::PART_A;
+        $result = RequisitionForm::clean($part, (array) $request->input('q', []));
+        $errors = $result['errors'];
+
+        $declared = $request->boolean('declaration');
+        if (! $declared) {
+            $errors['declaration'] = 'Tick the declaration to confirm the form is true and correct.';
         }
 
-        $budgetGroups = BudgetGroup::where('status', true)->orderBy('name')->get();
+        if ($errors !== []) {
+            return redirect()->route('requisition.step1')->withErrors($errors)->withInput();
+        }
+
+        $user = auth()->user();
+
+        $order = new Order;
+        $order->vessel_id = $user->role->vessel_id;
+        $order->req_date = Carbon::now();
+        $order->status = 'draft';
+        $order->ord_status = false;
+        $order->created_by = $user->id;
+        $order->created_by_role = $user->role->role;
+        // NOT NULL with no default, and the details step is where it's really
+        // asked - a shell draft would otherwise fail to save at all.
+        $order->port_name = '';
+        $order->save();
+
+        OrderFormPart::create([
+            'order_id' => $order->id,
+            'part' => $part,
+            'form_version' => RequisitionForm::VERSION,
+            'answers' => $result['answers'],
+            // Stamped as it stood at the time - name and rank as they were
+            // when this was declared, not a live lookup of the user later.
+            'declaration' => [
+                'declared_by' => $user->name,
+                'declared_by_role' => $user->role->role ?? null,
+                'declared_at' => Carbon::now()->toDateTimeString(),
+            ],
+            'completed_at' => Carbon::now(),
+            'filled_by' => $user->id,
+        ]);
+
+        return redirect()->route('requisition.details', $order);
+    }
+
+    /** Step 2: the requisition's own details, against the draft step 1 created. */
+    public function step2Details(Order $order)
+    {
+        $this->authorizeDraft($order);
+
+        // Item groups only - the service ones (Dry-Dock, Plate Renewal) share
+        // this table but belong to the service requisition's own picker.
+        $budgetGroups = BudgetGroup::ofKind(BudgetGroup::KIND_ITEM);
 
         return view('layouts.requisition-step1', compact('budgetGroups', 'order'));
     }
 
-    public function storeStep1(Request $request, ?Order $order = null)
+    public function storeDetails(Request $request, Order $order)
     {
+        $this->authorizeDraft($order);
+
         $request->validate([
             'title' => 'required|string|max:255',
             'reason' => 'required|string',
@@ -46,21 +117,6 @@ class RequisitionController extends Controller
             'department' => 'required|in:Deck,Engine',
             'port_name' => 'required|string',
         ]);
-
-        // Coming back to step 1 for a draft that already exists updates it -
-        // creating a second Order here would orphan the first along with every
-        // item already added to it.
-        if ($order) {
-            $this->authorizeDraft($order);
-        } else {
-            $order = new Order;
-            $order->vessel_id = auth()->user()->role->vessel_id;
-            $order->req_date = Carbon::now();
-            $order->status = 'draft';
-            $order->ord_status = false;
-            $order->created_by = auth()->user()->id;
-            $order->created_by_role = auth()->user()->role->role;
-        }
 
         $order->title = $request->title;
         $order->reason = $request->reason;
@@ -194,9 +250,95 @@ class RequisitionController extends Controller
         return response()->json(['item_qty' => (int) $request->item_qty]);
     }
 
+    /**
+     * Step 1 again, for a draft that already has a Part A - what Back from
+     * the details step returns to. Every question is rendered from
+     * RequisitionForm's definition; this method only supplies the saved
+     * answers, so an officer coming back finds what they'd already filled in.
+     */
+    public function form(Order $order)
+    {
+        $this->authorizeDraft($order);
+
+        $order->load(['vessel']);
+        $formPart = OrderFormPart::where('order_id', $order->id)->where('part', RequisitionForm::PART_A)->first();
+
+        return view('layouts.requisition-form', [
+            'order' => $order,
+            'part' => RequisitionForm::PART_A,
+            'questions' => RequisitionForm::questions(RequisitionForm::PART_A),
+            'formPart' => $formPart,
+        ]);
+    }
+
+    /**
+     * Saves an edit to an existing draft's Part A. Always saves what was
+     * posted - even half-finished - so a correction never throws away a long
+     * form; only whether the part is marked COMPLETE depends on the required
+     * answers and the declaration, and only a complete part lets the officer
+     * on to Review at the end.
+     */
+    public function storeForm(Request $request, Order $order)
+    {
+        $this->authorizeDraft($order);
+
+        $part = RequisitionForm::PART_A;
+        $result = RequisitionForm::clean($part, (array) $request->input('q', []));
+        $errors = $result['errors'];
+
+        $declared = $request->boolean('declaration');
+        if (! $declared) {
+            $errors['declaration'] = 'Tick the declaration to confirm the form is true and correct.';
+        }
+
+        $complete = $errors === [];
+        $user = auth()->user();
+
+        OrderFormPart::updateOrCreate(
+            ['order_id' => $order->id, 'part' => $part],
+            [
+                'form_version' => RequisitionForm::VERSION,
+                'answers' => $result['answers'],
+                // Stamped as it stood at the time - name and rank as they were
+                // when this was declared, not a live lookup of the user later.
+                'declaration' => $declared ? [
+                    'declared_by' => $user->name,
+                    'declared_by_role' => $user->role->role ?? null,
+                    'declared_at' => Carbon::now()->toDateTimeString(),
+                ] : null,
+                'completed_at' => $complete ? Carbon::now() : null,
+                'filled_by' => $user->id,
+            ]
+        );
+
+        if (! $complete) {
+            return redirect()->route('requisition.form', $order)->withErrors($errors);
+        }
+
+        // Part A is the first step now, so the way on from here is the
+        // requisition's own details - not Review, which comes after the items.
+        return redirect()->route('requisition.details', $order);
+    }
+
+    /** Has this draft's Part A been completed and declared? */
+    private function partAComplete(Order $order): bool
+    {
+        return OrderFormPart::where('order_id', $order->id)
+            ->where('part', RequisitionForm::PART_A)
+            ->whereNotNull('completed_at')
+            ->exists();
+    }
+
     public function step3(Order $order)
     {
         $this->authorizeDraft($order);
+
+        // A draft that skipped ahead (an old bookmark, or one that was already
+        // sitting at Review when this step was introduced) goes back to fill it.
+        if (! $this->partAComplete($order)) {
+            return redirect()->route('requisition.form', $order)
+                ->withErrors(['form' => 'Complete the justification form before reviewing the requisition.']);
+        }
 
         // Same table as step 2, minus the inputs - by now storeStep2() has
         // already persisted everything (items and their attachments alike),
@@ -214,6 +356,14 @@ class RequisitionController extends Controller
     {
         $this->authorizeDraft($order);
 
+        // Enforced here as well as at Review: the button being reachable
+        // isn't the same as the rule being kept, and a stale tab or a
+        // hand-rolled POST goes straight to this.
+        if (! $this->partAComplete($order)) {
+            return redirect()->route('requisition.form', $order)
+                ->withErrors(['form' => 'Complete the justification form before submitting.']);
+        }
+
         // Same counter + symbol format as the existing single-step flow
         // (HomeController@storeOrder) - unchanged, just generated later.
         $counter = Order::where('vessel_id', $order->vessel_id)
@@ -225,7 +375,7 @@ class RequisitionController extends Controller
             $counter = '0'.$counter;
         }
 
-        $order->req_no = 'DK/'.$order->category->symbol.'/'.$counter.'/'.Carbon::now()->year;
+        $order->req_no = $order->vessel->reqNoPrefix().'/'.$order->category->symbol.'/'.$counter.'/'.Carbon::now()->year;
         $order->ord_status = true;
 
         $orderApproval = new OrderApproval;

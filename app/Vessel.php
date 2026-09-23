@@ -12,6 +12,20 @@ use Illuminate\Database\Eloquent\Model;
 
 class Vessel extends Model
 {
+    /**
+     * What a requisition number starts with: "JOY/DK" for a vessel whose
+     * acronym is JOY, giving JOY/DK/STR/08/2026.
+     *
+     * A vessel with no acronym yet falls back to the original bare "DK" rather
+     * than blocking the officer from submitting - the acronym is required on
+     * the vessel form from now on, but ships created before that have none
+     * until someone edits them.
+     */
+    public function reqNoPrefix(): string
+    {
+        return $this->acronym ? $this->acronym.'/DK' : 'DK';
+    }
+
     public function vesselDetail(){
         return $this->hasOne('App\VesselParticular');
     }

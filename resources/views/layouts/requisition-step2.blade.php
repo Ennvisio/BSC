@@ -90,7 +90,7 @@
 					<strong class="pptitle">{{ $order->title }} &nbsp;
 						<span style="color:red;">{{ $order->vessel->name }}</span>
 					</strong>
-					<div class="right-button">Step 2 of 3 — Add Items</div>
+					<div class="right-button">Step 3 of 4 — Add Items</div>
 				</div>
 				<div class="card-body">
 					@if($errors->any())
@@ -235,8 +235,8 @@
 							<div class="col-md-12 text-right">
 									{{-- Back to step 1 for THIS draft, not to a blank new-requisition
 										 form - that would strand this draft and its items. --}}
-									<a href="{{ route('requisition.step1.edit', $order) }}" class="btn btn-srd-outline"><i class="fas fa-arrow-left"></i> Back</a>
-									<button type="submit" class="btn btn-success">Save &amp; Next: Review <i class="fas fa-arrow-right"></i></button>
+									<a href="{{ route('requisition.details', $order) }}" class="btn btn-srd-outline"><i class="fas fa-arrow-left"></i> Back</a>
+									<button type="submit" class="btn btn-success">Save &amp; Next: Justification <i class="fas fa-arrow-right"></i></button>
 								</div>
 							</div>
 						</div>

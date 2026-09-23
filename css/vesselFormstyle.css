@@ -20,8 +20,8 @@ body {
 
 .nav-tabs .nav-item.show .nav-link, .nav-tabs .nav-link.active {
     color: #fff!important;
-    background-color: #00bcd4;
-    border-color: #00bcd4 #00bcd4 #00bcd4;
+    background-color: var(--srd-accent, #007184);
+    border-color: var(--srd-accent, #007184) var(--srd-accent, #007184) var(--srd-accent, #007184);
     border-radius: 6px 6px 0 0;
 }
 
@@ -32,7 +32,7 @@ body {
 
 .vessel-form #myTab li a {
     font-weight: 500;
-    color: #00bcd4;
+    color: var(--srd-accent, #007184);
     font-size: 16px;
     font-family: sans-serif;
     letter-spacing: 1px;
@@ -50,7 +50,7 @@ body {
     position: absolute;
     top: -17px;
     display: inline-block;
-    background: #00BCD4;
+    background: var(--srd-accent, #007184);
     padding: 5px 10px;
     border-radius: 5px;
     color: #fff;

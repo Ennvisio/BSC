@@ -4,6 +4,7 @@ use App\Boiler;
 use App\BudgetGroup;
 use App\Category;
 use App\Certificate;
+use App\CertificateCategory;
 use App\Dimension;
 use App\Engine;
 use App\FrameworkDescription;
@@ -13,6 +14,7 @@ use App\Http\Requests\BudgetGroupFormValidate;
 use App\Http\Requests\CategoryFormValidate;
 use App\Http\Requests\CertificateEditFormVal;
 use App\Http\Requests\CertificateFormValidate;
+use App\Http\Requests\CertificateCategoryFormValidate;
 use App\Http\Requests\DimensionValidate;
 use App\Http\Requests\EngineValidate;
 use App\Http\Requests\ItemFormValidate;
@@ -164,21 +166,66 @@ class HomeController extends Controller
       'received' => Order::where('ord_status', true)->where('status', 'received')->count(),
     ];
   }
+  /**
+   * Certificates/Surveys are fleet-wide reference data, reachable two ways:
+   * super-admin/GM (SRD)/admin manage the whole fleet (any vessel, plus the
+   * certificate TYPE catalog itself - category/validity/permanent); a
+   * vessel's own Master/Chief Engineer see and add records for their OWN
+   * vessel only, never another one and never the type catalog (that stays
+   * standardized fleet-wide, matching the TEC-04 Certificate Checklist's own
+   * fixed nomenclature).
+   */
+  private function isFleetRecordsAdmin(): bool
+  {
+    return in_array(auth()->user()->role->role ?? null, ['super-admin', 'gm-srd', 'admin'], true);
+  }
+
+  private function isVesselRecordsManager(): bool
+  {
+    return in_array(auth()->user()->role->role ?? null, ['master', 'chief-engineer'], true)
+      && ! empty(auth()->user()->role->vessel_id);
+  }
+
+  private function authorizeFleetRecords(): void
+  {
+    abort_unless($this->isFleetRecordsAdmin() || $this->isVesselRecordsManager(), 403);
+  }
+
   public function getSurvey()
   {
-    $vessel_surveys=VesselSurvey::orderBy('created_at','desc')->where('status',true)->get();
-    $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
-    $surveys=Survey::orderBy('created_at','desc')->where('status',true)->get();
-    return view('layouts.survey',compact('vessel_surveys','vessels','surveys'));
+    $this->authorizeFleetRecords();
+
+    $surveys = Survey::orderBy('created_at', 'desc')->where('status', true)->get();
+
+    if ($this->isVesselRecordsManager()) {
+      $vessel_surveys = VesselSurvey::where('status', true)
+        ->where('vessel_id', auth()->user()->role->vessel_id)
+        ->orderBy('created_at', 'desc')->get();
+
+      return view('layouts.survey', [
+        'vessel_surveys' => $vessel_surveys, 'surveys' => $surveys,
+        'vessels' => null, 'lockedVessel' => auth()->user()->role->vessel,
+      ]);
+    }
+
+    $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
+    $vessel_surveys = VesselSurvey::orderBy('created_at', 'desc')->where('status', true)->get();
+
+    return view('layouts.survey', compact('vessel_surveys', 'vessels', 'surveys'))->with('lockedVessel', null);
   }
   public function storeSurvey(SurveyFormValidate $request)
   {
+    $this->authorizeFleetRecords();
+
     $survey=new VesselSurvey;
     $survey->survey_id=$request->Survey_Name;
     $survey->society_name=$request->Survey_Society;
     $survey->survey_date=$request->Survey_Date;
     $survey->survey_exp_date=$request->Survey_Expire_Date;
-    $survey->vessel_id=$request->Vessel_Name;
+    // A vessel's own Master/Chief Engineer can only ever record a survey
+    // against their own vessel - the posted Vessel_Name is trusted only from
+    // the fleet-wide admin roles, who can genuinely pick any vessel.
+    $survey->vessel_id=$this->isVesselRecordsManager() ? auth()->user()->role->vessel_id : $request->Vessel_Name;
     $survey->created_by=auth()->user()->id;
     $survey->save();
     $newsurvey=VesselSurvey::with('vessel')->with('Survey')->where('id',$survey->id)->first();
@@ -188,13 +235,28 @@ class HomeController extends Controller
   }
   public function getOneSurvey($id)
   {
-    return $survey=VesselSurvey::with('vessel')->with('survey')->where('id',$id)->first();
+    $this->authorizeFleetRecords();
+
+    $survey=VesselSurvey::with('vessel')->with('survey')->where('id',$id)->first();
+
+    if ($this->isVesselRecordsManager() && (! $survey || $survey->vessel_id != auth()->user()->role->vessel_id)) {
+      abort(404);
+    }
+
+    return $survey;
   }
   public function updateOneSurvey(SurveyFormValidate $request)
   {
+    $this->authorizeFleetRecords();
+
     $survey=VesselSurvey::findOrFail($request->survey_Id);
+
+    if ($this->isVesselRecordsManager() && $survey->vessel_id != auth()->user()->role->vessel_id) {
+      abort(403, 'This survey belongs to a different vessel.');
+    }
+
     $survey->survey_id=$request->Survey_Name;
-    $survey->vessel_id=$request->Vessel_Name;
+    $survey->vessel_id=$this->isVesselRecordsManager() ? auth()->user()->role->vessel_id : $request->Vessel_Name;
     $survey->society_name=$request->Survey_Society;
     $survey->survey_date=$request->Survey_Date;
     $survey->survey_exp_date=$request->Survey_Expire_Date;
@@ -206,7 +268,14 @@ class HomeController extends Controller
   }
   public function deleteOneSurvey(Request $request)
   {
+    $this->authorizeFleetRecords();
+
     $survey =VesselSurvey::findOrFail($request->id);
+
+    if ($this->isVesselRecordsManager() && $survey->vessel_id != auth()->user()->role->vessel_id) {
+      abort(403, 'This survey belongs to a different vessel.');
+    }
+
     $survey->status=false; 
     $survey->update(); 
     $data ="Requested Vessel Survey has been deleted successfully!";
@@ -214,19 +283,48 @@ class HomeController extends Controller
   }
   public function getCertificates()
   {
-    $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
-    $vessel_certificates=VesselCertificate::orderBy('created_at','desc')->where('status',true)->get();
-    $certificates=Certificate::orderBy('created_at','desc')->where('status',true)->get();
-    return view('layouts.certificate',compact('certificates','vessels','vessel_certificates'));
+    $this->authorizeFleetRecords();
+
+    // The list Master/Chief Engineer choose from when recording a
+    // certificate. Maintained by super-admin only - see
+    // storeCertificateCategory below.
+    $categories = CertificateCategory::where('status', true)->orderBy('name')->get();
+    $categoriesManageable = $this->isFleetRecordsAdmin();
+
+    if ($this->isVesselRecordsManager()) {
+      $vessel_certificates = VesselCertificate::with('category')->where('status', true)
+        ->where('vessel_id', auth()->user()->role->vessel_id)
+        ->orderBy('created_at', 'desc')->get();
+
+      return view('layouts.certificate', [
+        'categories' => $categories, 'vessel_certificates' => $vessel_certificates,
+        'vessels' => null, 'lockedVessel' => auth()->user()->role->vessel,
+        'categoriesManageable' => $categoriesManageable,
+      ]);
+    }
+
+    $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
+    $vessel_certificates = VesselCertificate::with('category')->orderBy('created_at', 'desc')->where('status', true)->get();
+
+    return view('layouts.certificate', compact('categories', 'vessels', 'vessel_certificates', 'categoriesManageable'))
+      ->with('lockedVessel', null);
   }
   public function certificateStore(CertificateFormValidate $request)
   {
+    $this->authorizeFleetRecords();
+
     $certificate=new VesselCertificate; 
-    $certificate->certificate_id=$request->Certificate_Name;
-    $certificate->vessel_id=$request->Vessel_Name;
+    $certificate->title=trim($request->title);
+    $certificate->category_id=$request->category_id;
+    $certificate->vessel_id=$this->isVesselRecordsManager() ? auth()->user()->role->vessel_id : $request->Vessel_Name;
     $certificate->issue_auth=$request->Issuing_Authority;
     $certificate->issue_date=$request->Issue_Date;
-    $certificate->exp_date=$request->Certificate_Expire_Date;
+    $certificate->is_permanent=$request->boolean('is_permanent');
+    // Permanent means nothing else here applies - forced blank server-side
+    // regardless of what a hand-rolled POST tries to sneak past the form's
+    // own JS, which already does the same hiding/clearing client-side.
+    $certificate->validity_years=$certificate->is_permanent ? null : $request->validity_years;
+    $certificate->exp_date=$this->expiryDateFor($request, $certificate->is_permanent);
     $certificate->created_by=auth()->user()->id;
     if($request->hasFile('Certificate_Copy')){
      $name = 'images/cert_copy/'.time() . '.' . $request->Certificate_Copy->getClientOriginalExtension();
@@ -234,23 +332,41 @@ class HomeController extends Controller
      $certificate->cert_copy=$name;
    }
    $certificate->save();
-   $newcertificate=VesselCertificate::with('vessel')->with('certificate')->where('id',$certificate->id)->first();
+   $newcertificate=VesselCertificate::with('vessel')->with('category')->where('id',$certificate->id)->first();
    $data ="New Vessel Certificate has been added successfully.";
    return array($data,$newcertificate,url('/'));
  }
 
  public function getOneCertificate($id)
  {
-  return array ($vessel_certificate=VesselCertificate::with('vessel')->with('certificate')->where('id',$id)->first(),url('/'));
+  $this->authorizeFleetRecords();
+
+  $vessel_certificate = VesselCertificate::with('vessel')->with('category')->where('id', $id)->first();
+
+  if ($this->isVesselRecordsManager() && (! $vessel_certificate || $vessel_certificate->vessel_id != auth()->user()->role->vessel_id)) {
+    abort(404);
+  }
+
+  return array($vessel_certificate, url('/'));
 }
 public function updateOneCertificate(CertificateEditFormVal $request)
 {
+  $this->authorizeFleetRecords();
+
   $certificate= VesselCertificate::findOrFail($request->Cert_Id);
-  $certificate->certificate_id=$request->Certificate_Name;
+
+  if ($this->isVesselRecordsManager() && $certificate->vessel_id != auth()->user()->role->vessel_id) {
+    abort(403, 'This certificate belongs to a different vessel.');
+  }
+
+  $certificate->title=trim($request->title);
+  $certificate->category_id=$request->category_id;
   $certificate->issue_auth=$request->Issuing_Authority;
   $certificate->issue_date=$request->Issue_Date;
-  $certificate->exp_date=$request->Certificate_Expire_Date;
-  $certificate->vessel_id=$request->Vessel_Name;
+  $certificate->is_permanent=$request->boolean('is_permanent');
+  $certificate->validity_years=$certificate->is_permanent ? null : $request->validity_years;
+  $certificate->exp_date=$this->expiryDateFor($request, $certificate->is_permanent);
+  $certificate->vessel_id=$this->isVesselRecordsManager() ? auth()->user()->role->vessel_id : $request->Vessel_Name;
   if($request->hasFile('Certificate_Copy')){
    \File::delete('images/cert_copy/' . basename($certificate->cert_copy));
    $name = 'images/cert_copy/'.time() . '.' . $request->Certificate_Copy->getClientOriginalExtension();
@@ -259,19 +375,106 @@ public function updateOneCertificate(CertificateEditFormVal $request)
  }
  $certificate->updated_by=auth()->user()->id;
  $certificate->update();
- $newcertificate=VesselCertificate::with('vessel')->with('certificate')->where('id',$certificate->id)->first();
+ $newcertificate=VesselCertificate::with('vessel')->with('category')->where('id',$certificate->id)->first();
  $data ="Requested Vessel Certificate has been updated successfully.";
  return array($data,$newcertificate,url('/'));
 }
 public function deleteOneCertificate(Request $request)
 {
+  $this->authorizeFleetRecords();
+
   $certificate =VesselCertificate::findOrFail($request->id);
+
+  if ($this->isVesselRecordsManager() && $certificate->vessel_id != auth()->user()->role->vessel_id) {
+    abort(403, 'This certificate belongs to a different vessel.');
+  }
+
   // \File::delete('images/cert_copy/' . basename($certificate->cert_copy));
   $certificate->status = false; 
   $certificate->update(); 
   $data ="Requested Vessel Certificate has been deleted successfully!";
   return array($data);
 }
+
+/**
+ * When a certificate expires: Issue Date plus however many years it runs
+ * for. A permanent certificate has no expiry at all.
+ *
+ * An explicitly supplied date still wins - the form pre-fills this same
+ * calculation but leaves it editable, because a real certificate's expiry
+ * isn't always exactly issue + N years (this fleet's own TEC-04 checklist
+ * has several: a 5-yearly Certificate of Class issued 07-May-2026 expiring
+ * 21-May-2029, for one).
+ */
+private function expiryDateFor(Request $request, bool $isPermanent): ?string
+{
+  if ($isPermanent) {
+    return null;
+  }
+
+  if ($request->filled('Certificate_Expire_Date')) {
+    return $request->Certificate_Expire_Date;
+  }
+
+  if (! $request->filled('Issue_Date') || ! $request->filled('validity_years')) {
+    return null;
+  }
+
+  return Carbon::parse($request->Issue_Date)->addYears((int) $request->validity_years)->toDateString();
+}
+
+/**
+ * Certificate CATEGORY management - the sections of the TEC-04 Certificate
+ * Checklist that each vessel's certificates are filed under. Super-admin's
+ * own list (isFleetRecordsAdmin): a vessel's Master/Chief Engineer picks
+ * from it when recording a certificate, but never adds to it.
+ */
+public function storeCertificateCategory(CertificateCategoryFormValidate $request)
+{
+  abort_unless($this->isFleetRecordsAdmin(), 403);
+
+  $category = new CertificateCategory;
+  $category->name = trim($request->name);
+  $category->status = true;
+  $category->created_by = auth()->user()->id;
+  $category->save();
+
+  return response()->json(['message' => 'Category "'.$category->name.'" added.', 'category' => $category]);
+}
+
+public function updateCertificateCategory(CertificateCategoryFormValidate $request)
+{
+  abort_unless($this->isFleetRecordsAdmin(), 403);
+
+  $category = CertificateCategory::findOrFail($request->category_id);
+  $category->name = trim($request->name);
+  $category->updated_by = auth()->user()->id;
+  $category->update();
+
+  return response()->json(['message' => 'Category updated.', 'category' => $category]);
+}
+
+public function deleteCertificateCategory(Request $request)
+{
+  abort_unless($this->isFleetRecordsAdmin(), 403);
+
+  $category = CertificateCategory::findOrFail($request->id);
+
+  // Refused while any vessel still files a certificate under it - removing
+  // it would leave those records with no category at all.
+  $inUse = $category->vesselCertificates()->where('status', true)->count();
+  if ($inUse > 0) {
+    return response()->json([
+      'message' => 'This category is used by '.$inUse.' certificate'.($inUse === 1 ? '' : 's').' - reassign those first.',
+    ], 422);
+  }
+
+  $category->status = false;
+  $category->update();
+
+  return response()->json(['message' => 'Category removed.']);
+}
+
 public function getItem(){
   $categories=Category::orderBy('created_at','desc')->where('status',true)->get();
   $items=Item::orderBy('created_at','desc')->where('status',true)->get();
@@ -317,6 +520,7 @@ public function storeBudgetGroup(BudgetGroupFormValidate $request){
  abort_unless(auth()->user()->role->role === 'super-admin', 403);
  $budgetGroup = new BudgetGroup;
  $budgetGroup->name=$request->name;
+ $budgetGroup->kind=$request->kind ?: BudgetGroup::KIND_ITEM;
  $budgetGroup->created_by=auth()->user()->name;
  $budgetGroup->updated_by='';
  $budgetGroup->status=true;
@@ -328,6 +532,7 @@ public function updateBudgetGroup(BudgetGroupFormValidate $request){
  abort_unless(auth()->user()->role->role === 'super-admin', 403);
  $budgetGroup = BudgetGroup::findOrFail($request->BudgetGroup_Id);
  $budgetGroup->name=$request->name;
+ $budgetGroup->kind=$request->kind ?: $budgetGroup->kind;
  $budgetGroup->updated_by=auth()->user()->name;
  $budgetGroup->update();
  $data ="Requested Budget Group has been updated successfully.";
@@ -354,6 +559,7 @@ public function storeVesselGenInfo(VesselGenInfoValidate $req)
 {
   $genInfo=new Vessel;
   $genInfo->name=$req->vessel_name;
+  $genInfo->acronym=$req->vessel_acronym;
   $genInfo->owner_name=$req->owner_name;
   $genInfo->owner_address=$req->owner_address;
   $genInfo->manager_name=$req->manager_name;
@@ -469,7 +675,7 @@ public function storeOrder(Request $request)
     $order->vessel_id = auth()->user()->role->vessel->id;
     $order->category_id = $request->Category_Name;
     $order->req_date =Carbon::now();
-    $order->req_no = 'DK/'.$cat->symbol.'/'.$counter .'/'.Carbon::now()->year;
+    $order->req_no = auth()->user()->role->vessel->reqNoPrefix().'/'.$cat->symbol.'/'.$counter .'/'.Carbon::now()->year;
     $order->port_name = $request->Port_Name;
     $order->created_by_role = auth()->user()->role->role;
     $order->created_by = auth()->user()->id;
@@ -809,6 +1015,7 @@ public function storeGeninfo(VesselGenInfoValidate $req){
   if(empty($check_vessel)){
     $genInfo=new Vessel;
     $genInfo->name=$req->vessel_name;
+    $genInfo->acronym=$req->vessel_acronym;
     $genInfo->owner_name=$req->owner_name;
     $genInfo->owner_address=$req->owner_address;
     $genInfo->manager_name=$req->manager_name;
@@ -827,6 +1034,7 @@ public function storeGeninfo(VesselGenInfoValidate $req){
   }else{
     $genInfo = Vessel::findOrFail($req['vessel_id']);
     $genInfo->name=$req->vessel_name;
+    $genInfo->acronym=$req->vessel_acronym;
     $genInfo->owner_name=$req->owner_name;
     $genInfo->owner_address=$req->owner_address;
     $genInfo->manager_name=$req->manager_name;
@@ -1284,39 +1492,49 @@ public function changePassword(Request $request){
     return back()->with('error','Old Password does not matched!');
   }
 }
+/**
+ * Photo and signature upload independently - the profile page posts one or
+ * the other, never both, so someone who only wants to replace their
+ * signature no longer has to re-pick a photo they already uploaded.
+ *
+ * max:5120 is kilobytes, so 5 MB each. Both are also checked as real images
+ * rather than trusted by extension, which the previous version did not do at
+ * all: it had no size, type or dimension rule on either field.
+ */
 public function changeFile(Request $request){
-  // return $request->all();
-  if($request->photo=='' && $request->signature==''){
-   return back()->with('warning','Photo & Signature required');
- }
- $user=User::findOrFail(auth()->user()->id);
- if($user->photo=='' && $user->sign==''){
-  $this->validate($request,[
-    'photo' => 'required',
-    'signature' => 'required'
+  $request->validate([
+    'photo' => 'nullable|image|mimes:jpeg,jpg,png,gif|max:5120',
+    'signature' => 'nullable|image|mimes:jpeg,jpg,png,gif|max:5120',
+  ], [
+    'photo.max' => 'The photo may not be larger than 5 MB.',
+    'signature.max' => 'The signature may not be larger than 5 MB.',
+    'photo.image' => 'The photo must be an image file (JPG, PNG or GIF).',
+    'signature.image' => 'The signature must be an image file (JPG, PNG or GIF).',
   ]);
-}elseif($user->photo==''){
- $this->validate($request,[
-  'photo' => 'required',
-]);
-}
-elseif($user->sign==''){
-  $this->validate($request,[
-    'signature' => 'required',
-  ]);
-}
-if($request->hasFile('photo')){
- $name ='images/userphoto/'. time() . '.' . $request->photo->getClientOriginalExtension();
- $request->photo->move(base_path('images/userphoto'), $name);
- $user->photo = $name;
-}
-if($request->hasFile('signature')){
- $name ='images/signature/'. time() . '.' . $request->signature->getClientOriginalExtension();
- $request->signature->move(base_path('images/signature'), $name);
- $user->sign = $name;
-}
-$user->update();
-return back()->with('success','Photo & Signature Updated Successfully!');
+
+  if(! $request->hasFile('photo') && ! $request->hasFile('signature')){
+    return back()->with('warning','Choose a file to upload first.');
+  }
+
+  $user=User::findOrFail(auth()->user()->id);
+  $updated=[];
+
+  if($request->hasFile('photo')){
+    $name ='images/userphoto/'. time() . '.' . $request->photo->getClientOriginalExtension();
+    $request->photo->move(base_path('images/userphoto'), $name);
+    $user->photo = $name;
+    $updated[]='Photo';
+  }
+  if($request->hasFile('signature')){
+    $name ='images/signature/'. time() . '.' . $request->signature->getClientOriginalExtension();
+    $request->signature->move(base_path('images/signature'), $name);
+    $user->sign = $name;
+    $updated[]='Signature';
+  }
+
+  $user->update();
+
+  return back()->with('success', implode(' & ', $updated).' updated successfully!');
 }
 public function deliverReqForAll(){
   $items =Item::orderBy('created_at','desc')->where('status',true)->get();
@@ -1402,16 +1620,44 @@ public function rcvReqForAll(){
 }
 public function searchSurvey(Request $r)
 {
-  $vessel_surveys=VesselSurvey::orderBy('created_at','desc')->where('status',true)->where('vessel_id',$r->ship_id)->get();
- $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
+  $this->authorizeFleetRecords();
+
+  // A vessel manager's own vessel_id always wins over whatever was posted -
+  // they only ever have one vessel to search within anyway.
+  $shipId = $this->isVesselRecordsManager() ? auth()->user()->role->vessel_id : $r->ship_id;
+
+  $vessel_surveys=VesselSurvey::orderBy('created_at','desc')->where('status',true)->where('vessel_id',$shipId)->get();
  $surveys=Survey::orderBy('created_at','desc')->where('status',true)->get();
- return view('layouts.survey',compact('vessel_surveys','vessels','surveys'))->with('ship_id',$r->ship_id);
+
+ if ($this->isVesselRecordsManager()) {
+   return view('layouts.survey', [
+     'vessel_surveys' => $vessel_surveys, 'surveys' => $surveys,
+     'vessels' => null, 'lockedVessel' => auth()->user()->role->vessel,
+   ]);
+ }
+
+ $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
+ return view('layouts.survey',compact('vessel_surveys','vessels','surveys'))->with('ship_id',$r->ship_id)->with('lockedVessel', null);
 }
 public function searchCertificate(Request $r)
 {
-  $vessel_certificates=VesselCertificate::orderBy('created_at','desc')->where('status',true)->where('vessel_id',$r->ship_id)->get();
+  $this->authorizeFleetRecords();
+
+  $shipId = $this->isVesselRecordsManager() ? auth()->user()->role->vessel_id : $r->ship_id;
+
+  $vessel_certificates=VesselCertificate::with('category')->orderBy('created_at','desc')->where('status',true)->where('vessel_id',$shipId)->get();
+ $categories=CertificateCategory::where('status',true)->orderBy('name')->get();
+ $categoriesManageable = $this->isFleetRecordsAdmin();
+
+ if ($this->isVesselRecordsManager()) {
+   return view('layouts.certificate', [
+     'vessel_certificates' => $vessel_certificates, 'categories' => $categories,
+     'vessels' => null, 'lockedVessel' => auth()->user()->role->vessel,
+     'categoriesManageable' => $categoriesManageable,
+   ]);
+ }
+
  $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
- $certificates=Certificate::orderBy('created_at','desc')->where('status',true)->get();
- return view('layouts.certificate',compact('vessel_certificates','vessels','certificates'))->with('ship_id',$r->ship_id);
+ return view('layouts.certificate',compact('vessel_certificates','vessels','categories','categoriesManageable'))->with('ship_id',$r->ship_id)->with('lockedVessel', null);
 }
 }

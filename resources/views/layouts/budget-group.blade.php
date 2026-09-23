@@ -14,6 +14,7 @@
 					<tr>
 						<th>#</th>
 						<th>Name</th>
+						<th>Used For</th>
 						<th>Created By</th>
 						<th>Updated By</th>
 						<th class="action">Action</th>
@@ -25,10 +26,13 @@
 					<tr id="budget-group-{{$budgetGroup->id}}">
 						<td class="sl_no"> <b class="serial"> {{$loop->iteration}}</b> </td>
 						<td>{{!empty($budgetGroup->name)?$budgetGroup->name:''}}</td>
+						{{-- Which picker this group appears in - item requisitions and
+							 service requisitions draw on different budgets. --}}
+						<td><span class="badge {{ $budgetGroup->kind === \App\BudgetGroup::KIND_SERVICE ? 'badge-info' : 'badge-secondary' }}">{{ $budgetGroup->kindLabel() }}</span></td>
 						<td>{{!empty($budgetGroup->created_by)?$budgetGroup->created_by:''}}</td>
 						<td>{{!empty($budgetGroup->updated_by)?$budgetGroup->updated_by:''}}</td>
 						<td class="action">
-							<button class="btn btn-info edit-budget-group" data-id="{{$budgetGroup->id}}" data-name="{{$budgetGroup->name}}" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>
+							<button class="btn btn-info edit-budget-group" data-id="{{$budgetGroup->id}}" data-name="{{$budgetGroup->name}}" data-kind="{{$budgetGroup->kind}}" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>
 							<button class="btn btn-danger delete-budget-group" data-id="{{$budgetGroup->id}}" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>
 						</td>
 					</tr>
@@ -67,6 +71,18 @@
 						</div>
 						<div class="col-md-7">
 							<input type="text" class="form-control BudgetGroup_Name" name="name">
+						</div>
+					</div>
+					<div class="row form-group">
+						<div class="col-md-4">
+							<label for="BudgetGroup_Kind">Used For: </label>
+						</div>
+						<div class="col-md-8">
+							<select class="form-control BudgetGroup_Kind" name="kind">
+								@foreach(\App\BudgetGroup::KINDS as $value => $label)
+								<option value="{{ $value }}">{{ $label }}</option>
+								@endforeach
+							</select>
 						</div>
 					</div>
 				</div>
@@ -108,6 +124,18 @@
 						</div>
 						<div class="col-md-7">
 							<input type="text" class="form-control BudgetGroup_Name" name="name">
+						</div>
+					</div>
+					<div class="row form-group">
+						<div class="col-md-4">
+							<label for="BudgetGroup_Kind">Used For: </label>
+						</div>
+						<div class="col-md-8">
+							<select class="form-control BudgetGroup_Kind" name="kind">
+								@foreach(\App\BudgetGroup::KINDS as $value => $label)
+								<option value="{{ $value }}">{{ $label }}</option>
+								@endforeach
+							</select>
 							<input type="hidden" class="form-control BudgetGroup_Id" name="BudgetGroup_Id">
 						</div>
 					</div>

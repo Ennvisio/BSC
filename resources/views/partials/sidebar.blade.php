@@ -17,7 +17,7 @@
   <a href="{{url('/home')}}" class="srd-nav-item {{Route::current()->uri() == 'home' ? 'active' : ''}}"><i class="fas fa-th-large"></i>Dashboard</a>
 
   <div class="srd-nav-label">Fleet Records</div>
-  <a href="{{url('/home/certificate')}}" class="srd-nav-item {{Route::current()->uri() == 'home/certificate' ? 'active' : ''}}"><i class="fas fa-certificate"></i>Certificates<span class="srd-nav-count">{{ \App\Certificate::where('status',true)->count() }}</span></a>
+  <a href="{{url('/home/certificate')}}" class="srd-nav-item {{Route::current()->uri() == 'home/certificate' ? 'active' : ''}}"><i class="fas fa-certificate"></i>Certificates<span class="srd-nav-count">{{ \App\VesselCertificate::where('status',true)->count() }}</span></a>
   <a href="{{url('/home/survey')}}" class="srd-nav-item {{Route::current()->uri() == 'home/survey' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Surveys<span class="srd-nav-count">{{ \App\Survey::where('status',true)->count() }}</span></a>
   <a href="{{url('/home/vessel')}}" class="srd-nav-item {{Route::current()->uri() == 'home/vessel' ? 'active' : ''}}"><i class="fas fa-ship"></i>Vessels<span class="srd-nav-count">{{ \App\Vessel::where('status',true)->count() }}</span></a>
 
@@ -54,12 +54,14 @@
   {{-- Certificate servicing, surveys, equipment maintenance, IT support -
        work that isn't an item pick-list. Its approval chain ends at SRD
        level (no SSM/procurement leg), but raising one still starts here,
-       same as an item requisition. UI only for now - see
-       ServiceRequisitionController. --}}
+       same as an item requisition. --}}
   {{-- fa-wrench, not fa-tools: this app loads Font Awesome 5.0.6, and
        fa-tools only exists from 5.0.9 onwards (it renders as nothing). --}}
-  <a href="{{ route('service-requisition.create') }}" class="srd-nav-item {{ Route::is('service-requisition.*') ? 'active' : '' }}"><i class="fas fa-wrench"></i>Add Service Requisition</a>
+  <a href="{{ route('service-requisition.create') }}" class="srd-nav-item {{ Route::is('service-requisition.create') ? 'active' : '' }}"><i class="fas fa-wrench"></i>Add Service Requisition</a>
   @endif
+  {{-- The list is everyone-on-the-vessel's: the two officers above follow
+       what they raised, Master/Chief Engineer act on it from here. --}}
+  <a href="{{ route('service-requisition.index') }}" class="srd-nav-item {{ Route::is('service-requisition.index') || Route::is('service-requisition.show') ? 'active' : '' }}"><i class="fas fa-wrench"></i>Service Requisitions</a>
   <a href="{{url('/pending/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'pending/requisition' ? 'active' : ''}}"><i class="fas fa-hourglass-half"></i>Pending Requisition</a>
   {{-- Only Master/Chief Engineer approve someone else's requisition, so only
        they get a "did I approve this" view - separate from the vessel-wide
@@ -81,6 +83,18 @@
   {{-- fa-archive, not fa-boxes: this app loads Font Awesome 5.0.6, and
        fa-boxes only exists from 5.2 onwards (it renders as nothing). --}}
   <a href="{{url('/stock/upload')}}" class="srd-nav-item {{in_array(Route::current()->uri(), ['stock/upload', 'stock/history']) ? 'active' : ''}}"><i class="fas fa-archive"></i>Update Stock</a>
+  @endif
+  {{-- Equipment & maker list is Master/Chief Engineer's own to maintain -
+       what a Shore Repair service requisition line picks from. --}}
+  @if(in_array(auth()->user()->role->role, ['master', 'chief-engineer']))
+  <a href="{{ route('equipment.index') }}" class="srd-nav-item {{ Route::current()->uri() == 'vessel/equipment' ? 'active' : '' }}"><i class="fas fa-cogs"></i>Equipment List</a>
+  {{-- Certificates/Surveys are fleet-wide reference data everywhere else in
+       this sidebar (super-admin/GM (SRD)/admin only, see "Fleet Records"
+       above) - but a vessel's own Master/Chief Engineer also see and add
+       records for THEIR vessel here (HomeController::isVesselRecordsManager),
+       scoped so neither can see or touch another vessel's certificates. --}}
+  <a href="{{url('/home/certificate')}}" class="srd-nav-item {{Route::current()->uri() == 'home/certificate' ? 'active' : ''}}"><i class="fas fa-certificate"></i>Certificates</a>
+  <a href="{{url('/home/survey')}}" class="srd-nav-item {{Route::current()->uri() == 'home/survey' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Surveys</a>
   @endif
   {{-- Consuming stock is the officers' own to log - chief-officer/second-
        engineer are the ones actually using items day to day (same two roles
@@ -123,6 +137,12 @@
   @endif
   <a href="{{url('/approved/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'approved/requisition' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Approved Requisition</a>
   <a href="{{url('/received/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'received/requisition' ? 'active' : ''}}"><i class="fas fa-inbox"></i>Received Requisition</a>
+  {{-- Service requisitions stop at SRD level, so only GM (SRD) and its four
+       delegates ever act on one - the SSM roles would see a list they can
+       do nothing with. --}}
+  @if(in_array(auth()->user()->role->role, ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd']))
+  <a href="{{ route('service-requisition.index') }}" class="srd-nav-item {{ Route::is('service-requisition.*') ? 'active' : '' }}"><i class="fas fa-wrench"></i>Service Requisitions</a>
+  @endif
   @endif
 
   {{-- Parenthesised deliberately: && binds tighter than ||, so written as

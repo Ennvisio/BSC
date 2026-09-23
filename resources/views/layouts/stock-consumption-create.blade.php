@@ -1,5 +1,25 @@
 @extends('layouts.admin-master')
 @section('main-content')
+<style>
+	/* Search results as a floating overlay, not a normal block element -
+	   otherwise opening the list pushes Consumption type/Quantity/everything
+	   below it down the page, then snaps it back up when the list closes.
+
+	   Positioned relative to .rs-search-wrap, NOT the column - a Bootstrap
+	   column has its own 15px side padding, and an absolutely positioned
+	   child's containing block is the PADDING box of its positioned
+	   ancestor, so anchoring to the column made the dropdown 15px wider than
+	   the input on both sides. This wrapper has no padding of its own, so
+	   left:0/right:0 lines up exactly with the input's real edges (see
+	   service-requisition-create.blade.php for the same fix). */
+	.rs-search-wrap{ position: relative; }
+	#item-results{
+		position: absolute; top: 100%; left: 0; right: 0; z-index: 30;
+		margin-top: 2px; background: #fff; border: 1px solid #ddd; border-radius: 6px;
+		box-shadow: 0 8px 24px rgba(0,0,0,.14);
+	}
+	#item-results:empty{ display: none; border: none; box-shadow: none; }
+</style>
 <div class="order-section container">
 	<div class="row">
 		<div class="col-xl-12">
@@ -28,9 +48,11 @@
 						<div class="form-group row">
 							<div class="col-md-8">
 								<label>Item <span class="text-danger">*</span></label>
-								<input type="text" class="form-control" id="item-search" placeholder="Start typing an item already on board" autocomplete="off">
-								<input type="hidden" name="item_id" id="item_id">
-								<div id="item-results" class="list-group" style="max-height:260px; overflow-y:auto; position:relative; z-index:5;"></div>
+								<div class="rs-search-wrap">
+									<input type="text" class="form-control" id="item-search" placeholder="Start typing an item already on board" autocomplete="off">
+									<input type="hidden" name="item_id" id="item_id">
+									<div id="item-results" class="list-group" style="max-height:260px; overflow-y:auto;"></div>
+								</div>
 								<small class="form-text text-muted" id="item-stock-hint"></small>
 							</div>
 						</div>

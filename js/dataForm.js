@@ -55,21 +55,13 @@ $(document).ready(function() {
       success:function(response)
       {
         toastr.success( 'New Survey Created Successfully!','Well Done!')
-        var  idx= table.rows().count();
-        idx++;
-        var rowNode = table
-        .row.add( ['<b class="serial">'+idx+'</b>', response[1]['survey']['name'],response[1]['society_name'],response[1]['survey_date'],response[1]['survey_exp_date'],response[1]['vessel']['name'], 
-          '<div class="action"><button class="btn btn-info mr-1 edit-survey" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>'+
-          '<button class="btn btn-danger delete-survey" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button></div>'] )
-        .order([0, 'dsc']).draw()
-        .node().id = 'survey-'+response[1]['id'];
-        $( rowNode )
-        .css( 'color', 'green' )
-        .animate( { color: 'red' } );
+        // Reload rather than rebuild the row by hand - the table's column
+        // layout now depends on whether Vessel Name is shown at all (hidden
+        // for a vessel-scoped Master/Chief Engineer view), so a hand-built
+        // array here would silently misalign the moment that differs from
+        // what the page originally rendered.
         swal('Congratulation!',response[0],'success').then(function() {
-          $('#survey_add_form')[0].reset();
-          $("[data-dismiss=modal]").trigger({ type: "click" });
-          $("#survey_add_form .form_error").css('display','none');
+          window.location.reload();
         });
       },
       error: function(errors)
@@ -142,23 +134,10 @@ $(document).ready(function() {
       success:function(response)
       {
         toastr.success( 'Survey Info Updated Successfully!','Well Done!')
-        $('#survey_edit_form')[0].reset();
-        var rData = [
-        '<b class="serial">'+tr_sl+'</b>',
-        response[1]['survey']['name'],
-        response[1]['society_name'],
-        response[1]['survey_date'],
-        response[1]['survey_exp_date'], 
-        response[1]['vessel']['name'],
-        '<button class="btn btn-info edit-survey mr-1" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button><button class="btn btn-danger delete-survey" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>'
-        ];
-        table
-        .row( 'tr#'+tr_id )
-        .data(rData)
-        .draw();
+        // Reload rather than rebuild the row by hand - see the same note on
+        // survey_add_form's success handler above.
         swal('Excellent!',response[0],'success').then(function() {
-          $("[data-dismiss=modal]").trigger({ type: "click" });
-          $('#survey_edit_form')[0].reset();
+          window.location.reload();
         });
       },
       error: function(errors)
@@ -277,22 +256,13 @@ $(document).on('submit','#certificate_add_form',function(event){
     success:function(response)
     {
       toastr.success( 'New Certificate Added Successfully!','Well Done!')
-      var  idx= table.rows().count();
-      idx++;
-      var rowNode = table
-      .row.add( ['<b class="serial">'+idx+'</b>', response[1]['certificate']['name'],response[1]['issue_auth'],response[1]['issue_date'],response[1]['exp_date'],response[1]['vessel']['name'],
-        '<button type="button" class="cert_file btn btn-info" data-toggle="modal" data-target="#fileShowModal" data-file="'+response[2]+ '/' +response[1]['cert_copy']+'" data-name="'+response[1]['name']+'"><i class="fas fa-eye"></i> Show File</button>',
-        '<div class="action"><button class="btn btn-info mr-1 edit-certificate" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>'+
-        '<button class="btn btn-danger delete-certificate" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button></div>'])
-      .order([0, 'dsc']).draw()
-      .node().id = 'certificate-'+response[1]['id'];
-      $( rowNode )
-      .css( 'color', 'green' )
-      .animate( { color: 'red' } );
+      // Reload rather than rebuild the row by hand - the table's column
+      // layout now depends on Category (always shown) and Vessel Name
+      // (hidden for a vessel-scoped Master/Chief Engineer view), so a
+      // hand-built array here would silently misalign the moment that
+      // differs from what the page originally rendered.
       swal('Congratulation!',response[0],'success').then(function() {
-        $('#certificate_add_form')[0].reset();
-        $("[data-dismiss=modal]").trigger({ type: "click" });
-        $("#certificate_add_form .form_error").css('display','none');
+        window.location.reload();
       });
     },
     error: function(errors)
@@ -331,22 +301,25 @@ $(document).on('click','.edit-certificate',function(e){
     contentType:false,
     success:function(res)
     {
-      console.log(res[0]['certificate']['id'])
-
+      // Only rendered for the fleet-wide admin view - a vessel's own
+      // Master/Chief Engineer gets a fixed hidden Vessel_Name instead.
       $("option.vessel_opt" ).each(function(i,v) {
         if($(this).val() == res[0]['vessel']['id']){
           $(this).attr('selected',true);
         };
       });
-      $("select.Certificate_Name option.cert_opt" ).each(function(i1,v1) {
-        if($(this).val() == res[0]['certificate']['id']){
-          $(this).attr('selected',true);
-        };
-      });
-      // $('#certificate_edit_form .Certificate_Name').val(res[0]['name'])
+      $('#certificate_edit_form .category_id').val(res[0]['category_id'])
+      $('#certificate_edit_form .cert-title').val(res[0]['title'])
       $('#certificate_edit_form .Issuing_Authority').val(res[0]['issue_auth'])
       $('#certificate_edit_form .Issue_Date').val(res[0]['issue_date'])
       $('#certificate_edit_form .Certificate_Expire_Date').val(res[0]['exp_date'])
+      $('#certificate_edit_form input[name=validity_years]').val(res[0]['validity_years'])
+      $('#certificate_edit_form .cert-permanent').prop('checked', res[0]['is_permanent'] == 1)
+      // Setting the checkbox above doesn't fire 'change' on its own -
+      // triggering it here is what runs certificate.blade.php's Expire
+      // Date/validity show-hide for the record actually being edited,
+      // not just whatever the form happened to load with.
+      $('#certificate_edit_form .cert-permanent').trigger('change');
       $('#certificate_edit_form iframe#prev_image1exist').attr('src',res[1]+'/'+res[0]['cert_copy']);
       $('#certificate_edit_form .Cert_Id').val(res[0]['id'])
     },
@@ -374,24 +347,10 @@ $(document).on('submit','#certificate_edit_form',function(event){
     success:function(response)
     {
       toastr.success( 'Certificate Info Updated Successfully!','Well Done!')
-      $('#certificate_edit_form')[0].reset();
-      var rData = [
-      '<b class="serial">'+tr_sl+'</b>',
-      response[1]['certificate']['name'],
-      response[1]['issue_auth'],
-      response[1]['issue_date'],
-      response[1]['exp_date'],
-      response[1]['vessel']['name'], 
-      '<button type="button" class="cert_file btn btn-info" data-toggle="modal" data-target="#fileShowModal" data-file="'+response[2]+ '/' +response[1]['cert_copy']+'"><i class="fas fa-eye"></i> Show File</button>',
-      '<button class="btn btn-info edit-certificate mr-1" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button><button class="btn btn-danger delete-certificate" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>'
-      ];
-      table
-      .row( 'tr#'+tr_id )
-      .data(rData)
-      .draw();
+      // Reload rather than rebuild the row by hand - see the same note on
+      // certificate_add_form's success handler above.
       swal('Excellent!',response[0],'success').then(function() {
-        $("[data-dismiss=modal]").trigger({ type: "click" });
-        $('#certificate_edit_form')[0].reset();
+        window.location.reload();
       });
     },
     error: function(errors)
@@ -620,8 +579,8 @@ $(document).on('submit','#budget_group_add_form',function(event){
       var  idx= table.rows().count();
       idx++;
       var rowNode = table
-      .row.add( ['<b class="serial">'+idx+'</b>', response[1]['name'], response[1]['created_by'], response[1]['updated_by'],
-        '<div class="action"><button class="btn btn-info mr-1 edit-budget-group" data-id="'+response[1]['id']+'"  data-name="'+response[1]['name']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>'+
+      .row.add( ['<b class="serial">'+idx+'</b>', response[1]['name'], budgetGroupKindCell(response[1]['kind']), response[1]['created_by'], response[1]['updated_by'],
+        '<div class="action"><button class="btn btn-info mr-1 edit-budget-group" data-id="'+response[1]['id']+'"  data-name="'+response[1]['name']+'" data-kind="'+response[1]['kind']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>'+
         '<button class="btn btn-danger delete-budget-group" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button></div>'])
       .order([0, 'dsc']).draw()
       .node().id = 'budget-group-'+response[1]['id'];
@@ -649,10 +608,19 @@ $(document).on('submit','#budget_group_add_form',function(event){
   });
 });
 
+// The "Used For" cell - item groups and service groups share this table and
+// are told apart by kind (see App\BudgetGroup).
+function budgetGroupKindCell(kind){
+  var isService = kind === 'service';
+  return '<span class="badge '+(isService ? 'badge-info' : 'badge-secondary')+'">'
+    + (isService ? 'Service requisition' : 'Item requisition') + '</span>';
+}
+
 $(document).on('click','.edit-budget-group',function(e){
   e.preventDefault();
   $('#budget_group_edit_form .BudgetGroup_Id').val($(this).data('id'));
   $('#budget_group_edit_form .BudgetGroup_Name').val($(this).data('name'));
+  $('#budget_group_edit_form .BudgetGroup_Kind').val($(this).data('kind') || 'item');
   tr = $(this).parent().parent();
   tr_id=tr.attr('id');
   tr_sl = $('#'+tr_id +" .serial").text();
@@ -675,9 +643,10 @@ $(document).on('submit','#budget_group_edit_form',function(event){
       var rData = [
       '<b class="serial">'+tr_sl+'</b>',
       response[1]['name'],
+      budgetGroupKindCell(response[1]['kind']),
       response[1]['created_by'],
       response[1]['updated_by'],
-      '<button class="btn btn-info edit-budget-group mr-1" data-id="'+response[1]['id']+'" data-name="'+response[1]['name']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button><button class="btn btn-danger delete-budget-group" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>'
+      '<button class="btn btn-info edit-budget-group mr-1" data-id="'+response[1]['id']+'" data-name="'+response[1]['name']+'" data-kind="'+response[1]['kind']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button><button class="btn btn-danger delete-budget-group" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>'
       ];
       table
       .row( 'tr#'+tr_id )

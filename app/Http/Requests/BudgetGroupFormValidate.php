@@ -25,6 +25,8 @@ class BudgetGroupFormValidate extends FormRequest
     {
         return [
              'name' => 'required|string|unique:budget_groups|max:150',
+             // Which picker it appears in - see App\BudgetGroup::KINDS.
+             'kind' => 'nullable|in:item,service',
         ];
     }
      public function messages(){

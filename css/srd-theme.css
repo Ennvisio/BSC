@@ -63,6 +63,23 @@ body.srd{ background:var(--srd-surface); }
 .srd a{ color:var(--srd-accent); }
 .srd a:hover{ color:var(--srd-accent-dark); }
 
+/* Links that are Bootstrap buttons keep the button's own text colour.
+   `.srd a` (specificity 0,1,1) outranks Bootstrap's `.btn-primary { color:#fff }`
+   (0,1,0), so every <a class="btn btn-primary|info|danger…"> - e.g. "Add New
+   Vessel" and the view/edit icons on the vessel list - rendered accent-teal
+   text on a coloured button. <button class="btn …"> was never affected, which
+   is why the same row looked half right. Light/warning buttons are left out on
+   purpose: Bootstrap gives those dark text. */
+.srd a.btn-primary, .srd a.btn-primary:hover, .srd a.btn-primary:focus,
+.srd a.btn-secondary, .srd a.btn-secondary:hover, .srd a.btn-secondary:focus,
+.srd a.btn-success, .srd a.btn-success:hover, .srd a.btn-success:focus,
+.srd a.btn-info, .srd a.btn-info:hover, .srd a.btn-info:focus,
+.srd a.btn-danger, .srd a.btn-danger:hover, .srd a.btn-danger:focus,
+.srd a.btn-dark, .srd a.btn-dark:hover, .srd a.btn-dark:focus{ color:#fff; }
+.srd a.btn-srd, .srd a.btn-srd:hover, .srd a.btn-srd:focus{ color:#fff; }
+.srd a.btn-srd-outline{ color:var(--srd-ink-soft); }
+.srd a.btn-srd-outline:hover{ color:var(--srd-ink); }
+
 /* ---- shell / layout ------------------------------------------------ */
 .srd-shell{ display:flex; min-height:100vh; }
 .srd-main{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }

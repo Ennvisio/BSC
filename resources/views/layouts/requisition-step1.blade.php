@@ -1,21 +1,43 @@
 @extends('layouts.admin-master')
 @section('main-content')
+<style>
+	/* Search results as a floating overlay, not a normal block element -
+	   otherwise opening the list pushes Department/Port/everything below it
+	   down the page, then snaps it back up when the list closes.
+
+	   Positioned relative to .rs-search-wrap, NOT the column - a Bootstrap
+	   column has its own 15px side padding, and an absolutely positioned
+	   child's containing block is the PADDING box of its positioned
+	   ancestor, so anchoring to the column made the dropdown 15px wider than
+	   the input on both sides. This wrapper has no padding of its own, so
+	   left:0/right:0 lines up exactly with the input's real edges (see
+	   service-requisition-create.blade.php for the same fix). */
+	.rs-search-wrap{ position: relative; }
+	#budget-group-results{
+		position: absolute; top: 100%; left: 0; right: 0; z-index: 30;
+		margin-top: 2px; background: #fff; border: 1px solid #ddd; border-radius: 6px;
+		box-shadow: 0 8px 24px rgba(0,0,0,.14);
+	}
+	#budget-group-results:empty{ display: none; border: none; box-shadow: none; }
+</style>
 <div class="order-section container">
 	<div class="row">
 		<div class="col-xl-12">
 			<div class="card order-card">
 				@php
-					// $order is set only when an existing draft is being edited
-					// (Back from step 2). Every field below falls back through
-					// old() -> the draft -> empty, so a validation bounce keeps
-					// what was typed and a revisit keeps what was saved.
-					$order = $order ?? null;
+					// The draft always exists by the time this page is reached -
+					// step 1, the justification form, is what creates it. A draft
+					// with no title yet has not been through here before. Every
+					// field below falls back through old() -> the draft -> empty,
+					// so a validation bounce keeps what was typed and a revisit
+					// keeps what was saved.
+					$isNew = $order->title === null;
 				@endphp
 				<div class="card-header first">
-					<strong class="pptitle">{{ $order ? 'Edit requisition for' : 'New requisition for' }} &nbsp;
+					<strong class="pptitle">{{ $isNew ? 'New requisition for' : 'Edit requisition for' }} &nbsp;
 						<span style="color:red;">{{auth()->user()->role->vessel->name}}</span>
 					</strong>
-					<div class="right-button">Step 1 of 3 — Details</div>
+					<div class="right-button">Step 2 of 4 — Details</div>
 				</div>
 				<div class="card-body">
 					@if($errors->any())
@@ -28,7 +50,7 @@
 					</div>
 					@endif
 
-					<form method="POST" action="{{ $order ? route('requisition.step1.update', $order) : route('requisition.step1.store') }}">
+					<form method="POST" action="{{ route('requisition.details.store', $order) }}">
 						@csrf
 
 						<div class="form-group row">
@@ -41,9 +63,11 @@
 						<div class="form-group row justify-content-between">
 							<div class="col-md-5">
 								<label>Budget group <span class="text-danger">*</span></label>
-								<input type="text" class="form-control" id="budget-group-search" placeholder="Start typing to get suggestions" autocomplete="off" value="{{ $order->budgetGroup->name ?? '' }}">
-								<input type="hidden" name="budget_group_id" id="budget_group_id" value="{{ old('budget_group_id', $order->budget_group_id ?? '') }}">
-								<div id="budget-group-results" class="list-group" style="max-height:220px; overflow-y:auto; position:relative; z-index:5;"></div>
+								<div class="rs-search-wrap">
+									<input type="text" class="form-control" id="budget-group-search" placeholder="Start typing to get suggestions" autocomplete="off" value="{{ $order->budgetGroup->name ?? '' }}">
+									<input type="hidden" name="budget_group_id" id="budget_group_id" value="{{ old('budget_group_id', $order->budget_group_id ?? '') }}">
+									<div id="budget-group-results" class="list-group" style="max-height:220px; overflow-y:auto;"></div>
+								</div>
 							</div>
 							<div class="col-md-5">
 								<label for="department">Department <span class="text-danger">*</span></label>
@@ -110,7 +134,8 @@
 
 						<div class="form-group row">
 							<div class="col-md-11 text-right">
-								<button type="submit" class="btn btn-success">Save &amp; Next: Add Items <i class="fas fa-arrow-right"></i></button>
+								<a href="{{ route('requisition.form', $order) }}" class="btn btn-srd-outline"><i class="fas fa-arrow-left"></i> Back</a>
+							<button type="submit" class="btn btn-success">Save &amp; Next: Add Items <i class="fas fa-arrow-right"></i></button>
 							</div>
 						</div>
 					</form>

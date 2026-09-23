@@ -76,6 +76,66 @@ class Order extends Model
 		return $this->hasOne(OrderInvoice::class);
 	}
 
+	/** The saved parts (A/B/C) of this requisition's approval form. */
+	/**
+	 * Everyone who has signed this requisition, in the order they signed -
+	 * what the Authorisation block and the printed form list.
+	 *
+	 * Ordered by chain position rather than by role, so it reads the way the
+	 * requisition actually travelled. Reads the approval columns directly
+	 * instead of walking every Role in the system and testing each one's user
+	 * id against them, which is what the order detail page does.
+	 *
+	 * @return array<int,array{role:string,user:?User}>
+	 */
+	public function signatories(): array
+	{
+		$approval = $this->orderApproval;
+		if (! $approval) {
+			return [];
+		}
+
+		$steps = [
+			['Chief Officer', $approval->cheif_ofcr_app],
+			['Second Engineer', $approval->second_eng_app],
+			['Master', $approval->master_app],
+			['Chief Engineer', $approval->chief_eng_app],
+			['DGM (SRD)', $approval->dgm_srd_app],
+			['AGM (SRD)', $approval->agm_app],
+			['AM (SRD)', $approval->ast_m_app],
+			['Superintendent (SRD)', $approval->superintendent_srd_app],
+			['GM (SRD)', $approval->gm_app],
+			['DGM (SSM)', $approval->dgm_app_ssm],
+			['AGM (SSM)', $approval->agm_app_ssm],
+			['AM (SSM)', $approval->am_app_ssm],
+			['Superintendent (SSM)', $approval->superintendent_ssm_app],
+			// Cross-cutting sign-offs - they never gate the chain, but if one
+			// was given it belongs on the printed form like any other.
+			['Technical Superintendent', $approval->tech_superintendent_app],
+			['Marine Superintendent', $approval->marine_superintendent_app],
+		];
+
+		$signed = [];
+		foreach ($steps as [$label, $userId]) {
+			if ($userId !== null) {
+				$signed[] = ['role' => $label, 'user' => User::find($userId)];
+			}
+		}
+
+		return $signed;
+	}
+
+	public function formParts()
+	{
+		return $this->hasMany(OrderFormPart::class);
+	}
+
+	/** One part of the form by letter, or null if it hasn't been started. */
+	public function formPart(string $part): ?OrderFormPart
+	{
+		return $this->formParts->firstWhere('part', $part);
+	}
+
 	/** Has this requisition entered the SSM procurement workflow at all? */
 	public function inProcurement(): bool
 	{

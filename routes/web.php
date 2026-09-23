@@ -17,6 +17,11 @@ Route::post('/certificate/store', 'HomeController@certificateStore')->name('stor
 Route::get('/certificate/{id}', 'HomeController@getOneCertificate')->name('get.one.certificate');
 Route::post('/certificate/update', 'HomeController@updateOneCertificate')->name('update.one.certificate');
 Route::post('/certificate/delete', 'HomeController@deleteOneCertificate')->name('delete.one.certificate');
+// Certificate categories - super-admin's list, picked from when a vessel's
+// Master/Chief Engineer records a certificate of their own.
+Route::post('/certificate-category/store', 'HomeController@storeCertificateCategory')->name('store.certificate-category');
+Route::post('/certificate-category/update', 'HomeController@updateCertificateCategory')->name('update.certificate-category');
+Route::post('/certificate-category/delete', 'HomeController@deleteCertificateCategory')->name('delete.certificate-category');
 Route::get('/vessel/add', 'HomeController@addVesselForm')->name('get.vesselAdd.form');
 Route::post('/vessel/store/gen-info', 'HomeController@storeVesselGenInfo')->name('store.vessel.genInfo');
 Route::get('/home/item', 'HomeController@getItem')->name('get.all.item');
@@ -55,12 +60,17 @@ Route::group(['middleware' => 'member'],function(){
 	Route::get('/create/order', function () { return redirect()->route('requisition.step1'); })->name('add.new.order');
 	Route::get('/home/created-orders', 'HomeController@createdOrders');
 
+	// Step 1 is the justification form (Part A). It runs BEFORE any draft
+	// exists - answering it is what creates one - so it takes no {order}.
 	Route::get('/requisition/create', 'RequisitionController@createStep1')->name('requisition.step1');
 	Route::post('/requisition/create', 'RequisitionController@storeStep1')->name('requisition.step1.store');
-	// Same two actions, but for a draft that already exists - what Back from
-	// step 2 returns to, so the details can be corrected without starting over.
-	Route::get('/requisition/{order}/edit', 'RequisitionController@createStep1')->name('requisition.step1.edit');
-	Route::post('/requisition/{order}/edit', 'RequisitionController@storeStep1')->name('requisition.step1.update');
+	// Step 2, the requisition's own details. Reached from step 1 for a new
+	// draft, and from Back on step 3 to correct an existing one.
+	Route::get('/requisition/{order}/details', 'RequisitionController@step2Details')->name('requisition.details');
+	Route::post('/requisition/{order}/details', 'RequisitionController@storeDetails')->name('requisition.details.store');
+	// Kept so links and bookmarks to the old /edit path still land somewhere
+	// sensible rather than 404ing.
+	Route::get('/requisition/{order}/edit', fn (\App\Order $order) => redirect()->route('requisition.details', $order));
 	Route::get('/requisition/{order}/items', 'RequisitionController@step2')->name('requisition.step2');
 	Route::post('/requisition/{order}/items', 'RequisitionController@storeStep2')->name('requisition.step2.store');
 	Route::post('/requisition/{order}/items/{item}/remove', 'RequisitionController@destroyStep2Item')->name('requisition.step2.item.remove');
@@ -74,15 +84,26 @@ Route::group(['middleware' => 'member'],function(){
 	Route::post('/requisition/{order}/items/{item}/attachments/upload', 'AttachmentController@upload')->name('attachments.upload');
 	Route::post('/requisition/{order}/items/{item}/attachments/attach', 'AttachmentController@attach')->name('attachments.attach');
 	Route::post('/requisition/{order}/items/{item}/attachments/{attachment}/detach', 'AttachmentController@detach')->name('attachments.detach');
+	// Part A again, for a draft that already has one - what Back from step 2
+	// returns to, so the justification can be corrected without starting over.
+	Route::get('/requisition/{order}/form', 'RequisitionController@form')->name('requisition.form');
+	Route::post('/requisition/{order}/form', 'RequisitionController@storeForm')->name('requisition.form.store');
 	Route::get('/requisition/{order}/review', 'RequisitionController@step3')->name('requisition.step3');
 	Route::post('/requisition/{order}/submit', 'RequisitionController@submit')->name('requisition.submit');
 
 	// UI only for now - no store route yet (see ServiceRequisitionController).
 	Route::get('/service-requisition/create', 'ServiceRequisitionController@create')->name('service-requisition.create');
+	Route::get('/service-requisition/search-equipment', 'ServiceRequisitionController@searchEquipment')->name('service-requisition.search-equipment');
+	Route::get('/service-requisition/certificates', 'ServiceRequisitionController@certificatesByCategory')->name('service-requisition.certificates');
+	Route::post('/service-requisition', 'ServiceRequisitionController@store')->name('service-requisition.store');
 });
 Route::get('/home/order', 'HomeController@getOrder')->name('get.all.order');//superadmin // operator
 
 Route::get('/order/detail/{order_id}', 'HomeController@viewOrderDetail')->name('view.order.detail');
+// The printable BSC form. Its columns differ per category, so it is rendered
+// server-side rather than assembled from the detail page - see
+// App\RequisitionPrintForm.
+Route::get('/order/{order}/print', 'OrderPrintController@show')->name('order.print');
 // Viewing/downloading one attachment - open to every approval-chain role,
 // not just the ship officers who upload them, since anyone reviewing the
 // requisition needs to be able to open what was attached to it.
@@ -105,7 +126,25 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   // Rejection is terminal and open to whoever currently holds the
   // requisition - the same rule the Approve button uses.
   Route::post('/order/reject', 'RoleController@rejectRequisition')->name('order.reject');
+  // The approval form's post-submission parts: B is SRD's cross-verification,
+  // required before they approve or forward; C is DGM (SSM)'s final review,
+  // required before they assign. See App\RequisitionForm.
+  Route::post('/order/{order}/form-part/{part}', 'OrderFormPartController@store')
+      ->whereIn('part', ['B', 'C'])->name('order.form-part');
   Route::get('/approved/requisition', 'RoleController@approvedRequisition');
+
+  // Service requisitions: same chain as an item requisition up to GM
+  // (SRD), then it ends - there's no SSM leg. Whose turn it is is
+  // enforced in the controller, as everywhere else in this app.
+  Route::get('/service-requisitions', 'ServiceRequisitionApprovalController@index')->name('service-requisition.index');
+  Route::get('/service-requisition/{id}', 'ServiceRequisitionApprovalController@show')->name('service-requisition.show');
+  Route::post('/service-requisition/approve', 'ServiceRequisitionApprovalController@approve')->name('service-requisition.approve');
+  Route::post('/service-requisition/delegate', 'ServiceRequisitionApprovalController@delegate')->name('service-requisition.delegate');
+  Route::post('/service-requisition/reject', 'ServiceRequisitionApprovalController@reject')->name('service-requisition.reject');
+  // The procurement workflow GM's delegation hands it into: Administrative
+  // Approval through Delivery run by the named SRD officer, then Receipt &
+  // Verification by the vessel. See App\ServiceProcurementStage.
+  Route::post('/service-procurement/{serviceRequisition}/complete', 'ServiceProcurementController@completeStep')->name('service-procurement.complete');
 
   Route::get('/home/trash', 'HomeController@allTrash');
 
@@ -134,6 +173,17 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   Route::get('/stock/consumption/create', 'StockConsumptionController@create')->name('stock-consumption.create');
   Route::get('/stock/consumption/search-items', 'StockConsumptionController@searchItems')->name('stock-consumption.search-items');
   Route::post('/stock/consumption', 'StockConsumptionController@store')->name('stock-consumption.store');
+
+  // Equipment & Maker List (per vessel). Master/Chief Engineer only for the
+  // write routes - enforced in the controller, same pattern as the stock
+  // routes above. search() is what the service requisition picker below
+  // reads from, and is open to whoever can raise a service requisition.
+  Route::get('/vessel/equipment', 'EquipmentController@index')->name('equipment.index');
+  Route::post('/vessel/equipment/store', 'EquipmentController@store')->name('equipment.store');
+  Route::post('/vessel/equipment/update', 'EquipmentController@update')->name('equipment.update');
+  Route::post('/vessel/equipment/delete', 'EquipmentController@destroy')->name('equipment.delete');
+  Route::get('/vessel/equipment/template', 'EquipmentController@template')->name('equipment.template');
+  Route::post('/vessel/equipment/upload', 'EquipmentController@upload')->name('equipment.upload');
 
   Route::get('/ports/search', 'PortController@search')->name('ports.search');
 

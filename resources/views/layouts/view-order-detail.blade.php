@@ -69,6 +69,12 @@
 	margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.02em;
 	line-height: 1.15; color: var(--od-ink);
 }
+.od-priority{
+	display: inline-flex; align-items: center; gap: 6px; margin-top: 9px;
+	padding: 4px 11px; border-radius: 999px;
+	background: #fbeae8; color: var(--od-danger); border: 1px solid rgba(179,38,30,.22);
+	font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+}
 .od-actions{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .od-actions .btn{
 	display: inline-flex; align-items: center; gap: 8px;
@@ -320,6 +326,12 @@
 					<div>
 						<div class="od-eyebrow">Requested Order Details</div>
 						<h1 class="od-title">{{!empty($order->vessel->name)?$order->vessel->name:''}}</h1>
+						{{-- Only rendered when it IS urgent: a "Normal priority" badge on
+							 every other requisition would be noise, and would dilute the one
+							 case this flag exists to call attention to. --}}
+						@if($order->high_priority)
+						<div class="od-priority"><i class="fas fa-exclamation-circle"></i> High priority</div>
+						@endif
 					</div>
 					{{-- The "Call for Tender / Placed Work Order / Supplied to Ship"
 						 dropdown that used to sit here was the ancestor of the
@@ -411,8 +423,39 @@
 						// rather than left for the SSM officer to puzzle over.
 						$showRejectButton = $canAct && $currentRole != 'operator'
 							&& ! \App\ProcurementStage::isPostReceipt($order->procurement_stage);
+
+						// SRD cross-verifies the ship's Part A before they act on the
+						// requisition. Until Part B is in, Approve and Forward are
+						// replaced by the button that opens it - Reject is deliberately
+						// NOT gated: stopping a requisition shouldn't require first
+						// filling in paperwork about it.
+						$partBOutstanding = $canAct && \App\Http\Controllers\OrderFormPartController::outstanding(
+							$order, $currentRole, \App\RequisitionForm::PART_B);
+						if ($partBOutstanding) {
+							$showApproveButton = false;
+						}
+
+						// DGM (SSM)'s own final review, taken before they hand the
+						// requisition to an SSM officer - so it gates Assign the same
+						// way Part B gates Approve/Forward.
+						$partCOutstanding = $canAct && \App\Http\Controllers\OrderFormPartController::outstanding(
+							$order, $currentRole, \App\RequisitionForm::PART_C);
 					@endphp
 					<div class="od-actions">
+						@if($partCOutstanding)
+						<button type="button" class="btn btn-primary" data-toggle="modal" data-target="#part-c-modal">
+							<i class="fas fa-clipboard"></i> DEMAND AND PROCUREMENT APPROVAL FORM-PART C
+						</button>
+						@endif
+						@if($partBOutstanding)
+						{{-- fa-clipboard, not fa-clipboard-check: this app loads Font
+							 Awesome 5.0.6, and fa-clipboard-check only exists from 5.1
+							 onwards (it renders as nothing). Same trap as fa-tools and
+							 fa-boxes elsewhere in this codebase. --}}
+						<button type="button" class="btn btn-primary" data-toggle="modal" data-target="#part-b-modal">
+							<i class="fas fa-clipboard"></i> DEMAND AND PROCUREMENT APPROVAL FORM-PART B
+						</button>
+						@endif
 						@if($showApproveButton)
 						<button type="button" class="btn btn-primary" id="approve_order" data-id="{{$order->id}}">
 							<i class="fas fa-check-circle"></i> {{ $approveLabel }}
@@ -421,7 +464,7 @@
 
 						{{-- DGM (SSM) doesn't approve - they assign it to one named
 						     SSM officer, who then takes the final action. --}}
-						@if($canAct && $currentRole == 'dgm-ssm')
+						@if($canAct && $currentRole == 'dgm-ssm' && !$partCOutstanding)
 						<select class="form-control" id="ssm_assignee">
 							<option value="">Assign to…</option>
 							@foreach($ssmOfficers ?? [] as $roleName => $officers)
@@ -440,7 +483,7 @@
 						     person, so picking the role alone isn't enough. Hidden
 						     once a delegate has already reviewed and sent it back -
 						     at that point GM just approves, above. --}}
-						@if($canAct && $currentRole == 'gm-srd' && !$srdDelegateReviewed)
+						@if($canAct && $currentRole == 'gm-srd' && !$srdDelegateReviewed && !$partBOutstanding)
 						<select class="form-control" id="srd_delegate_target">
 							<option value="">Delegate to…</option>
 							@foreach($srdOfficers ?? [] as $roleName => $officers)
@@ -453,7 +496,11 @@
 						</select>
 						<button type="button" class="btn btn-info" id="forward_toagm" data-id="{{$order->id}}"><i class="fas fa-angle-double-right"></i> Forward</button>
 						@endif
-						<button type="button" class="btn btn-info btn-bvprint print-order-details"><i class="fa fa-print"></i> Print</button>
+						{{-- Opens the category's own BSC form (App\RequisitionPrintForm)
+							 rather than running print-pdf-custom.js over this page, which
+							 could only print the one table shape the screen uses. --}}
+						<a href="{{ route('order.print', [$order->id, 'auto' => 1]) }}" target="_blank" rel="noopener"
+							class="btn btn-info btn-bvprint"><i class="fa fa-print"></i> Print</a>
 						@if($showRejectButton)
 						<button type="button" class="btn od-btn-reject" id="reject_order" data-id="{{$order->id}}"
 							data-toggle="modal" data-target="#reject-order-modal">
@@ -758,6 +805,15 @@
 						</div>
 					</div>
 					@endif
+
+					{{-- The approval form, read-only: Part A is the ship's
+						 justification, completed before submission; Part B is SRD's
+						 cross-check of it. Each renders only once it exists, so older
+						 requisitions (and ones SRD hasn't reached yet) simply show
+						 whichever parts are on file. --}}
+					@include('partials.requisition-form-part', ['order' => $order, 'part' => \App\RequisitionForm::PART_A])
+					@include('partials.requisition-form-part', ['order' => $order, 'part' => \App\RequisitionForm::PART_B])
+					@include('partials.requisition-form-part', ['order' => $order, 'part' => \App\RequisitionForm::PART_C])
 
 					{{-- SSM procurement workflow. The panel is the action for
 						 whichever stage is current; the timeline below it is
@@ -1089,6 +1145,15 @@
 </div>
 <!-- ./print header -->
 
+{{-- The approval form's post-submission parts, each rendered only for the
+	 officer it is currently blocking. See partials/requisition-form-modal. --}}
+@if($partBOutstanding)
+@include('partials.requisition-form-modal', ['order' => $order, 'part' => \App\RequisitionForm::PART_B])
+@endif
+@if($partCOutstanding)
+@include('partials.requisition-form-modal', ['order' => $order, 'part' => \App\RequisitionForm::PART_C])
+@endif
+
 <!-- Reject modal. A Bootstrap modal rather than a SweetAlert input so the
 	 reason field behaves like every other textarea on this page, and so the
 	 warning about rejection being final has room to be read. Only rendered
@@ -1330,6 +1395,53 @@ $(function () {
 	function csrfToken() {
 		return $('meta[name="csrf-token"]').attr('content');
 	}
+
+	// --- Approval form parts (B and C) -----------------------------------
+	// Bound by class, not id, so one handler drives whichever part's modal is
+	// on the page. Every question is checked here so the officer sees which
+	// ones are missing without a round trip - the server enforces it too
+	// (OrderFormPartController::store), since this check can be skipped.
+	$(document).on('click', '.part-form-submit', function () {
+		var $btn = $(this);
+		var part = $btn.data('part');
+		var $form = $('.part-form[data-part="' + part + '"]');
+		var $errors = $form.closest('.modal-body').find('.part-form-errors');
+		var missing = [];
+
+		$form.find('.rf-q').each(function () {
+			var $q = $(this).removeClass('has-error');
+			// Questions with no options are records, not answers - nothing to
+			// require, so they can't be "missing".
+			if (!$q.find('input[type=radio][name$="[choice]"]').length) { return; }
+			if (!$q.find('input[type=radio][name$="[choice]"]:checked').length) {
+				missing.push($q.find('.rf-q-no').text().replace('.', ''));
+				$q.addClass('has-error');
+			}
+		});
+
+		if (missing.length) {
+			$errors.text('Answer question ' + missing.join(', ') + ' before submitting.').show();
+			$form.closest('.modal-body').animate(
+				{ scrollTop: $form.find('.rf-q.has-error').first().position().top }, 250);
+			return;
+		}
+
+		$errors.hide();
+		$btn.prop('disabled', true).text('Submitting…');
+
+		$.post('/order/' + $btn.data('id') + '/form-part/' + part,
+			$form.serialize() + '&_token=' + encodeURIComponent(csrfToken()))
+			.done(function (res) {
+				swal('Done!', res.message, 'success').then(function () {
+					window.location.href = res.redirect || window.location.href;
+				});
+			})
+			.fail(function (xhr) {
+				$btn.prop('disabled', false)
+					.html('<i class="fas fa-check-circle"></i> Submit Part ' + part);
+				$errors.text((xhr.responseJSON && xhr.responseJSON.message) || 'Something went wrong.').show();
+			});
+	});
 
 	// --- Reject ---------------------------------------------------------
 	// The reason is required, and checked here before the round trip purely

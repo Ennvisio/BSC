@@ -8,7 +8,7 @@
 					<strong class="pptitle">Review &amp; Submit &nbsp;
 						<span style="color:red;">{{ $order->vessel->name }}</span>
 					</strong>
-					<div class="right-button">Step 3 of 3 — Review</div>
+					<div class="right-button">Step 4 of 4 — Review</div>
 				</div>
 				<div class="card-body">
 					@if(session('message'))
@@ -43,7 +43,7 @@
 
 					{{-- Same columns as step 2's Add Items table, minus the inputs -
 						 this is the same requisition, just no longer editable here
-						 (Back still reopens step 2 for that). --}}
+						 (Back returns to the justification form, and from there to step 2). --}}
 					<div class="table-responsive">
 					<table class="table table-striped table-bordered" style="width:100%">
 						<thead>
