@@ -1345,6 +1345,9 @@ public function updateOneUser(updateUserFormVal $request){
   $user = User::findOrFail($request->user_id);
   $user->email=$request->email;
   $user->name=$request->User_Name;
+  if ($request->filled('password')) {
+    $user->password = Hash::make($request->password);
+  }
   $user->update();
   $role = Role::findOrFail($user->role->id);
   $role->role = $request->User_Role;

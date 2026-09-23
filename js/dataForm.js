@@ -1681,6 +1681,15 @@ $(document).on('click','input#srd_user, input#srd_user_edit',function () {
 
 
 // Add Item Function 
+// Same three colours as the initial Blade render (user.blade.php) - ship
+// crew blue, shore SRD green, shore SSM amber - so a row added or edited
+// through AJAX matches one rendered on page load instead of falling back to
+// plain text.
+function userTypeBadge(type) {
+  var cls = { ship: 'badge-primary', srd: 'badge-success', ssm: 'badge-warning' }[type] || 'badge-secondary';
+  return type ? '<span class="badge ' + cls + '">' + String(type).toUpperCase() + '</span>' : '';
+}
+
 $(document).on('submit','#user_add_form',function(event){
   event.preventDefault();
   $("#user_add_form .form_error").css('display','none');
@@ -1702,7 +1711,7 @@ $(document).on('submit','#user_add_form',function(event){
       var  idx= table.rows().count();
       idx++;
       var rowNode = table
-      .row.add( ['<b class="serial">'+idx+'</b>', response[1]['name'], response[1]['email'], response[2]['role'], response[2]['user_type'], response[3], response[2]['created_by']+ '<br>' +response[2]['created_at'], response[2]['updated_by'] +'<br>'+response[2]['updated_at'],
+      .row.add( ['<b class="serial">'+idx+'</b>', response[1]['name'], response[1]['email'], response[2]['role'], userTypeBadge(response[2]['user_type']), response[3], response[2]['created_by']+ '<br>' +response[2]['created_at'], response[2]['updated_by'] +'<br>'+response[2]['updated_at'],
         '<div class="action"><button class="btn btn-info mr-1 edit-user" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>'+
         '<button class="btn btn-danger delete-user" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button><div>'])
       .order([0, 'dsc']).draw()
@@ -1867,7 +1876,7 @@ $(document).on('submit','#user_edit_form',function(event){
       '<b class="serial">'+tr_sl+'</b>',
       response[1]['name'],
       response[1]['email'],
-      response[2]['role'],response[2]['user_type'],
+      response[2]['role'], userTypeBadge(response[2]['user_type']),
       response[3], 
       response[2]['created_by']+'<br>'+response[2]['created_at'], 
       response[2]['updated_by']+'<br>'+response[2]['updated_at'],  

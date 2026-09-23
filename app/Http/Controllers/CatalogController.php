@@ -28,7 +28,12 @@ class CatalogController extends Controller
 
             return view('layouts.catalog-browse', [
                 'vessel' => $vessel,
-                'groupCount' => ItemGroup::count(),
+                // Folders that actually lead to one of THIS vessel's own
+                // items, not the fleet-wide tree - showing 6,824 folders next
+                // to "0 items" (a vessel with nothing imported yet) reads as
+                // a bug even though every folder drilled into is correctly
+                // empty for them.
+                'groupCount' => count($this->visibleGroupIdsForVessel($vessel->id)),
                 'itemCount' => $vessel->items()->count(),
                 'vesselCount' => null,
                 'categories' => $categories,
@@ -96,13 +101,24 @@ class CatalogController extends Controller
         $query = Item::where('item_group_id', $groupId)
             ->where('status', true);
 
-        if ($this->isShipUser()) {
+        $isShip = $this->isShipUser();
+
+        if ($isShip) {
             $vesselId = auth()->user()->role->vessel_id;
             $query->whereHas('vessels', fn ($q) => $q->where('vessel_id', $vesselId));
         }
 
-        $items = $query->with(['vessels' => fn ($q) => $q->select('vessels.id', 'vessels.name')])
-            ->orderBy('name')
+        // Which OTHER vessels stock an item is fleet information, and belongs
+        // only to shore staff. Loading it for a ship user told them what the
+        // rest of the fleet carries - and the list could only ever name their
+        // own vessel plus everyone else's, so there was nothing in it for them
+        // anyway. The column is dropped from their table entirely (see
+        // catalog-browse.blade.php), rather than narrowed to one obvious name.
+        if (! $isShip) {
+            $query->with(['vessels' => fn ($q) => $q->select('vessels.id', 'vessels.name')]);
+        }
+
+        $items = $query->orderBy('name')
             ->get([
                 'id', 'name', 'article_number', 'unit', 'account_number', 'description',
                 'part_number', 'drawing_number', 'hs_code', 'manufacturer',
@@ -224,13 +240,17 @@ class CatalogController extends Controller
      * ancestor of those groups (so the branches leading down to them stay
      * visible while drilling through the tree) - not the whole fleet-wide
      * tree, which is the point of vessel-scoping in the first place.
+     *
+     * $categoryId narrows to one catalog category (what children()/items()/
+     * search() need, since a vessel only ever browses one at a time); null
+     * spans all of them, for the vessel's total folder count in browse().
      */
-    private function visibleGroupIdsForVessel(int $vesselId, int $categoryId): array
+    private function visibleGroupIdsForVessel(int $vesselId, ?int $categoryId = null): array
     {
         $parentMap = $this->parentMap();
 
         $leafIds = Item::whereHas('vessels', fn ($q) => $q->where('vessel_id', $vesselId))
-            ->where('category_id', $categoryId)
+            ->when($categoryId !== null, fn ($q) => $q->where('category_id', $categoryId))
             ->whereNotNull('item_group_id')
             ->distinct()
             ->pluck('item_group_id');

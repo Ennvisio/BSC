@@ -131,14 +131,17 @@ $(function () {
 			// vessel - the API only sends it in that case.
 			var hasStock = items.length > 0 && items[0].stock_qty !== undefined;
 			var canEditStock = hasStock && items[0].can_edit_stock;
+			// Which vessels stock an item is fleet information - the API only
+			// sends it to shore staff, so the column only exists for them.
+			var hasVessels = items.length > 0 && items[0].vessels !== undefined;
 
 			var html = '<div class="table-responsive"><table id="catalog-items-table" class="table table-sm table-bordered" style="width:100%;">'
 				+ '<thead><tr><th>Article #</th><th>Name</th><th>Unit</th>'
 				+ (hasStock ? '<th>Opening Stock</th><th>In Stock</th>' : '')
 				+ '<th>Account #</th><th>Description</th>'
-				+ '<th>Part #</th><th>Drawing #</th><th>HS Code</th><th>Manufacturer</th><th>Vessels</th></tr></thead><tbody>';
+				+ '<th>Part #</th><th>Drawing #</th><th>HS Code</th><th>Manufacturer</th>'
+				+ (hasVessels ? '<th>Vessels</th>' : '') + '</tr></thead><tbody>';
 			items.forEach(function (i) {
-				var vessels = (i.vessels || []).map(function (v) { return esc(v.name); }).join(', ') || '<span class="text-muted">none</span>';
 				html += '<tr>'
 					+ '<td>' + esc(i.article_number) + '</td>'
 					+ '<td>' + esc(i.name) + '</td>'
@@ -153,7 +156,10 @@ $(function () {
 					+ '<td>' + esc(i.drawing_number) + '</td>'
 					+ '<td>' + esc(i.hs_code) + '</td>'
 					+ '<td>' + esc(i.manufacturer) + '</td>'
-					+ '<td>' + vessels + '</td>'
+					+ (hasVessels
+						? '<td>' + ((i.vessels || []).map(function (v) { return esc(v.name); }).join(', ')
+							|| '<span class="text-muted">none</span>') + '</td>'
+						: '')
 					+ '</tr>';
 			});
 			html += '</tbody></table></div>';

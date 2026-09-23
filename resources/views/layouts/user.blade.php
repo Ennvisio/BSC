@@ -13,6 +13,50 @@
 		<!-- card-hader -->
 		<!-- card-body -->
 		<div class="card-body">
+			{{-- Exact-match filters, on top of DataTables' own free-text search
+				 box - a superadmin scanning hundreds of users across a growing
+				 fleet is looking for "everyone on this vessel" far more often
+				 than typing a name, and a dropdown beats remembering/typing a
+				 vessel's exact spelling. Wired in this page's own home-js below,
+				 not dataForm.js - #example is reused by several other pages with
+				 different columns, so filtering by column index has to live
+				 where those indices are actually known. --}}
+			<div class="row mb-3" id="user-filters">
+				<div class="col-md-3">
+					<label class="mb-1" for="filter_user_type">User Type</label>
+					<select id="filter_user_type" class="form-control form-control-sm">
+						<option value="">All types</option>
+						<option value="ship">Ship</option>
+						<option value="srd">SRD</option>
+						<option value="ssm">SSM</option>
+					</select>
+				</div>
+				<div class="col-md-3">
+					<label class="mb-1" for="filter_role">Role</label>
+					<select id="filter_role" class="form-control form-control-sm">
+						<option value="">All roles</option>
+						@foreach($data['roles']->pluck('role')->unique()->sort() as $roleSlug)
+						<option value="{{ $roleSlug }}">{{ ucwords(str_replace('-', ' ', $roleSlug)) }}</option>
+						@endforeach
+					</select>
+				</div>
+				<div class="col-md-4">
+					<label class="mb-1" for="filter_vessel">Vessel</label>
+					<select id="filter_vessel" class="form-control form-control-sm">
+						<option value="">All vessels</option>
+						@if(!empty($data['vessels']))
+						@foreach($data['vessels'] as $vessel)
+						<option value="{{ $vessel->name }}">{{ $vessel->name }}</option>
+						@endforeach
+						@endif
+						<option value="__none__">— Ashore (no vessel) —</option>
+					</select>
+				</div>
+				<div class="col-md-2 d-flex align-items-end">
+					<button type="button" id="clear_user_filters" class="btn btn-outline-secondary btn-sm btn-block">Clear filters</button>
+				</div>
+			</div>
+
 			<table id="example" class="table table-bordered dt-responsive" style="width: 100%;">
 				<thead>
 					<th>#</th>
@@ -28,12 +72,27 @@
 				<tbody>
 					@if(!empty($data['roles']))
 					@foreach($data['roles'] as $role)
+					@php
+						// Distinguishes the three user types at a glance in a long,
+						// vessel-mixed list - ship crew (blue), shore SRD (green),
+						// shore SSM (amber).
+						$userTypeBadge = match($role->user_type) {
+							'ship' => 'badge-primary',
+							'srd' => 'badge-success',
+							'ssm' => 'badge-warning',
+							default => 'badge-secondary',
+						};
+					@endphp
 					<tr id="user-{{!empty($role->user->id)?$role->user->id:''}}">
 						<td class="sl_no"> <b class="serial"> {{$loop->iteration}}</b> </td>
 						<td>{{!empty($role->user->name)?$role->user->name:''}}</td>
 						<td>{{!empty($role->user->email)?$role->user->email:''}}</td>
 						<td>{{!empty($role->role)?$role->role:''}}</td>
-						<td>{{!empty($role->user_type)?$role->user_type:''}}</td>
+						<td>
+							@if(!empty($role->user_type))
+							<span class="badge {{ $userTypeBadge }}">{{ strtoupper($role->user_type) }}</span>
+							@endif
+						</td>
 						<td>{{!empty($role->vessel->name)?$role->vessel->name:''}}</td>
 						<td>
 							{{!empty($role->created_by)?$role->created_by:''}} <br> {{!empty($role->user->created_at)?$role->user->created_at:''}}
@@ -270,6 +329,28 @@
 							<input type="hidden" class="form-control vessel_not_for_admin" value="0" name="Vessel_Name" disabled>
 						</div>
 					</div>
+					{{-- Optional - only sent if filled, so editing a user's name or
+						 vessel never forces a password change. Always blank on open
+						 (see the show.bs.modal handler below): the loaded user has no
+						 password to show, and leaving a previously-typed one sitting
+						 here would risk silently resetting the WRONG user's password
+						 if the admin edits someone else next without noticing. --}}
+					<div class="row justify-content-center form-group">
+						<div class="col-md-3">
+							<label for="New_Password">New Password: </label>
+						</div>
+						<div class="col-md-7">
+							<input type="password" class="form-control New_Password" name="password" autocomplete="new-password" placeholder="Leave blank to keep the current password">
+						</div>
+					</div>
+					<div class="row justify-content-center form-group">
+						<div class="col-md-3">
+							<label for="Confirm_New_Password">Confirm New Password: </label>
+						</div>
+						<div class="col-md-7">
+							<input type="password" class="form-control Confirm_New_Password" name="password_confirmation" autocomplete="new-password">
+						</div>
+					</div>
 				</div>
 				<div class="modal-footer">
 					<button type="button" class="btn btn-danger" data-dismiss="modal">Cancel</button>
@@ -283,4 +364,68 @@
 <!-- logo-base64 for pdf page -->
 @include('pdf.logo-base64')
 <!-- logo-base64 for pdf page -->
+@endsection
+
+@section('home-js')
+<script>
+$(function () {
+	// Re-grabs the API instance dataForm.js already initialised - calling
+	// .DataTable() again on a table that already has one doesn't reinitialise
+	// it, just hands back the same object, which is what makes it safe to
+	// wire page-specific behaviour here rather than inside dataForm.js
+	// (shared by several other pages with completely different columns).
+	var usersTable = $('#example').DataTable();
+
+	// Column cells carry markup now (the user-type badge), so filtering
+	// compares against their rendered TEXT, not the raw cell content -
+	// otherwise a search would have to know about the badge's own class names.
+	function cellText(html) {
+		return $('<div>').html(html || '').text().trim();
+	}
+
+	$.fn.dataTable.ext.search.push(function (settings, data) {
+		// This search plugin runs for every DataTable on the page, not just
+		// this one - #example is a shared id across the app, so the guard
+		// stops these filters reaching a table they were never meant for.
+		if (settings.nTable.id !== 'example') {
+			return true;
+		}
+
+		var type = $('#filter_user_type').val();
+		var role = $('#filter_role').val();
+		var vessel = $('#filter_vessel').val();
+
+		if (type && cellText(data[4]).toLowerCase() !== type) {
+			return false;
+		}
+		if (role && cellText(data[3]) !== role) {
+			return false;
+		}
+		if (vessel === '__none__' && cellText(data[5]) !== '') {
+			return false;
+		}
+		if (vessel && vessel !== '__none__' && cellText(data[5]) !== vessel) {
+			return false;
+		}
+
+		return true;
+	});
+
+	$('#filter_user_type, #filter_role, #filter_vessel').on('change', function () {
+		usersTable.draw();
+	});
+
+	$('#clear_user_filters').on('click', function () {
+		$('#filter_user_type, #filter_role, #filter_vessel').val('');
+		usersTable.draw();
+	});
+
+	// Cleared on every open, not just after a successful save - Cancelling
+	// out of an edit leaves whatever was typed sitting in the form, and the
+	// next user opened for edit must never inherit it.
+	$('#edit_template_modal').on('show.bs.modal', function () {
+		$(this).find('.New_Password, .Confirm_New_Password').val('');
+	});
+});
+</script>
 @endsection
