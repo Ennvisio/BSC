@@ -171,6 +171,7 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   Route::get('/stock/report', 'StockReportController@index')->name('stock.report');
   Route::get('/stock/report/summary', 'StockReportController@summary')->name('stock.report.summary');
   Route::get('/stock/report/data', 'StockReportController@data')->name('stock.report.data');
+  Route::get('/stock/report/groups', 'StockReportController@groups')->name('stock.report.groups');
 
   // Stock consumption. Write access (create/search-items/store) is
   // chief-officer/second-engineer only - enforced in the controller, same

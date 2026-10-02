@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Category;
+use App\ItemGroup;
 use App\Vessel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -48,7 +49,7 @@ class StockReportController extends Controller
         ]);
     }
 
-    /** AJAX: the three headline figures shown above the table. */
+    /** AJAX: the two headline figures shown above the table. */
     public function summary(Request $request)
     {
         $this->authorizeViewer();
@@ -61,14 +62,11 @@ class StockReportController extends Controller
             ->where('vessel_items.vessel_id', $vesselId)
             ->where('items.category_id', $categoryId)
             ->where('items.status', true);
+        $this->scopeToGroup($base, $request, $categoryId);
 
         return response()->json([
             'total_items' => (clone $base)->count(),
             'zero_stock' => (clone $base)->where('vessel_items.stock_qty', '<=', 0)->count(),
-            // Only counts items the Master actually set a reorder level for -
-            // one with none is never "low", it's simply untracked.
-            'low_stock' => (clone $base)->whereNotNull('vessel_items.min_qty')
-                ->whereColumn('vessel_items.stock_qty', '<=', 'vessel_items.min_qty')->count(),
         ]);
     }
 
@@ -92,6 +90,7 @@ class StockReportController extends Controller
             ->where('vessel_items.vessel_id', $vesselId)
             ->where('items.category_id', $categoryId)
             ->where('items.status', true);
+        $this->scopeToGroup($query, $request, $categoryId);
 
         $recordsTotal = (clone $query)->count();
 
@@ -147,6 +146,120 @@ class StockReportController extends Controller
                 'last_supply_date' => $row->last_supply_date,
             ]),
         ]);
+    }
+
+    /**
+     * AJAX: one level of the category's group tree for the Group picker -
+     * the top level when parent_id is absent. Only branches this vessel
+     * actually holds something under are returned, each with how many of
+     * the vessel's items sit anywhere beneath it, so the tree never offers
+     * a folder that would open onto an empty report.
+     */
+    public function groups(Request $request)
+    {
+        $this->authorizeViewer();
+
+        $vesselId = $this->resolveVesselId($request);
+        $categoryId = (int) $request->query('category_id');
+        $parentId = $request->filled('parent_id') ? (int) $request->query('parent_id') : null;
+
+        $counts = $this->subtreeCounts($vesselId, $categoryId);
+
+        $groups = ItemGroup::where('category_id', $categoryId)
+            ->where('parent_id', $parentId)
+            ->orderBy('name')
+            ->get(['id', 'name', 'path'])
+            ->filter(fn ($group) => ($counts[$group->id] ?? 0) > 0);
+
+        $children = $this->childrenMap($categoryId);
+
+        return response()->json($groups->map(fn ($group) => [
+            'id' => $group->id,
+            'name' => $group->name,
+            'path' => $group->path,
+            'items' => $counts[$group->id],
+            'has_children' => collect($children[$group->id] ?? [])->contains(fn ($id) => ($counts[$id] ?? 0) > 0),
+        ])->values());
+    }
+
+    /**
+     * Narrows a report query to one group and everything under it. Picking a
+     * parent means "all of it", picking a leaf means just that leaf - the
+     * same id set either way, it's only the size that differs.
+     */
+    private function scopeToGroup($query, Request $request, int $categoryId): void
+    {
+        if (! $request->filled('group_id')) {
+            return;
+        }
+
+        $groupId = (int) $request->query('group_id');
+        abort_unless(
+            ItemGroup::where('id', $groupId)->where('category_id', $categoryId)->exists(),
+            422,
+            'That group is not part of the chosen category.'
+        );
+
+        $query->whereIn('items.item_group_id', $this->descendantIds($categoryId, $groupId));
+    }
+
+    /** $groupId plus every group beneath it, walked in memory. */
+    private function descendantIds(int $categoryId, int $groupId): array
+    {
+        $children = $this->childrenMap($categoryId);
+        $ids = [];
+        $stack = [$groupId];
+
+        while ($stack) {
+            $id = array_pop($stack);
+            $ids[] = $id;
+            array_push($stack, ...($children[$id] ?? []));
+        }
+
+        return $ids;
+    }
+
+    /** parent_id => [child ids] for one category's tree (a few thousand rows at most). */
+    private function childrenMap(int $categoryId): array
+    {
+        static $maps = [];
+
+        if (! isset($maps[$categoryId])) {
+            $maps[$categoryId] = [];
+            foreach (ItemGroup::where('category_id', $categoryId)->get(['id', 'parent_id']) as $group) {
+                $maps[$categoryId][$group->parent_id ?? 0][] = $group->id;
+            }
+        }
+
+        return $maps[$categoryId];
+    }
+
+    /**
+     * group id => number of this vessel's items anywhere beneath it. Counted
+     * per group in one query, then each count carried up through its
+     * ancestors, rather than one subtree query per node shown.
+     */
+    private function subtreeCounts(int $vesselId, int $categoryId): array
+    {
+        $direct = DB::table('vessel_items')
+            ->join('items', 'items.id', '=', 'vessel_items.item_id')
+            ->where('vessel_items.vessel_id', $vesselId)
+            ->where('items.category_id', $categoryId)
+            ->where('items.status', true)
+            ->whereNotNull('items.item_group_id')
+            ->groupBy('items.item_group_id')
+            ->pluck(DB::raw('count(*)'), 'items.item_group_id');
+
+        $parents = ItemGroup::where('category_id', $categoryId)->pluck('parent_id', 'id')->all();
+
+        $totals = [];
+        foreach ($direct as $groupId => $count) {
+            for ($id = $groupId; $id !== null; $id = $parents[$id] ?? null) {
+                $totals[$id] = ($totals[$id] ?? 0) + (int) $count;
+            }
+        }
+
+        return $totals;
     }
 
     /**
