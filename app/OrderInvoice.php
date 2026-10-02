@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 class OrderInvoice extends Model
 {
     protected $fillable = [
-        'order_id', 'invoice_no', 'invoice_date', 'discount', 'payable', 'verified_by', 'verified_at',
+        'order_id', 'invoice_no', 'invoice_date', 'currency_code', 'discount', 'payable', 'verified_by', 'verified_at',
     ];
 
     protected $casts = [
@@ -25,6 +25,11 @@ class OrderInvoice extends Model
     public function order()
     {
         return $this->belongsTo(Order::class);
+    }
+
+    public function currency()
+    {
+        return $this->belongsTo(Currency::class, 'currency_code', 'code');
     }
 
     public function verifiedBy()

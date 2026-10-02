@@ -165,6 +165,13 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   Route::get('/stock/history', 'StockController@history')->name('stock.history');
   Route::post('/stock/update', 'StockController@update')->name('stock.update');
 
+  // Read-only stock reporting - Master/Chief Engineer see their own vessel,
+  // GM (SRD)/every SSM role/super-admin see any vessel. See
+  // StockReportController's own doc comment for why the roles split that way.
+  Route::get('/stock/report', 'StockReportController@index')->name('stock.report');
+  Route::get('/stock/report/summary', 'StockReportController@summary')->name('stock.report.summary');
+  Route::get('/stock/report/data', 'StockReportController@data')->name('stock.report.data');
+
   // Stock consumption. Write access (create/search-items/store) is
   // chief-officer/second-engineer only - enforced in the controller, same
   // pattern as the Master-only stock routes just above. index() (the

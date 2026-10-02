@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 class ServiceRequisitionInvoice extends Model
 {
     protected $fillable = [
-        'service_requisition_id', 'invoice_no', 'invoice_date', 'discount', 'payable', 'verified_by', 'verified_at',
+        'service_requisition_id', 'invoice_no', 'invoice_date', 'currency_code', 'discount', 'payable', 'verified_by', 'verified_at',
     ];
 
     protected $casts = [
@@ -25,6 +25,11 @@ class ServiceRequisitionInvoice extends Model
     public function serviceRequisition()
     {
         return $this->belongsTo(ServiceRequisition::class);
+    }
+
+    public function currency()
+    {
+        return $this->belongsTo(Currency::class, 'currency_code', 'code');
     }
 
     public function verifiedBy()

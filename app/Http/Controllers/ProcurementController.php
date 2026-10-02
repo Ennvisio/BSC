@@ -177,6 +177,10 @@ class ProcurementController extends Controller
      */
     private function validateInvoice(Request $request, Order $order): ?string
     {
+        if (! \App\Currency::isActiveCode($request->input('currency_code'))) {
+            return 'Choose the currency the invoice is billed in.';
+        }
+
         $prices = (array) $request->input('unit_price', []);
         $quantities = (array) $request->input('invoice_qty', []);
 
@@ -246,6 +250,7 @@ class ProcurementController extends Controller
             [
                 'invoice_no' => $request->filled('invoice_no') ? trim($request->invoice_no) : null,
                 'invoice_date' => $request->filled('invoice_date') ? $request->invoice_date : null,
+                'currency_code' => $request->input('currency_code'),
                 'discount' => $discount,
                 'payable' => round($subtotal - $discount, 2),
                 'verified_by' => auth()->user()->id,

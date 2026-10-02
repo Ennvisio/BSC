@@ -137,7 +137,12 @@ class HomeController extends Controller
       // delegates are handled above, before this branch.
       $stats = auth()->user()->role->role === 'gm-srd' ? $this->requisitionDashboardStats() : null;
 
-      return view('home',compact('surveys','certificates','vessels','stats'));
+      // Vessel summary + per-category expansion, built from each vessel's
+      // own certificates rather than the legacy fixed certificate-type list
+      // (see App\CertificateValidityReport for why that grid no longer fits).
+      $certificateReport = \App\CertificateValidityReport::forVessels($vessels);
+
+      return view('home',compact('surveys','certificates','vessels','stats','certificateReport'));
     }
   }
 

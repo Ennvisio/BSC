@@ -136,6 +136,52 @@ class Order extends Model
 		return $this->formParts->firstWhere('part', $part);
 	}
 
+	/** Ship roles that raise requisitions - and so confirm their receipt. */
+	const RAISER_ROLES = ['chief-officer', 'second-engineer'];
+
+	/**
+	 * Who confirms receipt once SSM has delivered: the panel that raised it,
+	 * since they're the ones who asked for these goods. Master is only the
+	 * fallback for a requisition with no recognisable raiser on record.
+	 */
+	public function receiptConfirmerRole(): string
+	{
+		return in_array($this->created_by_role, self::RAISER_ROLES, true)
+			? $this->created_by_role
+			: 'master';
+	}
+
+	/** "Chief Officer", "Second Engineer" - for stage labels and hints. */
+	public function receiptConfirmerLabel(): string
+	{
+		return ucwords(str_replace('-', ' ', $this->receiptConfirmerRole()));
+	}
+
+	/** Delivered by SSM and waiting for the ship to confirm it arrived. */
+	public function awaitingReceipt(): bool
+	{
+		if ($this->isRejected()) {
+			return false;
+		}
+
+		return $this->inProcurement()
+			? ProcurementStage::owner($this->procurement_stage) === ProcurementStage::OWNER_SHIP
+			: $this->status === 'delivered';
+	}
+
+	/**
+	 * Can this role confirm receipt right now? The raiser's role, and only on
+	 * their own vessel - another ship's Chief Officer has no business
+	 * confirming goods they never received.
+	 */
+	public function canConfirmReceipt(?string $role): bool
+	{
+		return $role !== null
+			&& $this->awaitingReceipt()
+			&& $role === $this->receiptConfirmerRole()
+			&& $this->vessel_id == (auth()->user()->role->vessel_id ?? null);
+	}
+
 	/** Has this requisition entered the SSM procurement workflow at all? */
 	public function inProcurement(): bool
 	{
@@ -182,7 +228,7 @@ class Order extends Model
 			}
 
 			return ProcurementStage::owner($this->procurement_stage) === ProcurementStage::OWNER_SHIP
-				? 'Delivered — Awaiting Master Confirmation'
+				? 'Delivered — Awaiting '.$this->receiptConfirmerLabel().' Confirmation'
 				: ProcurementStage::label($this->procurement_stage);
 		}
 
@@ -193,7 +239,7 @@ class Order extends Model
 		}
 
 		if ($this->status === 'delivered') {
-			return 'Delivered — Awaiting Master Confirmation';
+			return 'Delivered — Awaiting '.$this->receiptConfirmerLabel().' Confirmation';
 		}
 
 		$approval = $this->orderApproval;
@@ -304,13 +350,13 @@ class Order extends Model
 		}
 
 		// In procurement the current stage decides everything: Receipt &
-		// Verification belongs to the Master, every other stage to the officer
-		// DGM assigned it to, and 'closed' to nobody.
+		// Verification belongs to whoever raised it, every other stage to the
+		// officer DGM assigned it to, and 'closed' to nobody.
 		if ($this->inProcurement()) {
 			$owner = ProcurementStage::owner($this->procurement_stage);
 
 			if ($owner === ProcurementStage::OWNER_SHIP) {
-				return $role === 'master';
+				return $this->canConfirmReceipt($role);
 			}
 
 			if ($owner === ProcurementStage::OWNER_SSM) {
@@ -321,10 +367,10 @@ class Order extends Model
 			return false;
 		}
 
-		// Master always closes the loop once it's delivered, whoever raised
-		// it - and that's the only action anyone has left at that point.
+		// The raiser closes the loop once it's delivered - and that's the only
+		// action anyone has left at that point.
 		if ($this->status === 'delivered') {
-			return $role === 'master';
+			return $this->canConfirmReceipt($role);
 		}
 
 		$forwardedAshore = $approval->master_app !== null || $approval->chief_eng_app !== null;

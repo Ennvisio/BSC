@@ -384,7 +384,11 @@
 					</div>
 
 					<div class="od-card">
-						<div class="od-card-head"><h2>{{ $isRenewal ? 'Certificates for Renewal' : 'Equipment for Repair' }}</h2></div>
+						@php $invCurrency = optional($requisition->invoice)->currency_code ?? \App\Currency::DEFAULT_CODE; @endphp
+						<div class="od-card-head has-currency">
+							<h2>{{ $isRenewal ? 'Certificates for Renewal' : 'Equipment for Repair' }}</h2>
+							@include('partials.invoice-currency', ['invoice' => $requisition->invoice])
+						</div>
 						<div class="table-responsive">
 							<table class="table table-bordered sr-item-table">
 								<thead>
@@ -397,8 +401,8 @@
 											 enter, or something already entered to show. --}}
 										@if($showInvoiceCols)
 										<th class="num">Invoice Qty</th>
-										<th class="num">Unit Price</th>
-										<th class="num">Line Total</th>
+										<th class="num">Unit Price <span class="inv-cur">{{ $invCurrency }}</span></th>
+										<th class="num">Line Total <span class="inv-cur">{{ $invCurrency }}</span></th>
 										@endif
 									</tr>
 								</thead>
@@ -518,14 +522,14 @@
 									<input type="date" class="form-control" id="invoice_date">
 								</div>
 								<div class="proc-field">
-									<label for="invoice_discount">Discount (BDT)</label>
+									<label for="invoice_discount">Discount (<span class="inv-cur-plain">{{ $invCurrency }}</span>)</label>
 									<input type="number" step="0.01" min="0" class="form-control" id="invoice_discount" value="0">
 								</div>
 							</div>
 							<div class="proc-totals">
-								<div><span>Subtotal</span><strong id="inv-subtotal">0.00</strong></div>
-								<div><span>Discount</span><strong id="inv-discount">0.00</strong></div>
-								<div class="payable"><span>Payable</span><strong id="inv-payable">0.00</strong></div>
+								<div><span>Subtotal</span><strong><small class="amt-cur inv-cur-plain">{{ $invCurrency }}</small> <span id="inv-subtotal">0.00</span></strong></div>
+								<div><span>Discount</span><strong><small class="amt-cur inv-cur-plain">{{ $invCurrency }}</small> <span id="inv-discount">0.00</span></strong></div>
+								<div class="payable"><span>Payable</span><strong><small class="amt-cur inv-cur-plain">{{ $invCurrency }}</small> <span id="inv-payable">0.00</span></strong></div>
 							</div>
 							@endif
 
@@ -568,7 +572,7 @@
 						@elseif(! $requisition->procurementClosed())
 						<p class="proc-waiting">
 							@if(\App\ServiceProcurementStage::owner($procStage) === \App\ServiceProcurementStage::OWNER_SHIP)
-							Waiting on the vessel to confirm the work was carried out.
+							Waiting on the {{ $requisition->receiptConfirmerLabel() }} to confirm the work was carried out.
 							@else
 							Waiting on {{ optional(\App\User::find($requisition->approval->assigned_to_srd))->name ?? 'the assigned SRD officer' }}.
 							@endif
@@ -578,9 +582,9 @@
 						@if($showPrices && $requisition->invoice)
 						<div class="proc-invoice-summary">
 							<div><span>Invoice</span><strong>{{ $requisition->invoice->invoice_no ?: '—' }}</strong></div>
-							<div><span>Subtotal</span><strong>{{ number_format($requisition->items->sum('line_total'), 2) }}</strong></div>
-							<div><span>Discount</span><strong>{{ number_format($requisition->invoice->discount, 2) }}</strong></div>
-							<div class="payable"><span>Payable</span><strong>{{ number_format($requisition->invoice->payable, 2) }}</strong></div>
+							<div><span>Subtotal</span><strong><small class="amt-cur">{{ $requisition->invoice->currency_code }}</small> {{ number_format($requisition->items->sum('line_total'), 2) }}</strong></div>
+							<div><span>Discount</span><strong><small class="amt-cur">{{ $requisition->invoice->currency_code }}</small> {{ number_format($requisition->invoice->discount, 2) }}</strong></div>
+							<div class="payable"><span>Payable</span><strong><small class="amt-cur">{{ $requisition->invoice->currency_code }}</small> {{ number_format($requisition->invoice->payable, 2) }}</strong></div>
 						</div>
 						@endif
 					</div>
@@ -856,6 +860,12 @@ $(function () {
 	}
 
 	$(document).on('input', 'input.unit-price, input.invoice-qty, #invoice_discount', recalcInvoice);
+
+	// The currency only relabels - amounts are entered as billed, never
+	// converted - so every price heading and total just follows the picker.
+	$(document).on('change', '#invoice_currency', function () {
+		$('.inv-cur, .inv-cur-plain').text($(this).val());
+	});
 	if ($('#invoice_discount').length) { recalcInvoice(); }
 
 	function submitStage(id, proceed, confirmText) {
@@ -875,6 +885,7 @@ $(function () {
 			payload.invoice_no = $('#invoice_no').val();
 			payload.invoice_date = $('#invoice_date').val();
 			payload.discount = $('#invoice_discount').val();
+			payload.currency_code = $('#invoice_currency').val();
 			payload.unit_price = {};
 			payload.invoice_qty = {};
 			$('input.unit-price').each(function () { payload.unit_price[$(this).data('id')] = $(this).val(); });

@@ -395,7 +395,7 @@
 						if ($procStage === \App\ProcurementStage::DELIVERY) {
 							$approveLabel = 'Confirm Delivery';
 						} elseif ($procStage === \App\ProcurementStage::RECEIPT_VERIFICATION
-							|| ($currentRole == 'master' && $order->status == 'delivered')) {
+							|| $order->canConfirmReceipt($currentRole)) {
 							$approveLabel = 'Confirm Receipt';
 						}
 
@@ -406,8 +406,8 @@
 						// of this stage, not the legacy pre-procurement path).
 						$showReceiptUploadReminder = $showApproveButton
 							&& $inProcurement
-							&& $currentRole == 'master'
-							&& $procStage === \App\ProcurementStage::RECEIPT_VERIFICATION;
+							&& $procStage === \App\ProcurementStage::RECEIPT_VERIFICATION
+							&& $order->canConfirmReceipt($currentRole);
 
 						// Rejection is open to whoever currently HOLDS the
 						// requisition, which is broader than who can approve
@@ -572,7 +572,11 @@
 							 header and pushes the whole page wider than the viewport. Scroll
 							 horizontally inside this box instead, never the page itself. --}}
 						<div class="od-card">
-						<div class="od-card-head"><h2>Requisition Items</h2></div>
+						@php $invCurrency = optional($order->invoice)->currency_code ?? \App\Currency::DEFAULT_CODE; @endphp
+						<div class="od-card-head has-currency">
+							<h2>Requisition Items</h2>
+							@include('partials.invoice-currency', ['invoice' => $order->invoice])
+						</div>
 						<div class="table-responsive">
 						<table id="example" class="table table-striped table-bordered orderedItemTable OrderDetailsTable" style="width:auto; min-width:100%;">
 							<div class="row mb-3 justify-content-between" id="order-print-header2">
@@ -608,7 +612,7 @@
 									<th colspan="4">Item</th>
 									<th colspan="4">Stock &amp; supply</th>
 									<th colspan="3">Quantities</th>
-									@if($showInvoiceCols)<th colspan="3">Invoice</th>@endif
+									@if($showInvoiceCols)<th colspan="3">Invoice <span class="inv-cur">{{ $invCurrency }}</span></th>@endif
 									@if($showActionCol)<th></th>@endif
 								</tr>
 								<tr>
@@ -630,8 +634,8 @@
 										 there is something to show (or something to enter). --}}
 									@if($showInvoiceCols)
 									<th class="num">Invoice Qty</th>
-									<th class="num">Unit Price</th>
-									<th class="num">Line Total</th>
+									<th class="num">Unit Price <span class="inv-cur">{{ $invCurrency }}</span></th>
+									<th class="num">Line Total <span class="inv-cur">{{ $invCurrency }}</span></th>
 									@endif
 									<!-- <th class="item-cat">Category</th> -->
 									@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered'))
@@ -717,7 +721,7 @@
 										@endif
 									</td>
 									<td class='rcv_qty'>
-										@if($canAct && $currentRole == 'master' && $order->status == 'delivered')
+										@if($canAct && $order->canConfirmReceipt($currentRole))
 										<div class="form-group" style="margin: 0">
 											<input type="number" data-id="{{$orderItem->id}}" class="form-control rcv-qty" name="rcv_qty[{{$orderItem->id}}]" value="{{ $orderItem->rcv_item_qty ?? $orderItem->del_item_qty }}">
 										</div>
@@ -729,7 +733,7 @@
 									<td class='invoice_qty'>
 										@if($atInvoiceStage)
 										<div class="form-group" style="margin: 0">
-											{{-- Defaults to what the Master actually confirmed on board,
+											{{-- Defaults to what the raiser actually confirmed on board,
 												 so billing for more than arrived is a visible edit
 												 rather than the path of least resistance. --}}
 											<input type="number" min="0" data-id="{{$orderItem->id}}" class="form-control invoice-qty"
@@ -884,14 +888,14 @@
 									<input type="date" class="form-control" id="invoice_date">
 								</div>
 								<div class="proc-field">
-									<label for="invoice_discount">Discount (BDT)</label>
+									<label for="invoice_discount">Discount (<span class="inv-cur-plain">{{ $invCurrency }}</span>)</label>
 									<input type="number" step="0.01" min="0" class="form-control" id="invoice_discount" value="0">
 								</div>
 							</div>
 							<div class="proc-totals">
-								<div><span>Subtotal</span><strong id="inv-subtotal">0.00</strong></div>
-								<div><span>Discount</span><strong id="inv-discount">0.00</strong></div>
-								<div class="payable"><span>Payable</span><strong id="inv-payable">0.00</strong></div>
+								<div><span>Subtotal</span><strong><small class="amt-cur inv-cur-plain">{{ $invCurrency }}</small> <span id="inv-subtotal">0.00</span></strong></div>
+								<div><span>Discount</span><strong><small class="amt-cur inv-cur-plain">{{ $invCurrency }}</small> <span id="inv-discount">0.00</span></strong></div>
+								<div class="payable"><span>Payable</span><strong><small class="amt-cur inv-cur-plain">{{ $invCurrency }}</small> <span id="inv-payable">0.00</span></strong></div>
 							</div>
 							@endif
 
@@ -931,7 +935,7 @@
 								</button>
 							</div>
 						</form>
-						@elseif($canAct && $currentRole == 'master' && $procStage === \App\ProcurementStage::RECEIPT_VERIFICATION)
+						@elseif($canAct && $procStage === \App\ProcurementStage::RECEIPT_VERIFICATION && $order->canConfirmReceipt($currentRole))
 						{{-- Receipt & Verification is taken through the Confirm
 							 Receipt button at the top of the page (it credits stock
 							 and writes the received quantities); these two fields
@@ -951,7 +955,7 @@
 						@elseif(! $order->procurementClosed())
 						<p class="proc-waiting">
 							@if(\App\ProcurementStage::owner($procStage) === \App\ProcurementStage::OWNER_SHIP)
-							Waiting on the vessel to confirm receipt of the delivery.
+							Waiting on the {{ $order->receiptConfirmerLabel() }} to confirm receipt of the delivery.
 							@else
 							Waiting on {{ optional(\App\User::find($order->orderApproval->assigned_to_ssm))->name ?? 'the assigned SSM officer' }}.
 							@endif
@@ -961,9 +965,9 @@
 						@if($showPrices && $order->invoice)
 						<div class="proc-invoice-summary">
 							<div><span>Invoice</span><strong>{{ $order->invoice->invoice_no ?: '—' }}</strong></div>
-							<div><span>Subtotal</span><strong>{{ number_format($order->orderItems->sum('line_total'), 2) }}</strong></div>
-							<div><span>Discount</span><strong>{{ number_format($order->invoice->discount, 2) }}</strong></div>
-							<div class="payable"><span>Payable</span><strong>{{ number_format($order->invoice->payable, 2) }}</strong></div>
+							<div><span>Subtotal</span><strong><small class="amt-cur">{{ $order->invoice->currency_code }}</small> {{ number_format($order->orderItems->sum('line_total'), 2) }}</strong></div>
+							<div><span>Discount</span><strong><small class="amt-cur">{{ $order->invoice->currency_code }}</small> {{ number_format($order->invoice->discount, 2) }}</strong></div>
+							<div class="payable"><span>Payable</span><strong><small class="amt-cur">{{ $order->invoice->currency_code }}</small> {{ number_format($order->invoice->payable, 2) }}</strong></div>
 						</div>
 						@endif
 					</div>
@@ -1038,39 +1042,30 @@
 						<div class="od-card-body">
 							<div class="od-reason-label">Authorisation</div>
 							<div id="order-print-footer1" class="print-header signs-master-chief">
-							    @foreach(\App\Role::orderBy('user_type','asc')->get() as $role)
-									@if($role->user->id==$order->orderApproval->master_app
-									|| $role->user->id==$order->orderApproval->chief_eng_app
-									|| $role->user->id==$order->orderApproval->cheif_ofcr_app
-									|| $role->user->id==$order->orderApproval->second_eng_app
-									|| $role->user->id==$order->orderApproval->ast_m_app
-									|| $role->user->id==$order->orderApproval->agm_app
-									|| $role->user->id==$order->orderApproval->gm_app
-									|| $role->user->id==$order->orderApproval->dgm_app_ssm
-									|| $role->user->id==$order->orderApproval->agm_app_ssm
-									|| $role->user->id==$order->orderApproval->am_app_ssm
-										)
-										@php
-											// Only render the signature when the file is really
-											// on disk. The original markup pointed <img> at
-											// url('/'.$sign) unconditionally, so a signer with
-											// no signature on file - or one whose file has since
-											// gone missing - produced a broken-image icon rather
-											// than a blank signing line. Both cases exist in the
-											// current data.
-											$signPath = $role->user->sign;
-											$hasSign = !empty($signPath) && file_exists(base_path($signPath));
-										@endphp
-										<div class="master-chief od-sign">
-									<div class="od-sign-line">
-										@if($hasSign)
-										<img class="written-sign sign" src="{{ url('/'.$signPath) }}" alt="Signature of {{ $role->user->name }}">
-										@endif
-									</div>
-									<div class="od-sign-role">{{$role->role}}</div>
-									<div class="signer-name od-sign-name">{{$role->user->name}}</div>
+							    {{-- Chain order, not user-table order: the officer who
+									 raised it first, then Master / Chief Engineer, then
+									 ashore - the same list the printed form uses. --}}
+							    @foreach($order->signatories() as $signatory)
+									@php
+										// Only render the signature when the file is really
+										// on disk - a signer with no signature on file, or one
+										// whose file has gone missing, gets a blank signing
+										// line rather than a broken-image icon.
+										$signer = $signatory['user'];
+										$signPath = optional($signer)->sign;
+										$hasSign = !empty($signPath) && file_exists(base_path($signPath));
+									@endphp
+									@if($signer)
+									<div class="master-chief od-sign">
+										<div class="od-sign-line">
+											@if($hasSign)
+											<img class="written-sign sign" src="{{ url('/'.$signPath) }}" alt="Signature of {{ $signer->name }}">
+											@endif
 										</div>
-										@endif
+										<div class="od-sign-role">{{ $signatory['role'] }}</div>
+										<div class="signer-name od-sign-name">{{ $signer->name }}</div>
+									</div>
+									@endif
 								@endforeach
 							</div>
 						</div>
@@ -1520,6 +1515,12 @@ $(function () {
 	}
 
 	$(document).on('input', 'input.unit-price, input.invoice-qty, #invoice_discount', recalcInvoice);
+
+	// The currency only relabels - amounts are entered as billed, never
+	// converted - so every price heading and total just follows the picker.
+	$(document).on('change', '#invoice_currency', function () {
+		$('.inv-cur, .inv-cur-plain').text($(this).val());
+	});
 	if ($('#invoice_discount').length) {
 		recalcInvoice();
 	}
@@ -1542,6 +1543,7 @@ $(function () {
 			payload.invoice_no = $('#invoice_no').val();
 			payload.invoice_date = $('#invoice_date').val();
 			payload.discount = $('#invoice_discount').val();
+			payload.currency_code = $('#invoice_currency').val();
 			payload.unit_price = {};
 			payload.invoice_qty = {};
 			$('input.unit-price').each(function () {

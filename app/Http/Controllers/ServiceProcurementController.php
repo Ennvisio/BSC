@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\DB;
  * there are no quantities to deliver or stock to credit, so Delivery and
  * Receipt & Verification are ordinary stages rather than side effects of an
  * approve action. They differ only in who owns them - the assigned SRD officer
- * up to Delivery, the vessel's Master/Chief Engineer for Receipt.
+ * up to Delivery, the officer who raised it (Chief Officer / Second Engineer) for Receipt.
  */
 class ServiceProcurementController extends Controller
 {
@@ -209,6 +209,10 @@ class ServiceProcurementController extends Controller
      */
     private function validateInvoice(Request $request, ServiceRequisition $requisition): ?string
     {
+        if (! \App\Currency::isActiveCode($request->input('currency_code'))) {
+            return 'Choose the currency the invoice is billed in.';
+        }
+
         $prices = (array) $request->input('unit_price', []);
         $quantities = (array) $request->input('invoice_qty', []);
 
@@ -280,6 +284,7 @@ class ServiceProcurementController extends Controller
             [
                 'invoice_no' => $request->filled('invoice_no') ? trim($request->invoice_no) : null,
                 'invoice_date' => $request->filled('invoice_date') ? $request->invoice_date : null,
+                'currency_code' => $request->input('currency_code'),
                 'discount' => $discount,
                 'payable' => round($subtotal - $discount, 2),
                 'verified_by' => auth()->id(),

@@ -60,6 +60,46 @@ class VesselCertificate extends Model
         return $this->exp_date;
     }
 
+    /** Due-soon window, in days - the dashboard's "Due ≤30 days" column. */
+    const DUE_WITHIN_DAYS = 30;
+
+    /**
+     * Whole days until expiry: negative once expired, null when there is no
+     * date to count to (permanent, or never recorded).
+     */
+    public function daysUntilExpiry(): ?int
+    {
+        if ($this->is_permanent || empty($this->exp_date)) {
+            return null;
+        }
+
+        return (int) \Carbon\Carbon::today()->diffInDays(\Carbon\Carbon::parse($this->exp_date)->startOfDay(), false);
+    }
+
+    /**
+     * 'permanent', 'expired', 'due' (within DUE_WITHIN_DAYS), 'valid', or
+     * 'unknown' for a dated certificate that was never given an expiry - kept
+     * separate rather than folded into 'valid', since nobody actually knows.
+     */
+    public function validityStatus(): string
+    {
+        if ($this->is_permanent) {
+            return 'permanent';
+        }
+
+        $days = $this->daysUntilExpiry();
+
+        if ($days === null) {
+            return 'unknown';
+        }
+
+        if ($days < 0) {
+            return 'expired';
+        }
+
+        return $days <= self::DUE_WITHIN_DAYS ? 'due' : 'valid';
+    }
+
     /** "5 years", "Permanent", or "—" when neither was recorded. */
     public function renewalLabel(): string
     {

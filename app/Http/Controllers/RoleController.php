@@ -621,14 +621,24 @@ class RoleController extends Controller
 		$order_approval = OrderApproval::where('order_id', $order->id)->firstOrFail();
 		$already_approved = false;
 
-		// Receipt confirmation is checked first and independently - Master
-		// always closes the loop once an order is 'delivered', regardless of
-		// origin. This has to come before the ordinary master_app branch
-		// below: master_app is already set by the time an order reaches
-		// 'delivered' (it happened at the origin-approval stage), so folding
-		// this check in down there would make it unreachable dead code - the
-		// same bug that silently broke second-engineer's old receipt path.
-		if (auth()->user()->role->role == 'master' && $order->status == 'delivered') {
+		// Receipt confirmation is checked first and independently - whoever
+		// raised the requisition (Chief Officer / Second Engineer, on that
+		// vessel) closes the loop once it's 'delivered'. This has to come
+		// before the origin-approval branch below: the raiser's own *_app
+		// column is already set by then, so folding this check in down there
+		// would make it unreachable and answer "already approved" instead.
+		// Once delivered, receipt is the only action left and it's the
+		// raiser's - anyone else posting here would otherwise fall through to
+		// their ordinary approve branch below and overwrite the status (Master
+		// on an engine-room requisition has no master_app yet, so it would
+		// "approve" a delivered order straight back to 'approved by master').
+		if ($order->awaitingReceipt() && ! $order->canConfirmReceipt(auth()->user()->role->role ?? null)) {
+			return response()->json([
+				'message' => 'Only the '.$order->receiptConfirmerLabel().' who raised this requisition can confirm its receipt.',
+			], 422);
+		}
+
+		if ($order->status == 'delivered' && $order->canConfirmReceipt(auth()->user()->role->role ?? null)) {
 			// All of this is one transaction on purpose. Marking the order
 			// received is what stops this branch ever running again, so if the
 			// stock credit failed halfway through afterwards, those quantities
@@ -650,8 +660,8 @@ class RoleController extends Controller
 				}
 				$order->update();
 
-				// Master can adjust each line's Rcv Qty (defaults to Deliver Qty
-				// client-side) right here when confirming receipt.
+				// The raiser can adjust each line's Rcv Qty (defaults to Deliver
+				// Qty client-side) right here when confirming receipt.
 				foreach ((array) $req->rcv_qty as $orderItemId => $qty) {
 					if ($qty === '' || $qty === null) {
 						continue;
@@ -816,7 +826,7 @@ class RoleController extends Controller
 			$order->status = $this->approved_by_ssm_a_m;
 			$order->deliver_date = Carbon::now();
 			// This IS the Delivery stage of the procurement workflow - taking
-			// it hands the requisition to the Master for Receipt &
+			// it hands the requisition back to whoever raised it for Receipt &
 			// Verification. Guarded on actually being at that stage so a
 			// legacy order mid-flight (no procurement_stage) still behaves
 			// exactly as it did before.

@@ -78,6 +78,23 @@ class ServiceRequisition extends Model
         return $this->hasMany(ServiceProcurementStep::class)->orderBy('completed_at');
     }
 
+    /**
+     * Who confirms the work was done once it's delivered: the panel that
+     * raised it (Chief Officer / Second Engineer), not Master or Chief
+     * Engineer. Master is only the fallback when no raiser role is on record.
+     */
+    public function receiptConfirmerRole(): string
+    {
+        return in_array($this->created_by_role, Order::RAISER_ROLES, true)
+            ? $this->created_by_role
+            : 'master';
+    }
+
+    public function receiptConfirmerLabel(): string
+    {
+        return ucwords(str_replace('-', ' ', $this->receiptConfirmerRole()));
+    }
+
     /** Has this requisition entered the procurement workflow at all? */
     public function inProcurement(): bool
     {
@@ -129,7 +146,7 @@ class ServiceRequisition extends Model
             }
 
             return ServiceProcurementStage::owner($this->procurement_stage) === ServiceProcurementStage::OWNER_SHIP
-                ? 'Work Done — Awaiting Vessel Confirmation'
+                ? 'Work Done — Awaiting '.$this->receiptConfirmerLabel().' Confirmation'
                 : ServiceProcurementStage::label($this->procurement_stage);
         }
 
@@ -202,7 +219,7 @@ class ServiceRequisition extends Model
             $owner = ServiceProcurementStage::owner($this->procurement_stage);
 
             if ($owner === ServiceProcurementStage::OWNER_SHIP) {
-                return in_array($role, ['master', 'chief-engineer'], true) && $sameVessel();
+                return $role === $this->receiptConfirmerRole() && $sameVessel();
             }
 
             // A null assignee means nobody was named, so any of the four SRD

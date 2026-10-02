@@ -78,8 +78,8 @@
 
 			<hr>
 			<p class="text-muted small mb-0">
-				Stock is also topped up automatically whenever you confirm receipt of a delivered
-				requisition &mdash; you only need this screen for opening balances and corrections.
+				Stock is also topped up automatically whenever the officer who raised a delivered
+				requisition confirms its receipt &mdash; you only need this screen for opening balances and corrections.
 			</p>
 		</div>
 	</div>

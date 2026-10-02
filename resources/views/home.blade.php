@@ -100,75 +100,111 @@
             </div>
         </div>
 
+        {{-- One summary row per vessel, expanding to its certificates by
+             category - see App\CertificateValidityReport for why the old
+             vessels x certificate-type grid no longer fits. Deliberately NOT
+             class "certificate-report-table": admin-master auto-initialises
+             that class as a DataTable, which can't handle the expandable
+             detail rows below. --}}
         <div class="card-body certificate-report-table-wrapper" id="summary-table-wrapper">
-            <div class="header text-center">
-                <div class="center">
-                     <!-- <h1>Bangladesh Shipping Corporation</h1>
-                     <p class="lead">BSC Bhaban, Saltgola Road, Chittagong</p>
-                     <p>Ship Repair Department</p> --> 
-                </div>
-            </div>
-
-            <!-- certificate-report-table -->
-            <table id="summary-table" class="certificate-report-table table table-striped table-bordered" style="width:100%">
-                @if(!empty($vessels))
-                @foreach($vessels as $k=>$vessel)  
-                @if($k==0)
+            <table class="table table-bordered cv-table" style="width:100%">
                 <thead>
                     <tr class="th">
-                        <th rowspan="2">Name of Vessels</th>
-                        <th rowspan="2">Remark</th>
+                        <th>Name of Vessel</th>
+                        <th class="text-center">Total</th>
+                        <th class="text-center">Expired</th>
+                        <th class="text-center">Due &le; {{ \App\VesselCertificate::DUE_WITHIN_DAYS }} days</th>
+                        <th class="text-center">Valid</th>
+                        <th>Next Expiry</th>
                     </tr>
-                    <tr class="th">
-                        <!-- <th>Name of Vessels</th> -->
-                        @endif
-                        @if(!empty($certificates))
-                        @foreach($certificates as $certificate)
-                        @if($k==0)
-                        <th>{{!empty($certificate->name)?$certificate->name:''}}</th>
-                        @endif
-                        @endforeach
-                        @endif
-    
-                        @if($k==0)   
-                    </tr>                    
                 </thead>
                 <tbody>
-                    @endif
-    
-                    <tr>
+                    @forelse($certificateReport ?? [] as $row)
+                    <tr class="cv-vessel-row {{ $row['total'] ? '' : 'cv-empty' }}" data-vessel="{{ $row['vessel']->id }}" @if($row['total']) title="Click to see certificates" @endif>
                         <td>
-                            <span class="vessal-name">{{!empty($vessel->name)?$vessel->name:''}}</span> <br>
-                            <span class="location">China -9/18</span>
+                            @if($row['total'])<i class="fas fa-chevron-right cv-chevron"></i>@endif
+                            <span class="vessal-name">{{ $row['vessel']->name }}</span>
                         </td>
-    
-                        @if(!empty($certificates))
-                        @foreach($certificates as $k1=> $certificate)
-                        
-                        @if($loop->first)
-                        <td>Remark</td>
-                        @endif
-                        
-                        @php
-                            // A vessel can have several vessel_certificates rows for the same
-                            // certificate type (one per renewal cycle over the years) - sort by
-                            // expiry date so the most recent renewal wins, not whichever row
-                            // happens to come first.
-                            $matchedCert = $certificate->vesselCertificates
-                                ->whereIn('vessel_id',$vessel->id)
-                                ->whereIn('certificate_id',$certificate->id)
-                                ->sortByDesc('exp_date')
-                                ->first();
-                            $certExpDate = !empty($matchedCert->exp_date) ? $matchedCert->exp_date : '';
-                        @endphp
-                        <td class="{{ \App\ExpiryHelper::cssClass($certExpDate) }}">{{ $certExpDate }}</td>
-                        
-                        @endforeach
-                        @endif
+                        <td class="text-center">{{ $row['total'] }}</td>
+                        <td class="text-center">
+                            @if($row['expired'])<span class="badge badge-danger cv-count">{{ $row['expired'] }}</span>@else<span class="text-muted">0</span>@endif
+                        </td>
+                        <td class="text-center">
+                            @if($row['due'])<span class="badge badge-warning cv-count">{{ $row['due'] }}</span>@else<span class="text-muted">0</span>@endif
+                        </td>
+                        <td class="text-center">
+                            @if($row['valid'])<span class="badge badge-success cv-count">{{ $row['valid'] }}</span>@else<span class="text-muted">0</span>@endif
+                        </td>
+                        <td class="{{ \App\ExpiryHelper::cssClass($row['next_expiry']) }}">
+                            @if($row['next_expiry'])
+                            {{ \Carbon\Carbon::parse($row['next_expiry'])->format('d M Y') }}
+                            @elseif($row['all_permanent'])
+                            Permanent
+                            @elseif(! $row['total'])
+                            <span class="text-muted">No certificates recorded</span>
+                            @else
+                            <span class="text-muted">&mdash;</span>
+                            @endif
+                        </td>
                     </tr>
-                    @endforeach
+                    @if($row['total'])
+                    <tr class="cv-detail-row" data-vessel="{{ $row['vessel']->id }}" style="display:none;">
+                        <td colspan="6" class="cv-detail-cell">
+                            <table class="table table-sm mb-0 cv-detail-table">
+                                <thead>
+                                    <tr>
+                                        <th>Certificate</th>
+                                        <th>Issued</th>
+                                        <th>Expires</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($row['groups'] as $categoryName => $certs)
+                                    <tr class="cv-category-row"><td colspan="4">{{ $categoryName }}</td></tr>
+                                    @foreach($certs as $cert)
+                                    @php
+                                        $status = $cert->validityStatus();
+                                        $days = $cert->daysUntilExpiry();
+                                    @endphp
+                                    <tr>
+                                        <td>{{ $cert->title }}</td>
+                                        <td>{{ $cert->issue_date ? \Carbon\Carbon::parse($cert->issue_date)->format('d M Y') : '—' }}</td>
+                                        <td class="{{ $cert->is_permanent ? '' : \App\ExpiryHelper::cssClass($cert->exp_date) }}">
+                                            {{ $cert->is_permanent ? 'Permanent' : ($cert->exp_date ? \Carbon\Carbon::parse($cert->exp_date)->format('d M Y') : '—') }}
+                                        </td>
+                                        <td>
+                                            @switch($status)
+                                                @case('expired')
+                                                    <span class="badge badge-danger">Expired</span>
+                                                    <small class="text-muted">{{ number_format(abs($days)) }} {{ abs($days) == 1 ? 'day' : 'days' }} ago</small>
+                                                    @break
+                                                @case('due')
+                                                    <span class="badge badge-warning">Due</span>
+                                                    <small class="text-muted">{{ $days == 0 ? 'today' : $days.' '.($days == 1 ? 'day' : 'days').' left' }}</small>
+                                                    @break
+                                                @case('valid')
+                                                    <span class="badge badge-success">Valid</span>
+                                                    <small class="text-muted">{{ number_format($days) }} days left</small>
+                                                    @break
+                                                @case('permanent')
+                                                    <span class="badge badge-info">Permanent</span>
+                                                    @break
+                                                @default
+                                                    <span class="badge badge-secondary">No expiry date</span>
+                                            @endswitch
+                                        </td>
+                                    </tr>
+                                    @endforeach
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </td>
+                    </tr>
                     @endif
-
+                    @empty
+                    <tr><td colspan="6" class="text-center text-muted">No vessels.</td></tr>
+                    @endforelse
                 </tbody>
             </table>
         </div>
@@ -319,6 +355,20 @@
     </div>
 </div>
 
+<style>
+    .cv-table .cv-vessel-row:not(.cv-empty) { cursor: pointer; }
+    .cv-table .cv-vessel-row:not(.cv-empty):hover { background: #f4f8f8; }
+    .cv-table .cv-vessel-row.cv-open { background: #eef5f4; }
+    .cv-table .cv-chevron { width: 14px; margin-right: 6px; color: #6b7a82; transition: transform .15s ease; }
+    .cv-table .cv-open .cv-chevron { transform: rotate(90deg); }
+    .cv-table .cv-count { font-size: 13px; min-width: 26px; }
+    .cv-table .cv-detail-cell { background: #fafcfc; padding: 8px 12px 12px 34px; }
+    .cv-table .cv-detail-table th { border-top: none; font-size: 12px; color: #6b7a82; font-weight: 600; }
+    .cv-table .cv-category-row td {
+        background: #eef2f2; font-size: 11.5px; font-weight: 700; letter-spacing: .04em;
+        text-transform: uppercase; color: #4c5958; padding: 5px 8px;
+    }
+</style>
 @endsection
 @section('home-js')
 <script type="text/javascript" src="{{ asset('assets/js/Chart.bundle.js') }}"></script>
@@ -370,6 +420,20 @@
             $('#summary-table-modal').find('.modal-title').html(header);
             $('#summary-table-modal').find('#summary-table-wrapper').html(content);
         })
+
+        // Delegated rather than bound per row: the Zoom button above copies
+        // this table's HTML into the modal, and the copy has to expand too.
+        $(document).on('click', '.cv-vessel-row:not(.cv-empty)', function () {
+            var $row = $(this);
+            var $detail = $row.closest('tbody').find('.cv-detail-row[data-vessel="' + $row.data('vessel') + '"]');
+            // State lives on the row's own class, not :visible - that reads
+            // layout, which is wrong for a table inside a container that isn't
+            // shown yet (the Zoom modal while it animates open).
+            var open = !$row.hasClass('cv-open');
+
+            $detail.toggle(open);
+            $row.toggleClass('cv-open', open);
+        });
 
 
     })(jQuery);
