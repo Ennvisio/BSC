@@ -27,7 +27,10 @@
   @if(auth()->user()->role->role == 'super-admin')
   <a href="{{url('/home/category')}}" class="srd-nav-item {{Route::current()->uri() == 'home/category' ? 'active' : ''}}"><i class="fas fa-th"></i>Categories<span class="srd-nav-count">{{ \App\Category::where('status',true)->count() }}</span></a>
   @endif
+  {{-- The all-fleet requisition list (/home/order) is a super-admin menu item. --}}
+  @if(auth()->user()->role->role == 'super-admin')
   <a href="{{url('/home/order')}}" class="srd-nav-item {{Route::current()->uri() == 'home/order' ? 'active' : ''}}"><i class="fas fa-list-alt"></i>Requisitions</a>
+  @endif
   <a href="{{url('/catalog/import')}}" class="srd-nav-item {{in_array(Route::current()->uri(), ['catalog/import', 'catalog/import/history']) ? 'active' : ''}}"><i class="fas fa-upload"></i>Catalog Import</a>
   <a href="{{url('/catalog/browse')}}" class="srd-nav-item {{Route::current()->uri() == 'catalog/browse' ? 'active' : ''}}"><i class="fas fa-th"></i>Browse Catalog</a>
   {{-- GM (SRD) also lands here (this block already covers super-admin/gm-srd/
@@ -56,28 +59,13 @@
        purely "start a new one". Route::is() rather than comparing
        Route::current()->uri() since the wizard's later steps carry a dynamic
        {order} id in the path. --}}
-  @if(in_array(auth()->user()->role->role, ['chief-officer', 'second-engineer']))
-  <a href="{{ route('requisition.step1') }}" class="srd-nav-item {{ Route::is('requisition.*') ? 'active' : '' }}"><i class="fas fa-list-alt"></i>Add Requisition</a>
-  {{-- Certificate servicing, surveys, equipment maintenance, IT support -
-       work that isn't an item pick-list. Its approval chain ends at SRD
-       level (no SSM/procurement leg), but raising one still starts here,
-       same as an item requisition. --}}
-  {{-- fa-wrench, not fa-tools: this app loads Font Awesome 5.0.6, and
-       fa-tools only exists from 5.0.9 onwards (it renders as nothing). --}}
-  <a href="{{ route('service-requisition.create') }}" class="srd-nav-item {{ Route::is('service-requisition.create') ? 'active' : '' }}"><i class="fas fa-wrench"></i>Add Service Requisition</a>
-  @endif
-  {{-- The list is everyone-on-the-vessel's: the two officers above follow
-       what they raised, Master/Chief Engineer act on it from here. --}}
-  <a href="{{ route('service-requisition.index') }}" class="srd-nav-item {{ Route::is('service-requisition.index') || Route::is('service-requisition.show') ? 'active' : '' }}"><i class="fas fa-wrench"></i>Service Requisitions</a>
-  <a href="{{url('/pending/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'pending/requisition' ? 'active' : ''}}"><i class="fas fa-hourglass-half"></i>Pending Requisition</a>
-  {{-- Only Master/Chief Engineer approve someone else's requisition, so only
-       they get a "did I approve this" view - separate from the vessel-wide
-       lifecycle pages below. --}}
-  @if(in_array(auth()->user()->role->role, ['master', 'chief-engineer']))
-  <a href="{{ route('my.approvals') }}" class="srd-nav-item {{Route::current()->uri() == 'my/approvals' ? 'active' : ''}}"><i class="fas fa-check-circle"></i>My Approvals</a>
-  @endif
-  <a href="{{url('/approved/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'approved/requisition' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Approved Requisition</a>
-  <a href="{{url('/received/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'received/requisition' ? 'active' : ''}}"><i class="fas fa-inbox"></i>Delivered Requisition</a>
+  {{-- Everything item-requisition related lives in one dropdown; service
+       requisitions are a separate module and stay as their own links below. --}}
+  @include('partials.sidebar-item-requisition', ['mode' => 'ship'])
+  {{-- Service requisitions (certificate servicing, surveys, equipment
+       maintenance, IT support - work that isn't an item pick-list; its chain
+       ends at SRD level) are their own module with their own dropdown. --}}
+  @include('partials.sidebar-service-requisition', ['mode' => 'ship'])
   @endif
 
   @if(!empty(auth()->user()->role->user_type) && auth()->user()->role->user_type == 'ship')
@@ -146,24 +134,12 @@
   @endif
 
   <div class="srd-nav-label">Requisitions</div>
-  @if(in_array(auth()->user()->role->role, ['technical-superintendent', 'marine-superintendent']))
-  <a href="{{url('/home/order')}}" class="srd-nav-item {{Route::current()->uri() == 'home/order' ? 'active' : ''}}"><i class="fas fa-list-alt"></i>All Requisitions</a>
-  @endif
-  <a href="{{url('/pending/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'pending/requisition' ? 'active' : ''}}"><i class="fas fa-hourglass-half"></i>Pending Requisition</a>
-  {{-- Every role that personally approves or delegates a requisition (GM
-       and its four SRD delegates, DGM and its three SSM final-actors) gets
-       a "did I act on this" view of their own, same reasoning as Master/
-       Chief Engineer's version above. --}}
-  @if(in_array(auth()->user()->role->role, ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd', 'dgm-ssm', 'agm-ssm', 'am-ssm', 'superintendent-ssm']))
-  <a href="{{ route('my.approvals') }}" class="srd-nav-item {{Route::current()->uri() == 'my/approvals' ? 'active' : ''}}"><i class="fas fa-check-circle"></i>My Approvals</a>
-  @endif
-  <a href="{{url('/approved/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'approved/requisition' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Approved Requisition</a>
-  <a href="{{url('/received/requisition')}}" class="srd-nav-item {{Route::current()->uri() == 'received/requisition' ? 'active' : ''}}"><i class="fas fa-inbox"></i>Received Requisition</a>
-  {{-- Service requisitions stop at SRD level, so only GM (SRD) and its four
-       delegates ever act on one - the SSM roles would see a list they can
-       do nothing with. --}}
-  @if(in_array(auth()->user()->role->role, ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd']))
-  <a href="{{ route('service-requisition.index') }}" class="srd-nav-item {{ Route::is('service-requisition.*') ? 'active' : '' }}"><i class="fas fa-wrench"></i>Service Requisitions</a>
+  @include('partials.sidebar-item-requisition', ['mode' => 'shore'])
+  {{-- Service requisitions are acted on by GM (SRD) and its four delegates;
+       the SSM roles get the same dropdown to follow them (read-only for
+       them - no My Approvals, they have nothing of their own to approve). --}}
+  @if(in_array(auth()->user()->role->role, ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd']) || auth()->user()->role->user_type == 'ssm')
+  @include('partials.sidebar-service-requisition', ['mode' => 'shore'])
   @endif
   @endif
 
@@ -189,4 +165,5 @@
     </div>
   </div>
 </aside>
+@include('partials.sidebar-group-script')
 @endauth

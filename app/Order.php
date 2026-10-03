@@ -65,6 +65,36 @@ class Order extends Model
 		return $this->status === 'rejected';
 	}
 
+	protected $casts = [
+		'official_remarks_at' => 'datetime',
+	];
+
+	/** GM (SRD) and the four officers GM can delegate to. */
+	const SRD_ROLES = ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd'];
+
+	public function officialRemarksBy()
+	{
+		return $this->belongsTo(User::class, 'official_remarks_by');
+	}
+
+	/**
+	 * SRD's Official Remarks are written once, by any SRD-level officer, once
+	 * the requisition has actually reached SRD (Master / Chief Engineer has
+	 * forwarded it ashore). After that they're a record - shown with who
+	 * wrote them and when - and can't be changed. Closed on a rejected
+	 * requisition.
+	 */
+	public function canEditOfficialRemarks(?string $role): bool
+	{
+		$approval = $this->orderApproval;
+
+		return in_array($role, self::SRD_ROLES, true)
+			&& $this->official_remarks === null
+			&& ! $this->isRejected()
+			&& $approval
+			&& ($approval->master_app !== null || $approval->chief_eng_app !== null);
+	}
+
 	/** Completed procurement stages, oldest first - the timeline. */
 	public function procurementSteps()
 	{

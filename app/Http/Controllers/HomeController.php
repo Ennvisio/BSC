@@ -8,6 +8,7 @@ use App\CertificateCategory;
 use App\Dimension;
 use App\Engine;
 use App\FrameworkDescription;
+use App\Http\Controllers\Concerns\PaginatesRequisitionLists;
 use App\Http\Controllers\RoleController;
 use App\Http\Requests\BoilerValidate;
 use App\Http\Requests\BudgetGroupFormValidate;
@@ -44,6 +45,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 class HomeController extends Controller
 {
+  use PaginatesRequisitionLists;
+
   public function __construct()
   {
     $this->middleware('auth');
@@ -89,7 +92,14 @@ class HomeController extends Controller
           ->orderBy('created_at', 'desc')
           ->get();
 
-        return view('layouts.ship-home', compact('orders', 'drafts', 'stats'));
+        // The Master follows service requisitions too (Pending / Approved /
+        // Rejected under the Service Requisition menu), so the dashboard gets
+        // its own labelled row of them next to the item ones.
+        $serviceStats = auth()->user()->role->role === 'master'
+          ? app(ServiceRequisitionApprovalController::class)->stats()
+          : null;
+
+        return view('layouts.ship-home', compact('orders', 'drafts', 'stats', 'serviceStats'));
       }else{
         return redirect('/pending/requisition');
       }
@@ -102,11 +112,12 @@ class HomeController extends Controller
       // items/categories/vessels are still needed because that view's
       // (now-hidden) filter form references them.
       $stats = $this->requisitionDashboardStats();
+      $serviceStats = app(ServiceRequisitionApprovalController::class)->stats();
       $items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
       $categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
       $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
 
-      return view('layouts.order', compact('items', 'categories', 'vessels', 'stats'));
+      return view('layouts.order', compact('items', 'categories', 'vessels', 'stats', 'serviceStats'));
     }
     // GM (SRD)'s four named delegates: each reviews only what GM actually
     // delegated to them (RoleController::pendingRequisition()'s dgm-srd/
@@ -116,11 +127,12 @@ class HomeController extends Controller
     // survey/vessel matrix GM (SRD) and super-admin get below.
     elseif(in_array(auth()->user()->role->role, ['dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd'], true)){
       $stats = $this->requisitionDashboardStats();
+      $serviceStats = app(ServiceRequisitionApprovalController::class)->stats();
       $items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
       $categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
       $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
 
-      return view('layouts.order', compact('items', 'categories', 'vessels', 'stats'));
+      return view('layouts.order', compact('items', 'categories', 'vessels', 'stats', 'serviceStats'));
     }
     elseif(!empty(auth()->user()->role->role && auth()->user()->role->user_type=='srd')||!empty(auth()->user()->role->role && auth()->user()->role->role=='super-admin')){
       $surveys=Survey::where('status',true)->orderBy('name','asc')->get();
@@ -136,14 +148,19 @@ class HomeController extends Controller
       // all, so neither gets the requisition stat cards. GM's four
       // delegates are handled above, before this branch.
       $stats = auth()->user()->role->role === 'gm-srd' ? $this->requisitionDashboardStats() : null;
+      $serviceStats = auth()->user()->role->role === 'gm-srd' ? app(ServiceRequisitionApprovalController::class)->stats() : null;
 
       // Vessel summary + per-category expansion, built from each vessel's
       // own certificates rather than the legacy fixed certificate-type list
       // (see App\CertificateValidityReport for why that grid no longer fits).
       $certificateReport = \App\CertificateValidityReport::forVessels($vessels);
 
-      return view('home',compact('surveys','certificates','vessels','stats','certificateReport'));
+      return view('home',compact('surveys','certificates','vessels','stats','serviceStats','certificateReport'));
     }
+
+    // Nothing above claimed this account (a role with no department). Say so
+    // rather than returning nothing, which the browser shows as a blank page.
+    abort(403, 'This account has no user type set. Ask an administrator to edit the user and choose Ship, SSM or SRD.');
   }
 
   /**
@@ -627,32 +644,72 @@ public function deleteOneItem(Request $request){
   $data ="Requested Item has been deleted successfully!";
   return array($data);
 }
-public function getOrder(){
+public function getOrder(Request $request){
   $items =Item::orderBy('created_at','desc')->where('status',true)->get();
   $categories =Category::orderBy('created_at','desc')->where('status',true)->get();
   $vessels =Vessel::orderBy('created_at','desc')->where('status',true)->get();
-  
-  if(auth()->user()->role->role=='second-engineer' || auth()->user()->role->role=='chief-officer'){
-    // status=='ready' was the OLD single-page flow's initial status
-    // (HomeController@storeOrder) - the 3-step wizard these two roles
-    // actually use (RequisitionController@submit) sets 'approved by
-    // chief-officer'/'approved by second-engineer' instead and never
-    // touches 'ready' at any later stage either, so this filter matched
-    // nothing a wizard-submitted requisition could ever have: the list
-    // was permanently empty for every order these roles actually raise.
-    $orders=Order::where('ord_status',true)
-    ->where('vessel_id', auth()->user()->role->vessel_id)
-    ->orderBy('created_at','desc')
-    ->get();
+  $role = auth()->user()->role->role;
+
+  // Which requisitions this role may list at all (unchanged from before the
+  // list was paged): the raising officers see their own vessel's, the head-
+  // office roles below see every vessel's, anyone else sees none here.
+  if($role=='second-engineer' || $role=='chief-officer'){
+    $query = Order::where('ord_status',true)
+      ->where('vessel_id', auth()->user()->role->vessel_id);
+    $filterable = false;
+  } elseif($role=='super-admin' || $role=='gm-srd' || $role=='technical-superintendent' || $role=='marine-superintendent'){
+    $query = Order::where('ord_status',true);
+    $filterable = true;
+  } else {
+    $query = Order::whereRaw('1 = 0');
+    $filterable = false;
   }
-  if(auth()->user()->role->role=='super-admin' || auth()->user()->role->role=='gm-srd'
-    || auth()->user()->role->role=='technical-superintendent' || auth()->user()->role->role=='marine-superintendent'){
-    $orders=Order::
-    where('ord_status',true)
-    ->orderBy('created_at','desc')
-    ->get();
+
+  // Vessel / category / date filters. Dates match on the requisition date:
+  // both = that range, inclusive; one = that exact day. Only roles that see
+  // every vessel get the filter panel, so the rest ignore these inputs.
+  $ship_id = $filterable ? $request->query('ship_id') : null;
+  $cat_id = $filterable ? $request->query('cat_id') : null;
+  $from_date = $filterable ? ($request->query('from_date') ?: null) : null;
+  $end_date = $filterable ? ($request->query('end_date') ?: null) : null;
+  $category = $cat_id ? Category::find($cat_id) : null;
+
+  $query->when($ship_id, fn ($q, $id) => $q->where('vessel_id', $id))
+    ->when($cat_id, fn ($q, $id) => $q->where('category_id', $id))
+    ->when($from_date && $end_date, fn ($q) => $q->whereBetween('req_date', [$from_date, $end_date]))
+    ->when($from_date && ! $end_date, fn ($q) => $q->whereDate('req_date', $from_date))
+    ->when($end_date && ! $from_date, fn ($q) => $q->whereDate('req_date', $end_date));
+
+  $q = trim((string) $request->query('q'));
+  $perPageChoice = $this->requisitionPerPage($request);
+
+  $orders = $this->paginateRequisitions(
+    $this->searchRequisitions($query, $q)->with(['category', 'vessel', 'creator'])->orderBy('created_at','desc'),
+    $perPageChoice
+  );
+
+  if ($orders->isEmpty() && $orders->currentPage() > 1) {
+    return redirect($orders->url($orders->lastPage()));
   }
-  return view('layouts.order',compact('items','categories','vessels','orders'));
+
+  return view('layouts.order',compact('items','categories','vessels','orders','q','perPageChoice','ship_id','cat_id','from_date','end_date','category'));
+}
+
+/** Free-text search across req. no, port, category, vessel and creator (all pages, not just the visible one). */
+private function searchRequisitions($query, string $q)
+{
+  if ($q === '') {
+    return $query;
+  }
+  $like = $this->likeTerm($q);
+
+  return $query->where(function ($w) use ($like) {
+    $w->where('req_no', 'like', $like)
+      ->orWhere('port_name', 'like', $like)
+      ->orWhereHas('category', fn ($c) => $c->where('name', 'like', $like))
+      ->orWhereHas('vessel', fn ($v) => $v->where('name', 'like', $like))
+      ->orWhereHas('creator', fn ($u) => $u->where('name', 'like', $like));
+  });
 }
 public function createOrder(){
   $categories =Category::orderBy('created_at','desc')->where('status',true)->get();
@@ -1321,11 +1378,17 @@ public function storeUser(UserFormVal $request){
     $role->vessel_id= $request->Vessel_Name;
   }
   $role->role=$request->User_Role;
-  $role->user_type=$request->user_type;
+  // The role decides the department; the radio is only the fallback for a
+  // role this app doesn't know, so a forgotten radio can't leave it blank.
+  $role->user_type=\App\Role::TYPE_BY_ROLE[$request->User_Role] ?? $request->user_type;
   $role->created_by=auth()->user()->name;
   $role->updated_by=auth()->user()->name;
   $role->save();
   $vessel_name=!empty($role->vessel->name)?$role->vessel->name:'';
+  // Readable stamps for the row the page adds without reloading - the same
+  // format the table renders on load.
+  $user->setAttribute('created_label', $user->created_at->format('d M Y, h:i A'));
+  $user->setAttribute('updated_label', $user->updated_at->format('d M Y, h:i A'));
   $data ="New user has been created successfully.";
   return array($data,$user,$role,$vessel_name);
 }
@@ -1361,9 +1424,11 @@ public function updateOneUser(updateUserFormVal $request){
   }else{
     $role->vessel_id=null;
   }
-  $role->user_type=$request->user_type;
+  $role->user_type=\App\Role::TYPE_BY_ROLE[$request->User_Role] ?? $request->user_type;
   $role->updated_by=auth()->user()->name;
   $role->update();
+  $user->setAttribute('created_label', $user->created_at->format('d M Y, h:i A'));
+  $user->setAttribute('updated_label', $user->updated_at->format('d M Y, h:i A'));
   $data ="Requested user has been updated successfully.";
   $vessel_name = !empty($role->vessel->name)?$role->vessel->name:'';
   return array ($data,$user, $role, $vessel_name);
@@ -1438,7 +1503,6 @@ public function searchOrder(Request $req){
   $vessels =Vessel::orderBy('created_at','desc')->where('status',true)->get();
   $ship_id=$req->ship_id;
   $cat_id=$req->cat_id;
-  $item_id=$req->item_id;
   $dateBetween=null;
   $category=null;
   $from_date=null;
@@ -1471,15 +1535,14 @@ $orders = Order::where('ord_status',true)
 ->when($end_date, function ($query, $end_date) {
   return $query->whereDate('req_date', $end_date);
 })
-->when($item_id, function ($query, $item_id) {
-  return $query->whereHas('orderItems', function ($query1) use ($item_id) {
-    return $query1->where('item_id', $item_id);
-  })->orWhereDoesntHave('orderItems');
-
-})
 ->orderBy('created_at','desc')
 ->get();
-return view(!empty($item_id)?'layouts.order-item':'layouts.order',compact('orders','items','categories','vessels','item_id','ship_id','cat_id','from_date','end_date','category'));
+// What was typed, not the query's own variables above: those are null when
+// both dates were given (the range goes through $dateBetween), which blanked
+// both boxes again after every range search.
+$from_date=$req->from_date ?: null;
+$end_date=$req->end_date ?: null;
+return view('layouts.order',compact('orders','items','categories','vessels','ship_id','cat_id','from_date','end_date','category'));
 }
 public function getProfile(){
   $profile=User::findOrFail(auth()->id());
@@ -1605,26 +1668,48 @@ return view('layouts.order',compact('orders','items','categories','vessels'));
  * (RoleController@approveRequisition, Master's receipt confirmation), which
  * makes it the reliable thing to key off.
  */
-public function rcvReqForAll(){
+public function rcvReqForAll(Request $request){
   $items =Item::orderBy('created_at','desc')->where('status',true)->get();
   $categories =Category::orderBy('created_at','desc')->where('status',true)->get();
   $vessels =Vessel::orderBy('created_at','desc')->where('status',true)->get();
   $drafts = collect();
+  $q = trim((string) $request->query('q'));
+
+  // Paged and searched on the server (15 a page by default): this list grows
+  // with every requisition ever closed, and shipping all of them to the
+  // browser for DataTables to page was the slow part.
+  $perPageChoice = $this->requisitionPerPage($request);
 
   if(auth()->user()->role->user_type=='ship'){
-    $orders = app(RoleController::class)->shipReceivedRequisitions();
+    $orders = $this->paginateRequisitions(
+      $this->searchRequisitions(app(RoleController::class)->shipTrackingScope()->where('status', 'received'), $q)
+        ->with(['category', 'vessel', 'creator'])
+        ->orderBy('updated_at', 'desc'),
+      $perPageChoice
+    );
     $listTitle = 'Delivered Requisitions';
 
-    return view('layouts.ship-home',compact('orders','drafts','listTitle'));
+    // A stale ?page= past the end (a result set that shrank) lands on the last page, not an empty one.
+    if ($orders->isEmpty() && $orders->currentPage() > 1) {
+      return redirect($orders->url($orders->lastPage()));
+    }
+
+    return view('layouts.ship-home',compact('orders','drafts','listTitle','q','perPageChoice'));
   }
 
   // Shore side sees the whole fleet's closed requisitions.
-  $orders=Order::where('ord_status',true)
-    ->where('status','received')
-    ->orderBy('updated_at','desc')
-    ->get();
+  $orders = $this->paginateRequisitions(
+    $this->searchRequisitions(Order::where('ord_status',true)->where('status','received'), $q)
+      ->with(['category', 'vessel', 'creator'])
+      ->orderBy('updated_at','desc'),
+    $perPageChoice
+  );
 
-  return view('layouts.order',compact('orders','items','categories','vessels'));
+  if ($orders->isEmpty() && $orders->currentPage() > 1) {
+    return redirect($orders->url($orders->lastPage()));
+  }
+
+  return view('layouts.order',compact('orders','items','categories','vessels','q','perPageChoice'));
 }
 public function searchSurvey(Request $r)
 {

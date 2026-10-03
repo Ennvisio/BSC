@@ -130,8 +130,12 @@ class RoleController extends Controller
 	}
 
 	/**
-	 * Every role's own approval history - every requisition THEY personally
-	 * approved or delegated, at whatever stage it's at now. Deliberately
+	 * Every role's own approvals - every requisition THEY personally approved
+	 * or delegated that is still in progress: once it has been received on
+	 * board it belongs to the Approved/Delivered lists, and a rejected one to
+	 * its own, so a finished or called-off requisition drops off this page
+	 * (and out of the dashboard's My Approvals count, which reads this list).
+	 * Deliberately
 	 * separate from the Pending/Approved/Delivered lifecycle pages and the
 	 * shore-side action queues: "did I act on this" and "has the NEXT stage
 	 * acted on it" are different questions, and conflating them meant landing
@@ -162,12 +166,15 @@ class RoleController extends Controller
 		];
 		$listTitle = ($roleLabels[$role] ?? ucfirst(str_replace('-', ' ', (string) $role))).' Approvals';
 
+		// Still in progress: not yet received on board, not rejected.
+		$inProgress = fn ($query) => $query->whereNotIn('status', ['received', 'rejected']);
+
 		// Ship side: Master/Chief Engineer, scoped to their own vessel only,
 		// same as every other ship-side list.
 		if (in_array($role, ['master', 'chief-engineer'], true)) {
 			$column = $role === 'master' ? 'master_app' : 'chief_eng_app';
 
-			$orders = Order::where('ord_status', true)
+			$orders = $inProgress(Order::where('ord_status', true))
 				->where('vessel_id', auth()->user()->role->vessel_id)
 				->whereHas('orderApproval', fn ($q) => $q->where($column, $userId))
 				->orderBy('updated_at', 'desc')
@@ -194,7 +201,7 @@ class RoleController extends Controller
 		];
 
 		if ($role === 'gm-srd') {
-			$orders = Order::where('ord_status', true)
+			$orders = $inProgress(Order::where('ord_status', true))
 				->whereHas('orderApproval', function ($q) use ($userId) {
 					$q->where('gm_app', $userId)
 						->orWhere('forwarded_to_dgm_srd', $userId)
@@ -206,7 +213,7 @@ class RoleController extends Controller
 				->get();
 		} elseif (array_key_exists($role, $shoreColumns)) {
 			$column = $shoreColumns[$role];
-			$orders = Order::where('ord_status', true)
+			$orders = $inProgress(Order::where('ord_status', true))
 				->whereHas('orderApproval', fn ($q) => $q->where($column, $userId))
 				->orderBy('updated_at', 'desc')
 				->get();

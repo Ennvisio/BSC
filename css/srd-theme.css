@@ -49,6 +49,11 @@
    only the parts of the app that actually opt into this theme.
 ------------------------------------------------------------------------ */
 body.srd{ background:var(--srd-surface); }
+/* assets/css/style.css sets body{display:table}. A table-box can't shrink below
+   its content, so any wide table on a page made the whole body - sidebar, top
+   bar and all - wider than the window. Block lets .srd-main shrink (it has
+   min-width:0) and .table-responsive scroll inside its card. */
+body.srd{ display:block; }
 .srd-shell{
   font-family:'Public Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
   color:var(--srd-ink);
@@ -132,6 +137,16 @@ body.srd{ background:var(--srd-surface); }
 }
 .srd-nav-item.active .srd-nav-count{ background:rgba(255,255,255,.22); color:#fff; }
 
+/* Collapsible group (Item Requisition): a button that looks like a nav item,
+   with its links indented underneath. */
+.srd-nav-group-toggle{ width:100%; border:0; background:none; text-align:left; cursor:pointer; font-family:inherit; }
+.srd-sidebar .srd-nav-group.has-active > .srd-nav-group-toggle{ color:var(--srd-sidebar-text-strong); }
+.srd-nav-caret{ margin-left:auto; width:auto !important; font-size:10.5px !important; transition:transform .18s ease; }
+.srd-nav-group.is-open > .srd-nav-group-toggle .srd-nav-caret{ transform:rotate(180deg); }
+.srd-nav-sub{ display:none; margin:0 0 4px 12px; padding-left:8px; border-left:1px solid var(--srd-sidebar-border); }
+.srd-nav-group.is-open > .srd-nav-sub{ display:block; }
+.srd-nav-sub .srd-nav-item{ font-size:13px; padding:7px 10px; }
+
 .srd-sidebar-foot{
   margin-top:auto; display:flex; align-items:center; gap:10px;
   padding:12px 10px; border-top:1px solid var(--srd-sidebar-border);
@@ -199,6 +214,12 @@ body.srd{ background:var(--srd-surface); }
   background:var(--srd-accent-tint); color:var(--srd-accent-dark);
   display:flex; align-items:center; justify-content:center; font-size:19px;
 }
+/* Heading over a row of stat cards (Item Requisition / Service Requisition). */
+.srd-stat-section{
+  display:flex; align-items:center; gap:8px; margin:2px 0 12px;
+  font-size:11.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--srd-muted, #6b7877);
+}
+.srd-stat-section i{ font-size:12px; color:var(--srd-accent, #0E7C74); }
 .srd-stat-icon.is-indigo{ background:#eceafd; color:#5b4fd6; }
 .srd-stat-icon.is-blue{   background:#e6f0fe; color:#2f6fed; }
 .srd-stat-icon.is-pink{   background:#fde9ec; color:#e5486b; }

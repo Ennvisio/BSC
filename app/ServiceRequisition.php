@@ -106,6 +106,33 @@ class ServiceRequisition extends Model
         return $this->procurement_stage === ServiceProcurementStage::CLOSED;
     }
 
+    /**
+     * The service requisition lists: Pending = submitted and not yet received
+     * on board, Approved = the vessel has confirmed the service was received
+     * (whatever invoicing/payment is still to come), Rejected = called off.
+     */
+    public function scopePendingList($query)
+    {
+        return $query->where('is_submitted', true)
+            ->where('status', '!=', 'rejected')
+            ->where(function ($q) {
+                $q->whereNull('procurement_stage')
+                    ->orWhereNotIn('procurement_stage', ServiceProcurementStage::receivedStages());
+            });
+    }
+
+    public function scopeApprovedList($query)
+    {
+        return $query->where('is_submitted', true)
+            ->where('status', '!=', 'rejected')
+            ->whereIn('procurement_stage', ServiceProcurementStage::receivedStages());
+    }
+
+    public function scopeRejectedList($query)
+    {
+        return $query->where('status', 'rejected');
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

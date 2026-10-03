@@ -74,7 +74,7 @@
 						</div>
 					</div>
 					<div class="row form-group">
-						<div class="col-md-4">
+						<div class="col-md-4 text-center">
 							<label for="BudgetGroup_Kind">Used For: </label>
 						</div>
 						<div class="col-md-8">
@@ -127,7 +127,7 @@
 						</div>
 					</div>
 					<div class="row form-group">
-						<div class="col-md-4">
+						<div class="col-md-4 text-center">
 							<label for="BudgetGroup_Kind">Used For: </label>
 						</div>
 						<div class="col-md-8">

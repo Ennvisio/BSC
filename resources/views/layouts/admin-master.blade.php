@@ -79,7 +79,8 @@
 @yield('create-order-js')
 <script type="text/javascript">
   $(document).ready(function(){
-    $('#example').DataTable();
+    // Server-paginated lists (data-server-paginated) page and search on the server.
+    $('#example').not('[data-server-paginated]').DataTable();
     $('input.date').Zebra_DatePicker({
       format: 'Y-m-d'
     });

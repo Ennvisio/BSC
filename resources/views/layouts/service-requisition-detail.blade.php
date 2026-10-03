@@ -151,6 +151,10 @@
 	text-align: center;
 }
 .od-card table.sr-item-table tbody tr:hover{ background: #FAFCFB; }
+/* Headers and cells share one centred alignment - the headers used to sit
+   left while the cells were centred, so no column lined up with its title. */
+.od-card table.sr-item-table thead th,
+.od-card table.sr-item-table tbody td{ text-align: center; vertical-align: middle; }
 .od-card table.sr-item-table .serial{ font-family: var(--od-mono); font-weight: 400; font-size: 12.5px; color: var(--od-muted); }
 .od-card table.sr-item-table td.num{ font-family: var(--od-mono); font-size: 12.5px; }
 
@@ -346,6 +350,9 @@
 						</select>
 						<button type="button" class="btn btn-info" id="sr-delegate" data-id="{{ $requisition->id }}"><i class="fas fa-angle-double-right"></i> Delegate</button>
 						@endif
+						{{-- The printable BSC service requisition form, opened in its own tab. --}}
+						<a href="{{ route('service-requisition.print', [$requisition->id, 'auto' => 1]) }}" target="_blank" rel="noopener"
+							class="btn btn-info btn-bvprint"><i class="fa fa-print"></i> Print</a>
 						@if($showReject)
 						<button type="button" class="btn od-btn-reject" id="sr-reject-open" data-toggle="modal" data-target="#sr-reject-modal">
 							<i class="fas fa-times-circle"></i> Reject

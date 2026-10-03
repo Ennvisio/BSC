@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Order;
 use App\OrderFormPart;
+use App\ProcurementStage;
 use App\RequisitionForm;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -11,7 +12,7 @@ use Illuminate\Http\Request;
 /**
  * Parts of the approval form that are filled in AFTER the requisition is
  * submitted: Part B, SRD's cross-verification of what the ship claimed in
- * Part A, and Part C, SSM's final review before it goes out for procurement.
+ * Part A, and Part C, the assigned SSM officer's review before procurement starts.
  *
  * Part A is not handled here: it belongs to the wizard, is filled before the
  * requisition exists, and RequisitionController owns it along with the draft
@@ -27,12 +28,14 @@ class OrderFormPartController extends Controller
      *
      * Part B is the whole SRD stage - GM (SRD) and the four officers GM can
      * delegate to - since whoever is holding the requisition there does the
-     * cross-check. Part C is DGM (SSM) alone: it's the approving authority's
-     * own review, taken before they assign the work to an SSM officer.
+     * cross-check. Part C belongs to the SSM officer DGM (SSM) assigned the
+     * requisition to (AGM / AM / Superintendent): it's their review before
+     * procurement starts, so it gates the first stage, Administrative
+     * Approval. DGM (SSM) only assigns.
      */
     private const PART_OWNERS = [
         RequisitionForm::PART_B => ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd'],
-        RequisitionForm::PART_C => ['dgm-ssm'],
+        RequisitionForm::PART_C => ['agm-ssm', 'am-ssm', 'superintendent-ssm'],
     ];
 
     public function __construct()
@@ -48,6 +51,13 @@ class OrderFormPartController extends Controller
     public static function outstanding(Order $order, ?string $role, string $part): bool
     {
         if (! in_array($role, self::PART_OWNERS[$part] ?? [], true)) {
+            return false;
+        }
+
+        // Part C is only ever outstanding at the start of procurement. A
+        // requisition already past Administrative Approval when this rule
+        // arrived has no Part C and mustn't suddenly be blocked on one.
+        if ($part === RequisitionForm::PART_C && $order->procurement_stage !== ProcurementStage::first()) {
             return false;
         }
 
@@ -109,7 +119,7 @@ class OrderFormPartController extends Controller
 
         return response()->json([
             'message' => 'Part '.$part.' completed.'.($part === RequisitionForm::PART_C
-                ? ' You can now assign this requisition.'
+                ? ' You can now start procurement.'
                 : ' You can now approve or forward this requisition.'),
             'redirect' => route('view.order.detail', $order->id),
         ]);

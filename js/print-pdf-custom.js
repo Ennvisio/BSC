@@ -232,7 +232,16 @@ var logo64 = $(".logo-base64").html();
 $(document).ready(function() {
     $('.line4').text($('.pptitle').text());
 
-    var table = $('#example').DataTable( {
+    // A server-paginated list (data-server-paginated) already has its own search
+    // box, row count and pager from the server. DataTables is still started on it
+    // - only so it keeps providing the Pdf button - but with everything else off,
+    // otherwise its "Show entries", Search and "Showing 1 to 3" sit on top of the
+    // server's and every control appears twice.
+    var serverPagedOnly = $('#example').is('[data-server-paginated]') ? {
+        paging: false, searching: false, info: false, ordering: false, lengthChange: false
+    } : {};
+
+    var table = $('#example').DataTable( $.extend(true, {
     aLengthMenu: [[10, 25, 50, 75, 100, -1], [10, 25, 50, 75, 100, "All"]],
     iDisplayLength: 10,
     buttons: [
@@ -351,7 +360,7 @@ $(document).ready(function() {
             }
         },
         ]
-    } );
+    }, serverPagedOnly ) );
 
 
 

@@ -339,8 +339,7 @@ class RequisitionForm
     }
 
     /**
-     * Part C - SSM's final review before the requisition is assigned for
-     * procurement: is the price defensible, is the budget there, does the
+     * Part C - the assigned SSM officer's review before procurement starts: is the price defensible, is the budget there, does the
      * whole chain of claims hold together.
      *
      * Renumbered 1-8. The paper form runs 1,2,3,4,5,7,8,5 - two questions

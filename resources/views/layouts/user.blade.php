@@ -57,6 +57,10 @@
 				</div>
 			</div>
 
+			{{-- .table-responsive: the DataTables responsive plugin isn't loaded
+				 here, so without this wrapper a wide table pushes the whole page
+				 sideways; now it scrolls inside the card instead. --}}
+			<div class="table-responsive">
 			<table id="example" class="table table-bordered dt-responsive" style="width: 100%;">
 				<thead>
 					<th>#</th>
@@ -95,11 +99,11 @@
 						</td>
 						<td>{{!empty($role->vessel->name)?$role->vessel->name:''}}</td>
 						<td>
-							{{!empty($role->created_by)?$role->created_by:''}} <br> {{!empty($role->user->created_at)?$role->user->created_at:''}}
+							{{!empty($role->created_by)?$role->created_by:''}} <br> <small class="text-muted">{!! str_replace(', ', '<br>', e(optional($role->user->created_at)->format('d M Y, h:i A'))) !!}</small>
 						</td>
 						<td>
 							{{!empty($role->updated_by)?$role->updated_by:''}} <br>
-							{{!empty($role->user->updated_at)?$role->user->updated_at:''}}
+							<small class="text-muted">{!! str_replace(', ', '<br>', e(optional($role->user->updated_at)->format('d M Y, h:i A'))) !!}</small>
 						</td>
 						<td class="action">
 							<button class="btn btn-info edit-user" data-id="{{!empty($role->user->id)?$role->user->id:''}}" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i>
@@ -111,6 +115,7 @@
 					@endif
 				</tbody>
 			</table>
+			</div>
 		</div>
 	</div>
 </div>
@@ -136,6 +141,7 @@
 							</button>
 						</div>
 					</div>
+					<h5 class="text-center mb-3 add-user-type-title">Select User Type</h5>
 					<div class="row funkyradio justify-content-center mb-3">
 						<div class="funkyradio-primary col-md-3">
 							<input type="radio" name="user_type" id="ship_user" value="ship"/>
@@ -228,7 +234,9 @@
 				<!-- Modal footer -->
 				<div class="modal-footer">
 					<button type="button" class="btn btn-danger" data-dismiss="modal"> <i class="far fa-window-close"></i> Close</button>
-					<button type="submit" class="btn btn-primary"> <i class="fas fa-check-square"></i> Confirm Add </button>
+					{{-- Hidden until a user type is picked: until then there is
+						 nothing to submit (the form's fields are hidden too). --}}
+					<button type="submit" class="btn btn-primary" id="add_user_submit" hidden> <i class="fas fa-check-square"></i> Confirm Add </button>
 				</div>
 			</form>
 		</div>
@@ -367,6 +375,18 @@
 @endsection
 
 @section('home-js')
+<style>
+/* Created By / Updated By (cols 7-8): name + short date/time stamp, never
+   wrapped into five-line cells. Action (9) is free to stack its two buttons. */
+#example td:nth-child(7), #example td:nth-child(8){ white-space:nowrap; }
+#example td:nth-child(9) .btn{ margin:1px 0; }
+#example td:nth-child(5), #example th:nth-child(5){ white-space:nowrap; }
+/* css/style.css forces 8px 12px !important on every DataTable cell; nine
+   columns of that pushes Action off a laptop screen, so tighten it here. */
+#example tbody td{ padding:8px 9px !important; }
+#example thead th{ padding:8px 24px 8px 9px !important; }
+#example td .btn{ padding:.25rem .5rem; }
+</style>
 <script>
 $(function () {
 	// Re-grabs the API instance dataForm.js already initialised - calling

@@ -7,7 +7,6 @@
     @if(!empty(auth()->user()->role->role) && auth()->user()->role->role=='super-admin'||
     auth()->user()->role->role=='gm-srd' )
     <a href="{{url('/home/user')}}" class="srd-icon-btn" title="Users"><i class="fas fa-user"></i></a>
-    <a href="{{url('/home/trash')}}" class="srd-icon-btn" title="Trash"><i class="fas fa-trash-alt"></i></a>
     @endif
     <div class="dropdown">
       <a href="#" class="srd-user-chip dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">

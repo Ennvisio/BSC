@@ -47,49 +47,6 @@ position: absolute;
 				{{ $listTitle ?? 'Requisition List' }}
 			</strong>
 			@endif
-			@if(auth()->user()->role->vessel_id==null)
-			<div class="filter_form">
-				<form id="order_search_form" class="form form-inline" method="post" action="{{url('/search/order')}}">
-					@csrf
-					<div class="form-group">
-						<select name="ship_id" class="form-control"  id="ship_name">
-							<option value="" selected="">--Select Ship--</option>
-							@if(!empty($vessels))
-							@foreach($vessels as $vessel)
-							<option value="{{$vessel->id}}" {{(!empty($ship_id) && $vessel->id == $ship_id) ?'selected':''}} >{{$vessel->name}}</option>
-							@endforeach
-							@endif
-						</select>
-					</div>
-					<div class="form-group">
-						<select name="cat_id" class="form-control"  id="cate_name">
-							<option value="" selected="">--Select Category--</option>
-							@if(!empty($categories))
-							@foreach($categories as $cat)
-							<option value="{{$cat->id}}" {{(!empty($cat_id)&&$cat->id==$cat_id)?'selected':''}}>{{$cat->name}}</option>
-							@endforeach
-							@endif
-						</select>
-					</div>
-					<div class="form-group item_name_wrapper">
-						<select name="item_id" class="form-control"  id="item_name">
-							<option class="item_opt_default" value="" selected="">--Select Item--</option>
-						</select>
-						<img class="field-loader" src="{{asset('/assets/image/f2.gif')}}">
-					</div>
-					<br class="filter_form_br">
-					<div class="form-group">
-						<input type="text" class="form-control date" value="{{!empty($from_date)?$from_date:''}}" name="from_date" placeholder="From Date">
-					</div>
-					<div class="form-group">
-						<input type="text" value="{{!empty($end_date)?$end_date:''}}" class="form-control date" name="end_date" placeholder="To Date">
-					</div>
-					<div class="form-group">
-						<button type="submit" class="btn btn-info bsc-search">Search</button>
-					</div>
-				</form>
-			</div>
-			@endif 
 
 			<div class="right-buttons">
 				
@@ -102,7 +59,96 @@ position: absolute;
 		<!-- card-hader -->
 		<!-- card-body -->
 		<div class="card-body">
-			<table id="example" class="table table-bordered dt-responsive" style="width: 100%;">
+			@php $serverPaged = $orders instanceof \Illuminate\Pagination\LengthAwarePaginator; @endphp
+			@if(auth()->user()->role->vessel_id==null)
+			@php
+				$shipName = !empty($ship_id) ? optional($vessels->firstWhere('id', $ship_id))->name : null;
+				$filtersActive = !empty($ship_id) || !empty($cat_id) || !empty($from_date) || !empty($end_date);
+			@endphp
+			{{-- Search the requisition list. Dates match on the requisition date
+				 (the "Req. Date" column): both given = that range, inclusive; one
+				 given = that exact day. --}}
+			{{-- A GET to the list itself when the list is server-paginated, so the
+				 filters, the text search and "Show entries" all combine in one URL;
+				 the older POST route is only still used by lists paged in the browser. --}}
+			<form id="order_search_form" class="req-filter" @if($serverPaged) method="get" action="{{ url()->current() }}" @else method="post" action="{{url('/search/order')}}" @endif>
+				@if(! $serverPaged)@csrf @else
+				@if(!empty($q))<input type="hidden" name="q" value="{{ $q }}">@endif
+				@if(!empty($perPageChoice) && $perPageChoice !== '15')<input type="hidden" name="per_page" value="{{ $perPageChoice }}">@endif
+				@endif
+				<div class="req-filter-fields">
+					<div class="req-filter-field">
+						<label for="ship_name">Vessel</label>
+						<select name="ship_id" class="form-control" id="ship_name">
+							<option value="">All vessels</option>
+							@if(!empty($vessels))
+							@foreach($vessels as $vessel)
+							<option value="{{$vessel->id}}" {{(!empty($ship_id) && $vessel->id == $ship_id) ?'selected':''}} >{{$vessel->name}}</option>
+							@endforeach
+							@endif
+						</select>
+					</div>
+					<div class="req-filter-field">
+						<label for="cate_name">Category</label>
+						<select name="cat_id" class="form-control" id="cate_name">
+							<option value="">All categories</option>
+							@if(!empty($categories))
+							{{-- Only catalog categories (is_catalog = 1) - the same list Browse Catalog offers. --}}
+							@foreach($categories->where('is_catalog', true) as $cat)
+							<option value="{{$cat->id}}" {{(!empty($cat_id)&&$cat->id==$cat_id)?'selected':''}}>{{$cat->name}}</option>
+							@endforeach
+							@endif
+						</select>
+					</div>
+					<div class="req-filter-field req-filter-date">
+						<label for="from_date">From date</label>
+						<div class="req-filter-input">
+							<input type="text" id="from_date" class="form-control date" value="{{!empty($from_date)?$from_date:''}}" name="from_date" placeholder="YYYY-MM-DD" autocomplete="off">
+						</div>
+					</div>
+					<div class="req-filter-field req-filter-date">
+						<label for="end_date">To date</label>
+						<div class="req-filter-input">
+							<input type="text" id="end_date" value="{{!empty($end_date)?$end_date:''}}" class="form-control date" name="end_date" placeholder="YYYY-MM-DD" autocomplete="off">
+						</div>
+					</div>
+					<div class="req-filter-actions">
+						<button type="submit" class="btn btn-primary bsc-search"><i class="fas fa-search"></i> Search</button>
+						@if($filtersActive)
+						<a href="{{ url()->current() }}" class="btn btn-outline-secondary">Clear</a>
+						@endif
+					</div>
+				</div>
+				@if($filtersActive)
+				<div class="req-filter-summary">
+					<strong>{{ count($orders) }}</strong> {{ count($orders) === 1 ? 'requisition' : 'requisitions' }} found
+					@if($shipName)<span class="req-chip">{{ $shipName }}</span>@endif
+					@if(!empty($cat_id) && !empty($category))<span class="req-chip">{{ $category->name }}</span>@endif
+					@if(!empty($from_date) && !empty($end_date))<span class="req-chip">{{ $from_date }} &rarr; {{ $end_date }}</span>
+					@elseif(!empty($from_date) || !empty($end_date))<span class="req-chip">on {{ $from_date ?: $end_date }}</span>@endif
+				</div>
+				@endif
+			</form>
+			<style>
+			.req-filter{ background:#f6f9f9; border:1px solid #dfe5e4; border-radius:12px; padding:16px 18px; margin-bottom:18px; }
+			.req-filter-fields{ display:flex; flex-wrap:wrap; align-items:flex-end; gap:14px 16px; }
+			.req-filter-field{ flex:1 1 200px; min-width:160px; }
+			.req-filter-date{ flex:0 1 170px; min-width:150px; }
+			.req-filter-field label{ display:block; margin:0 0 5px; font-size:11px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:#6b7877; }
+			.req-filter .form-control{ height:38px; font-size:14px; background-color:#fff; }
+			.req-filter-input{ position:relative; }
+			.req-filter-actions{ display:flex; gap:8px; margin-left:auto; }
+			.req-filter-actions .btn{ height:38px; padding:0 18px; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+			.req-filter-summary{ margin-top:14px; padding-top:12px; border-top:1px dashed #d3dcdb; font-size:13.5px; color:#44524f; display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; }
+			.req-chip{ background:#e3f1f1; color:#0a5d57; border-radius:999px; padding:2px 11px; font-size:12.5px; font-weight:500; }
+			@media (max-width: 575px){ .req-filter-field, .req-filter-date{ flex:1 1 100%; } .req-filter-actions{ width:100%; margin-left:0; } .req-filter-actions .btn{ flex:1; } }
+			</style>
+			@endif
+
+			@if($serverPaged)@include('partials.server-list-controls', ['orders' => $orders, 'position' => 'top', 'q' => $q ?? '', 'perPage' => $perPageChoice ?? '15', 'withSearch' => auth()->user()->role->vessel_id !== null, 'keep' => array_filter(['ship_id' => $ship_id ?? null, 'cat_id' => $cat_id ?? null, 'from_date' => $from_date ?? null, 'end_date' => $end_date ?? null])])@endif
+			{{-- data-server-paginated: rows are paged by the server, so DataTables
+				 must leave this table alone (see admin-master / dataForm.js). --}}
+			<table id="example" class="table table-bordered dt-responsive" style="width: 100%;" @if($serverPaged) data-server-paginated="1" @endif>
 				<thead>
 					<th>#</th>
 					<th>Req. No</th>
@@ -118,7 +164,7 @@ position: absolute;
 					@if(!empty($orders))
 					@foreach($orders as $order)
 					<tr id="order-{{$order->id}}">
-						<td class="sl_no"> <b class="serial"> {{$loop->iteration}}</b> </td>
+						<td class="sl_no"> <b class="serial"> {{ $serverPaged ? $orders->firstItem() + $loop->index : $loop->iteration }}</b> </td>
 						<td>
 							<a href="{{url('/order/detail/'.$order->id)}}" class="req_no_link">
 								{{!empty($order->req_no)?$order->req_no:''}}
@@ -139,6 +185,7 @@ position: absolute;
 					@endif
 				</tbody>
 			</table>
+			@if($serverPaged)@include('partials.server-list-controls', ['orders' => $orders, 'position' => 'bottom'])@endif
 		</div>
 	</div>
 </div>

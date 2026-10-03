@@ -129,6 +129,7 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   // The approval form's post-submission parts: B is SRD's cross-verification,
   // required before they approve or forward; C is DGM (SSM)'s final review,
   // required before they assign. See App\RequisitionForm.
+  Route::post('/order/{order}/official-remarks', 'OrderOfficialRemarksController@update')->name('order.official-remarks');
   Route::post('/order/{order}/form-part/{part}', 'OrderFormPartController@store')
       ->whereIn('part', ['B', 'C'])->name('order.form-part');
   Route::get('/approved/requisition', 'RoleController@approvedRequisition');
@@ -137,7 +138,13 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   // (SRD), then it ends - there's no SSM leg. Whose turn it is is
   // enforced in the controller, as everywhere else in this app.
   Route::get('/service-requisitions', 'ServiceRequisitionApprovalController@index')->name('service-requisition.index');
+  // The four service requisition lists under the sidebar's Service Requisition dropdown.
+  Route::get('/service-requisitions/pending', 'ServiceRequisitionApprovalController@pending')->name('service-requisition.pending');
+  Route::get('/service-requisitions/my-approvals', 'ServiceRequisitionApprovalController@myApprovals')->name('service-requisition.my-approvals');
+  Route::get('/service-requisitions/approved', 'ServiceRequisitionApprovalController@approved')->name('service-requisition.approved');
+  Route::get('/service-requisitions/rejected', 'ServiceRequisitionApprovalController@rejected')->name('service-requisition.rejected');
   Route::get('/service-requisition/{id}', 'ServiceRequisitionApprovalController@show')->name('service-requisition.show');
+  Route::get('/service-requisition/{id}/print', 'ServiceRequisitionApprovalController@print')->name('service-requisition.print');
   Route::post('/service-requisition/approve', 'ServiceRequisitionApprovalController@approve')->name('service-requisition.approve');
   Route::post('/service-requisition/delegate', 'ServiceRequisitionApprovalController@delegate')->name('service-requisition.delegate');
   Route::post('/service-requisition/reject', 'ServiceRequisitionApprovalController@reject')->name('service-requisition.reject');

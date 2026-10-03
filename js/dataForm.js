@@ -33,7 +33,7 @@ $(document).ready(function() {
     })
   });
 
-  var table = $('#example').DataTable();
+  var table = $('#example').not('[data-server-paginated]').DataTable();
   var orderTable = $('#example1').DataTable();
   var id=null; var tr_id=null;  var tr_sl=null;
 
@@ -1210,6 +1210,12 @@ $(document).on('click', '.delete-item', function(){
         });
       });
 $(document).on('change','#cate_name',function(){
+  // Pages without an item dropdown (the requisition list's search filter has
+  // none any more) have nothing to fill - and without this guard picking a
+  // category still fetched every item in it, tens of thousands for Stores.
+  if(!$('option.item_opt_default').length){
+    return;
+  }
   $('option.item_opt').remove();
   // Catalog-backed categories (tagged via data-catalog on the option) can
   // hold tens of thousands of items - those are browsed through the tree
@@ -1632,6 +1638,7 @@ $(document).on('click','input#ship_user, input#ship_user_edit',function () {
   if (this.checked){
     $('div.for_ship_user').attr('hidden',false);
     $('div.all_user').attr('hidden',false);
+    $('#add_user_submit').attr('hidden',false);
     $('option.admin_role').attr('hidden',true);
     $('option.ship_role').attr('hidden',false);
     $('input.vessel_not_for_admin').attr('disabled',true);
@@ -1654,6 +1661,7 @@ $(document).on('click','input#ssm_user, input#ssm_user_edit',function () {
   if (this.checked){
     $('div.for_ship_user').attr('hidden',true);
     $('div.all_user').attr('hidden',false);
+    $('#add_user_submit').attr('hidden',false);
     // $('option.admin_role').attr('hidden',false);
     $('option.role-ssm').attr('hidden',false);
     $('option.role-srd').attr('hidden',true);
@@ -1668,6 +1676,7 @@ $(document).on('click','input#srd_user, input#srd_user_edit',function () {
   if (this.checked){
     $('div.for_ship_user').attr('hidden',true);
     $('div.all_user').attr('hidden',false);
+    $('#add_user_submit').attr('hidden',false);
     // $('option.admin_role').attr('hidden',false);
     $('option.role-ssm').attr('hidden',true);
     $('option.role-srd').attr('hidden',false);
@@ -1679,6 +1688,23 @@ $(document).on('click','input#srd_user, input#srd_user_edit',function () {
    }
  }); 
 
+
+// Add-user modal back to its first state: nothing chosen, and everything below
+// the Ship/SSM/SRD choice hidden. form.reset() alone clears the radios but
+// leaves the rows it revealed on screen, so the next time the modal opened it
+// showed the whole form with no type selected - and a form with no type
+// picked is exactly how accounts ended up with a blank user type.
+function resetAddUserModal() {
+  var $form = $('#user_add_form');
+  if (!$form.length) { return; }
+  $form[0].reset();
+  $form.find('div.for_ship_user, div.all_user').attr('hidden', true);
+  $form.find('option.admin_role, option.ship_role').attr('hidden', false);
+  $form.find('input.vessel_not_for_admin').attr('disabled', true);
+  $('#add_user_submit').attr('hidden', true);
+  $form.find('.form_error').css('display', 'none').find('p').remove();
+}
+$(document).on('show.bs.modal hidden.bs.modal', '#myModal', resetAddUserModal);
 
 // Add Item Function 
 // Same three colours as the initial Blade render (user.blade.php) - ship
@@ -1711,7 +1737,7 @@ $(document).on('submit','#user_add_form',function(event){
       var  idx= table.rows().count();
       idx++;
       var rowNode = table
-      .row.add( ['<b class="serial">'+idx+'</b>', response[1]['name'], response[1]['email'], response[2]['role'], userTypeBadge(response[2]['user_type']), response[3], response[2]['created_by']+ '<br>' +response[2]['created_at'], response[2]['updated_by'] +'<br>'+response[2]['updated_at'],
+      .row.add( ['<b class="serial">'+idx+'</b>', response[1]['name'], response[1]['email'], response[2]['role'], userTypeBadge(response[2]['user_type']), response[3], response[2]['created_by']+ '<br><small class="text-muted">' +String(response[1]['created_label']).replace(', ','<br>')+'</small>', response[2]['updated_by'] +'<br><small class="text-muted">'+String(response[1]['updated_label']).replace(', ','<br>')+'</small>',
         '<div class="action"><button class="btn btn-info mr-1 edit-user" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>'+
         '<button class="btn btn-danger delete-user" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button><div>'])
       .order([0, 'dsc']).draw()
@@ -1720,7 +1746,7 @@ $(document).on('submit','#user_add_form',function(event){
       .css( 'color', 'green' )
       .animate( { color: 'red' } );
       swal('Excellent!',response[0],'success').then(function() {
-        $('#user_add_form')[0].reset();
+        resetAddUserModal();
         $("[data-dismiss=modal]").trigger({ type: "click" });
         $("#user_add_form .form_error").css('display','none');
       });
@@ -1878,8 +1904,8 @@ $(document).on('submit','#user_edit_form',function(event){
       response[1]['email'],
       response[2]['role'], userTypeBadge(response[2]['user_type']),
       response[3], 
-      response[2]['created_by']+'<br>'+response[2]['created_at'], 
-      response[2]['updated_by']+'<br>'+response[2]['updated_at'],  
+      response[2]['created_by']+'<br><small class="text-muted">'+String(response[1]['created_label']).replace(', ','<br>')+'</small>', 
+      response[2]['updated_by']+'<br><small class="text-muted">'+String(response[1]['updated_label']).replace(', ','<br>')+'</small>',  
       '<button class="btn btn-info edit-user mr-1" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button><button class="btn btn-danger delete-user" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>'
       ];
       table

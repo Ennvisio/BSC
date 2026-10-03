@@ -66,6 +66,16 @@ class ProcurementController extends Controller
             ], 403);
         }
 
+        // Part C comes before procurement starts: the assigned SSM officer
+        // fills it, and Administrative Approval can't be completed without it.
+        if (\App\Http\Controllers\OrderFormPartController::outstanding(
+            $order, auth()->user()->role->role ?? null, \App\RequisitionForm::PART_C
+        )) {
+            return response()->json([
+                'message' => 'Complete the approval form Part C before starting procurement.',
+            ], 422);
+        }
+
         // The posted stage has to match what's actually current - otherwise a
         // page left open while someone else advanced it would complete the
         // wrong stage. The unique(order_id, step) index is the backstop, but

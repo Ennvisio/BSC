@@ -199,6 +199,13 @@
 .od-reason-text textarea{ font-family: var(--od-sans); }
 .od-reason-card{ margin-bottom: 20px; }
 
+/* ---- SRD Official Remarks ---- */
+.od-remarks-foot{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:10px; }
+.od-remarks-meta{ font-size:12px; color:var(--od-muted-2); margin-top:6px; }
+.od-remarks-foot .od-remarks-meta{ margin-top:0; }
+.od-remarks-save{ background:var(--od-accent); border-color:var(--od-accent); color:#fff; font-weight:500; }
+.od-remarks-save:hover, .od-remarks-save:focus{ background:var(--od-accent-dark); border-color:var(--od-accent-dark); color:#fff; }
+
 /* ---- Authorisation (signatures) ----
    #order-print-footer1 is copied verbatim into the print popup by
    print-pdf-custom.js, which writes its OWN <style> there targeting
@@ -435,11 +442,14 @@
 							$showApproveButton = false;
 						}
 
-						// DGM (SSM)'s own final review, taken before they hand the
-						// requisition to an SSM officer - so it gates Assign the same
-						// way Part B gates Approve/Forward.
+						// The assigned SSM officer's review (the one DGM (SSM) assigned
+						// it to), taken before procurement starts - so it gates the
+						// first stage's panel the way Part B gates Approve/Forward.
 						$partCOutstanding = $canAct && \App\Http\Controllers\OrderFormPartController::outstanding(
 							$order, $currentRole, \App\RequisitionForm::PART_C);
+						if ($partCOutstanding) {
+							$canWorkStage = false;
+						}
 					@endphp
 					<div class="od-actions">
 						@if($partCOutstanding)
@@ -464,7 +474,7 @@
 
 						{{-- DGM (SSM) doesn't approve - they assign it to one named
 						     SSM officer, who then takes the final action. --}}
-						@if($canAct && $currentRole == 'dgm-ssm' && !$partCOutstanding)
+						@if($canAct && $currentRole == 'dgm-ssm')
 						<select class="form-control" id="ssm_assignee">
 							<option value="">Assign to…</option>
 							@foreach($ssmOfficers ?? [] as $roleName => $officers)
@@ -810,6 +820,37 @@
 					</div>
 					@endif
 
+					{{-- SRD's Official Remarks: added once by any SRD-level officer
+						 (GM and its delegates) once the requisition has reached SRD,
+						 on its own button so it never depends on approving. After
+						 that it's a record for everyone - the text, who added it and
+						 when - with no box to change it. --}}
+					@if($order->canEditOfficialRemarks($currentRole))
+					<div class="od-card od-reason-card od-official-remarks" id="official_remarks_card">
+						<div class="od-card-body">
+							<label class="od-reason-label" for="official_remarks">Official Remarks</label>
+							<textarea class="form-control" id="official_remarks" rows="4" maxlength="5000"
+								placeholder="SRD's official remarks on this requisition"></textarea>
+							<div class="od-remarks-foot">
+								<span class="od-remarks-meta">Can be added once &mdash; it can't be changed afterwards.</span>
+								<button type="button" class="btn btn-sm od-remarks-save" id="save_official_remarks" data-url="{{ route('order.official-remarks', $order) }}">
+									<i class="fas fa-save"></i> Add Remarks
+								</button>
+							</div>
+						</div>
+					</div>
+					@elseif(!empty($order->official_remarks))
+					<div class="od-card od-reason-card od-official-remarks">
+						<div class="od-card-body">
+							<div class="od-reason-label">Official Remarks</div>
+							<div class="od-reason-text">{{ $order->official_remarks }}</div>
+							<div class="od-remarks-meta">
+								<strong>{{ optional($order->officialRemarksBy)->name ?? '—' }}</strong>@if($order->official_remarks_at), {{ $order->official_remarks_at->format('d M Y') }}@endif
+							</div>
+						</div>
+					</div>
+					@endif
+
 					{{-- The approval form, read-only: Part A is the ship's
 						 justification, completed before submission; Part B is SRD's
 						 cross-check of it. Each renders only once it exists, so older
@@ -952,6 +993,10 @@
 							</div>
 							@include('partials.procurement-attachments', ['stageLabel' => 'Acknowledgement receipt'])
 						</div>
+						@elseif($partCOutstanding)
+						<p class="proc-hint">
+							Complete the <strong>Approval Form &mdash; Part C</strong> (button above) to start procurement.
+						</p>
 						@elseif(! $order->procurementClosed())
 						<p class="proc-waiting">
 							@if(\App\ProcurementStage::owner($procStage) === \App\ProcurementStage::OWNER_SHIP)
@@ -1390,6 +1435,46 @@ $(function () {
 	function csrfToken() {
 		return $('meta[name="csrf-token"]').attr('content');
 	}
+
+	// --- SRD Official Remarks ---------------------------------------------
+	$('#save_official_remarks').on('click', function () {
+		var $btn = $(this), text = $.trim($('#official_remarks').val());
+		if (!text) {
+			swal('Nothing to add', 'Write the Official Remarks first.', 'warning');
+			return;
+		}
+		swal({
+			title: 'Add Official Remarks?',
+			text: 'They can only be added once and cannot be changed afterwards.',
+			type: 'question',
+			showCancelButton: true,
+			confirmButtonColor: '#005866',
+			cancelButtonColor: '#6c757d',
+			confirmButtonText: 'Add',
+			showLoaderOnConfirm: true,
+			allowOutsideClick: false,
+			preConfirm: function () {
+				return new Promise(function (resolve) {
+					$.ajax({
+						url: $btn.data('url'),
+						type: 'POST',
+						dataType: 'json',
+						data: { _token: csrfToken(), official_remarks: text }
+					}).done(function (res) {
+						// Swap the box for the read-only record, same as a reload would show.
+						var $body = $('#official_remarks_card .od-card-body').empty();
+						$body.append($('<div class="od-reason-label">').text('Official Remarks'));
+						$body.append($('<div class="od-reason-text">').text(text));
+						$body.append($('<div class="od-remarks-meta">').append($('<strong>').text(res.by), ', ' + res.at));
+						swal('Added', res.message, 'success');
+					}).fail(function (xhr) {
+						var msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Could not add the remarks.';
+						swal('Not added', msg, 'error');
+					});
+				});
+			}
+		});
+	});
 
 	// --- Approval form parts (B and C) -----------------------------------
 	// Bound by class, not id, so one handler drives whichever part's modal is

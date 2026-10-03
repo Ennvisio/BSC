@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PaginatesRequisitionLists;
 use App\Role;
 use App\ServiceProcurementStage;
 use App\ServiceRequisition;
@@ -23,6 +24,8 @@ use Illuminate\Support\Facades\DB;
  */
 class ServiceRequisitionApprovalController extends Controller
 {
+    use PaginatesRequisitionLists;
+
     /** Which delegate role maps to which pair of columns. */
     private const SRD_COLUMNS = [
         'dgm-srd' => ['forwarded_to_dgm_srd', 'dgm_srd_app'],
@@ -62,6 +65,156 @@ class ServiceRequisitionApprovalController extends Controller
         ]);
     }
 
+    /** Service requisitions not yet received on board. */
+    public function pending()
+    {
+        return $this->bucket('Pending Service Requisitions', fn ($q) => $q->pendingList(), 'No pending service requisitions.');
+    }
+
+    /** Service requisitions the vessel has confirmed as received. */
+    public function approved()
+    {
+        // Paged and searched on the server (15 a page by default, like the
+        // Delivered item requisitions list): once received they pile up for good.
+        return $this->bucket('Approved Service Requisitions', fn ($q) => $q->approvedList(), 'No service has been received yet.', true);
+    }
+
+    public function rejected()
+    {
+        return $this->bucket('Rejected Service Requisitions', fn ($q) => $q->rejectedList(), 'No rejected service requisitions.');
+    }
+
+    /**
+     * What this SRD-level officer personally approved and is still in
+     * progress: GM (SRD) approving or delegating it, or one of GM's delegates
+     * signing it off. Once the service has been received it moves to Approved
+     * (or Rejected if it is called off), so the three lists never overlap.
+     * (A delegation stores the delegator's id in the forwarded_to_* column, so
+     * for GM that is where "I delegated this" lives.)
+     */
+    public function myApprovals()
+    {
+        $role = auth()->user()->role->role ?? null;
+        abort_unless($role === 'gm-srd' || isset(self::SRD_COLUMNS[$role]), 403, 'Only SRD officers have service approvals.');
+
+        $userId = auth()->id();
+
+        return $this->bucket('My Service Approvals', fn ($q) => $this->approvedByMe($q, $role, $userId), 'Nothing you approved is still in progress.');
+    }
+
+    /** The My Approvals filter, shared with the dashboard card's count. */
+    private function approvedByMe($query, string $role, int $userId)
+    {
+        return $query->whereHas('approval', function ($a) use ($role, $userId) {
+            if ($role === 'gm-srd') {
+                $a->where('gm_app', $userId);
+                foreach (self::SRD_COLUMNS as [$forwarded]) {
+                    $a->orWhere($forwarded, $userId);
+                }
+            } else {
+                $a->where(self::SRD_COLUMNS[$role][1], $userId);
+            }
+        })->pendingList();
+    }
+
+    /**
+     * The dashboard's service requisition cards. Built from the very same
+     * filters as the four lists they link to, so a card's number can't drift
+     * from its list. 'my_approvals' is null for roles with no My Approvals
+     * list (the SSM roles), which is how the cards know to leave it out.
+     */
+    public function stats(): array
+    {
+        $role = auth()->user()->role->role ?? null;
+        $userId = auth()->id();
+        $isSrd = $role === 'gm-srd' || isset(self::SRD_COLUMNS[$role]);
+
+        // Ship roles count only their own vessel's, shore roles the whole fleet's -
+        // the same scoping the lists themselves apply.
+        $vesselId = auth()->user()->role->vessel_id;
+        $scope = fn ($q) => (! empty($vesselId) && (auth()->user()->role->user_type ?? null) === 'ship')
+            ? $q->where('vessel_id', $vesselId)
+            : $q;
+
+        $pending = $scope(ServiceRequisition::with('approval')->pendingList())->get();
+
+        return [
+            'pending' => $pending->count(),
+            'pending_action' => $pending->filter(fn ($r) => $r->hasPendingActionFor($role, $userId))->count(),
+            'my_approvals' => $isSrd ? $this->approvedByMe(ServiceRequisition::query(), $role, $userId)->count() : null,
+            'approved' => $scope(ServiceRequisition::approvedList())->count(),
+            'rejected' => $scope(ServiceRequisition::rejectedList())->count(),
+        ];
+    }
+
+    /** One filtered list, same table and vessel scoping as the full index. */
+    private function bucket(string $title, \Closure $filter, string $emptyText, bool $paged = false)
+    {
+        $role = auth()->user()->role->role ?? null;
+        $vesselId = auth()->user()->role->vessel_id;
+
+        $query = ServiceRequisition::with(['vessel', 'approval', 'items', 'creator', 'rejectedBy'])
+            ->orderBy('updated_at', 'desc');
+        $filter($query);
+
+        // Ship roles see their own vessel's; shore roles the whole fleet's.
+        if (! empty($vesselId) && (auth()->user()->role->user_type ?? null) === 'ship') {
+            $query->where('vessel_id', $vesselId);
+        }
+
+        $extra = [];
+        if ($paged) {
+            $q = trim((string) request()->query('q'));
+            $perPageChoice = $this->requisitionPerPage(request());
+            $requisitions = $this->paginateRequisitions($this->searchServiceRequisitions($query, $q), $perPageChoice);
+
+            // A stale ?page= past the end lands on the last page, not an empty one.
+            if ($requisitions->isEmpty() && $requisitions->currentPage() > 1) {
+                return redirect($requisitions->url($requisitions->lastPage()));
+            }
+            $extra = compact('q', 'perPageChoice');
+        } else {
+            $requisitions = $query->get();
+        }
+
+        return view('layouts.service-requisition-index', [
+            'requisitions' => $requisitions,
+            'pendingIds' => $requisitions->filter(
+                fn ($r) => $r->hasPendingActionFor($role, auth()->id())
+            )->pluck('id')->all(),
+            'listTitle' => $title,
+            'emptyText' => $emptyText,
+            'showRejection' => $title === 'Rejected Service Requisitions',
+        ] + $extra);
+    }
+
+    /**
+     * Free-text search across all pages: req. no, type, vessel, raised by,
+     * budget group and the titles of the lines on it.
+     */
+    private function searchServiceRequisitions($query, string $q)
+    {
+        if ($q === '') {
+            return $query;
+        }
+
+        $like = $this->likeTerm($q);
+        // "Renewal" / "Shore Repair" are labels; the column holds the type key.
+        $typeKeys = array_keys(array_filter(
+            ServiceRequisitionController::TYPES,
+            fn ($label) => stripos($label, $q) !== false
+        ));
+
+        return $query->where(function ($w) use ($like, $typeKeys) {
+            $w->where('req_no', 'like', $like)
+                ->orWhereIn('service_type', $typeKeys)
+                ->orWhereHas('vessel', fn ($v) => $v->where('name', 'like', $like))
+                ->orWhereHas('creator', fn ($u) => $u->where('name', 'like', $like))
+                ->orWhereHas('budgetGroup', fn ($b) => $b->where('name', 'like', $like))
+                ->orWhereHas('items', fn ($i) => $i->where('title', 'like', $like));
+        });
+    }
+
     public function show($id)
     {
         $requisition = ServiceRequisition::with([
@@ -82,6 +235,22 @@ class ServiceRequisitionApprovalController extends Controller
             // person, not just a role - same as the item chain's delegation.
             'srdOfficers' => Role::whereIn('role', array_keys(self::SRD_COLUMNS))
                 ->with('user')->get()->groupBy('role'),
+        ]);
+    }
+
+    /** The printable service requisition form - same access as the detail page. */
+    public function print($id)
+    {
+        $requisition = ServiceRequisition::with(['vessel', 'approval', 'items', 'budgetGroup'])->findOrFail($id);
+
+        $this->authorizeView($requisition);
+
+        return view('layouts.service-requisition-print', [
+            'requisition' => $requisition,
+            'isRenewal' => $requisition->service_type === ServiceRequisitionController::TYPE_RENEWAL,
+            'signatories' => $requisition->signatories(),
+            // Blank rows padded out to, so a short requisition still looks like the form.
+            'minRows' => 8,
         ]);
     }
 

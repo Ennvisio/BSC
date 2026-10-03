@@ -22,7 +22,11 @@
 	 reuse this same view for every ship role without passing $stats, so
 	 they render exactly as before. --}}
 @isset($stats)
-<div class="row mb-3">
+@if(!empty($serviceStats))
+<div class="srd-stat-section"><i class="fas fa-list-alt"></i> Item Requisition</div>
+@endif
+{{-- No mb-3 on the row: every card column already carries one. --}}
+<div class="row">
 	{{-- Only Chief Officer/Second Engineer can ever start a draft (they're the
 		 only roles the wizard's "Add Requisition" link is shown to) - Master
 		 and Chief Engineer would always see a meaningless permanent 0 here. --}}
@@ -72,6 +76,49 @@
 			</div>
 		</a>
 	</div>
+@if(!empty($serviceStats))
+</div>
+{{-- Service requisitions are a separate module from item ones, so they get
+	 their own labelled row (each card links to the matching list). --}}
+<div class="srd-stat-section"><i class="fas fa-wrench"></i> Service Requisition</div>
+<div class="row">
+	<div class="col-6 col-md-4 mb-3">
+		<a href="{{ route('service-requisition.pending') }}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-blue"><i class="fas fa-hourglass-half"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Pending</div>
+					<div class="srd-stat-value">{{ $serviceStats['pending'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	<div class="col-6 col-md-4 mb-3">
+		<a href="{{ route('service-requisition.approved') }}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-green"><i class="fas fa-clipboard"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Approved</div>
+					<div class="srd-stat-value">{{ $serviceStats['approved'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	<div class="col-6 col-md-4 mb-3">
+		<a href="{{ route('service-requisition.rejected') }}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-pink"><i class="fas fa-times-circle"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Rejected</div>
+					<div class="srd-stat-value">{{ $serviceStats['rejected'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+</div>
+<div class="srd-stat-section"><i class="fas fa-cubes"></i> Vessel Catalog</div>
+<div class="row">
+@endif
 	<div class="col-6 col-md-4 mb-3">
 		<a href="{{url('/catalog/browse')}}" class="text-decoration-none">
 			<div class="srd-stat-card">
@@ -160,7 +207,11 @@
 		<!-- /card-hader -->
 		<!-- card-body -->
 		<div class="card-body">
-			<table id="example" class="table table-bordered dt-responsive" style="width: 100%;">
+			@php $serverPaged = $orders instanceof \Illuminate\Pagination\LengthAwarePaginator; @endphp
+			@if($serverPaged)@include('partials.server-list-controls', ['orders' => $orders, 'position' => 'top', 'q' => $q ?? '', 'perPage' => $perPageChoice ?? '15'])@endif
+			{{-- data-server-paginated: rows are paged by the server, so DataTables
+				 must leave this table alone (see admin-master / dataForm.js). --}}
+			<table id="example" class="table table-bordered dt-responsive" style="width: 100%;" @if($serverPaged) data-server-paginated="1" @endif>
 				<thead>
 					<th>#</th>
 					<th>Req. No</th>
@@ -176,7 +227,7 @@
 					@if(!empty($orders))
 					@foreach($orders as $order)
 					<tr id="order-{{$order->id}}">
-						<td class="sl_no"> <b class="serial"> {{$loop->iteration}}</b> </td>
+						<td class="sl_no"> <b class="serial"> {{ $serverPaged ? $orders->firstItem() + $loop->index : $loop->iteration }}</b> </td>
 						<td>
 							<a href="{{url('/order/detail/'.$order->id)}}" class="req_no_link">
 								{{!empty($order->req_no)?$order->req_no:''}}
@@ -193,6 +244,7 @@
 					@endif
 				</tbody>
 			</table>
+			@if($serverPaged)@include('partials.server-list-controls', ['orders' => $orders, 'position' => 'bottom'])@endif
 		</div>
 	</div>
 </div>

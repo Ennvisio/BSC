@@ -193,6 +193,18 @@ class ServiceProcurementStage
         return $index >= array_search(self::RECEIPT_VERIFICATION, self::SEQUENCE, true);
     }
 
+    /**
+     * Stages reached once the vessel has confirmed the work was carried out
+     * (Receipt & Verification done): Invoice Verification onwards, through
+     * to `closed`. A requisition in one of these counts as "service received".
+     */
+    public static function receivedStages(): array
+    {
+        $after = array_search(self::RECEIPT_VERIFICATION, self::SEQUENCE, true) + 1;
+
+        return array_slice(self::SEQUENCE, $after);
+    }
+
     /** The stage that captures per-line pricing and the invoice header. */
     public static function capturesInvoice(?string $stage): bool
     {
