@@ -112,12 +112,11 @@ class HomeController extends Controller
       // items/categories/vessels are still needed because that view's
       // (now-hidden) filter form references them.
       $stats = $this->requisitionDashboardStats();
-      $serviceStats = app(ServiceRequisitionApprovalController::class)->stats();
       $items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
       $categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
       $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
 
-      return view('layouts.order', compact('items', 'categories', 'vessels', 'stats', 'serviceStats'));
+      return view('layouts.order', compact('items', 'categories', 'vessels', 'stats'));
     }
     // GM (SRD)'s four named delegates: each reviews only what GM actually
     // delegated to them (RoleController::pendingRequisition()'s dgm-srd/

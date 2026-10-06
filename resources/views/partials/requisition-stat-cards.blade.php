@@ -7,9 +7,11 @@
 {{-- Item and service requisitions are different modules with different
 	 stages, so each gets its own labelled row of cards ($serviceStats is only
 	 passed for roles that see service requisitions). --}}
+@if(!empty($serviceStats))
 <div class="col-lg-12">
 	<div class="srd-stat-section"><i class="fas fa-list-alt"></i> Item Requisition</div>
 </div>
+@endif
 <div class="col-lg-12">
 	{{-- No mb-3 on the row itself: every card column already carries one, so
 		 adding it here made the gap under this row larger than between the

@@ -135,10 +135,10 @@
 
   <div class="srd-nav-label">Requisitions</div>
   @include('partials.sidebar-item-requisition', ['mode' => 'shore'])
-  {{-- Service requisitions are acted on by GM (SRD) and its four delegates;
-       the SSM roles get the same dropdown to follow them (read-only for
-       them - no My Approvals, they have nothing of their own to approve). --}}
-  @if(in_array(auth()->user()->role->role, ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd']) || auth()->user()->role->user_type == 'ssm')
+  {{-- Service requisitions stop at SRD level, so only GM (SRD) and its four
+       delegates ever act on one - the SSM roles would see a list they can
+       do nothing with. --}}
+  @if(in_array(auth()->user()->role->role, ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd']))
   @include('partials.sidebar-service-requisition', ['mode' => 'shore'])
   @endif
   @endif
