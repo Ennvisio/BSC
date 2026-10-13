@@ -71,6 +71,16 @@
 				on {{ \Carbon\Carbon::parse($formPart->declaration['declared_at'])->format('d M Y, h:i A') }}.
 			</div>
 			@endif
+
+			{{-- Set only when Master/Chief Engineer corrected the ship's own
+				 answers above (see Order::canEditPartA) - the declaration itself
+				 stays theirs, this just notes that something was later fixed. --}}
+			@if($formPart->edited_by)
+			<div class="rf-none mt-1">
+				Last corrected by {{ optional($formPart->editedBy)->name ?? '—' }}
+				on {{ optional($formPart->edited_at)->format('d M Y, h:i A') }}.
+			</div>
+			@endif
 		</div>
 	</div>
 </div>

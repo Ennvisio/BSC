@@ -1,12 +1,17 @@
 {{-- One part of the approval form, as a fill-in modal. Takes $order and
-	 $part ('B' or 'C').
+	 $part ('A', 'B' or 'C').
 
 	 A modal rather than its own page: these parts are answered while reading
 	 the requisition, so sending the officer away from it and back would lose
 	 the very thing they are verifying against. The question markup matches the
 	 wizard's Part A (partials/requisition-form-styles), so all three parts
-	 look like one document. --}}
+	 look like one document.
+
+	 Part A is the one exception to "starts blank": it's reopened here only
+	 so Master/Chief Engineer can CORRECT what the ship already declared
+	 (Order::canEditPartA()), so unlike B/C it pre-fills from what's on file. --}}
 @include('partials.requisition-form-styles')
+@php $existingPart = $order->formPart($part); @endphp
 <div class="modal fade" id="part-{{ strtolower($part) }}-modal" tabindex="-1" role="dialog">
 	<div class="modal-dialog modal-lg" role="document">
 		<div class="modal-content">
@@ -26,8 +31,11 @@
 				<div class="alert alert-danger part-form-errors" style="display:none;"></div>
 				<form class="part-form" data-part="{{ $part }}">
 					@foreach(\App\RequisitionForm::questions($part) as $q)
-					@php $name = 'q['.$q['key'].']'; @endphp
-					<div class="rf-q">
+					@php
+						$name = 'q['.$q['key'].']';
+						$a = $existingPart ? $existingPart->answerFor($q['key']) : ['choice' => null, 'followup' => null, 'fields' => []];
+					@endphp
+					<div class="rf-q" data-required="{{ ($q['required'] ?? false) ? '1' : '0' }}">
 						<div class="rf-q-title">
 							<span class="rf-q-no">{{ $q['no'] }}.</span>{{ $q['en'] }}
 							@if($q['required'] ?? false)<span class="rf-req" title="Required">*</span>@endif
@@ -38,7 +46,8 @@
 						<div class="rf-opts">
 							@foreach($q['options'] as $value => $label)
 							<label class="rf-chip">
-								<input type="radio" class="rf-toggle" name="{{ $name }}[choice]" value="{{ $value }}">
+								<input type="radio" class="rf-toggle" name="{{ $name }}[choice]" value="{{ $value }}"
+									{{ $a['choice'] === $value ? 'checked' : '' }}>
 								<span>{{ $label }}</span>
 							</label>
 							@endforeach
@@ -52,6 +61,7 @@
 								<input type="text" class="form-control"
 									id="p{{ strtolower($part) }}-f-{{ $q['key'] }}-{{ $field['key'] }}"
 									name="{{ $name }}[fields][{{ $field['key'] }}]"
+									value="{{ $a['fields'][$field['key']] ?? '' }}"
 									maxlength="{{ \App\RequisitionForm::MAX_FIELD_LENGTH }}" autocomplete="off">
 							</div>
 							@endforeach
@@ -63,7 +73,8 @@
 							<div class="rf-opts">
 								@foreach($q['followup']['options'] as $value => $label)
 								<label class="rf-chip">
-									<input type="radio" class="rf-toggle" name="{{ $name }}[followup]" value="{{ $value }}">
+									<input type="radio" class="rf-toggle" name="{{ $name }}[followup]" value="{{ $value }}"
+										{{ $a['followup'] === $value ? 'checked' : '' }}>
 									<span>{{ $label }}</span>
 								</label>
 								@endforeach
@@ -78,7 +89,7 @@
 				<button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
 				<button type="button" class="btn btn-primary part-form-submit"
 					data-id="{{ $order->id }}" data-part="{{ $part }}">
-					<i class="fas fa-check-circle"></i> Submit Part {{ $part }}
+					<i class="fas fa-check-circle"></i> {{ $part === \App\RequisitionForm::PART_A ? 'Save Corrections' : 'Submit Part '.$part }}
 				</button>
 			</div>
 		</div>

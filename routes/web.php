@@ -102,8 +102,12 @@ Route::get('/home/order', 'HomeController@getOrder')->name('get.all.order');//su
 Route::get('/order/detail/{order_id}', 'HomeController@viewOrderDetail')->name('view.order.detail');
 // The printable BSC form. Its columns differ per category, so it is rendered
 // server-side rather than assembled from the detail page - see
-// App\RequisitionPrintForm.
+// App\RequisitionPrintForm. PDF is the same layout generated to a file; Excel
+// is the same figures as rows (App\Exports\OrderExport) - both share this
+// controller's authorization with the on-screen print.
 Route::get('/order/{order}/print', 'OrderPrintController@show')->name('order.print');
+Route::get('/order/{order}/export/pdf', 'OrderPrintController@pdf')->name('order.export.pdf');
+Route::get('/order/{order}/export/excel', 'OrderPrintController@excel')->name('order.export.excel');
 // Viewing/downloading one attachment - open to every approval-chain role,
 // not just the ship officers who upload them, since anyone reviewing the
 // requisition needs to be able to open what was attached to it.
@@ -128,10 +132,12 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   Route::post('/order/reject', 'RoleController@rejectRequisition')->name('order.reject');
   // The approval form's post-submission parts: B is SRD's cross-verification,
   // required before they approve or forward; C is DGM (SSM)'s final review,
-  // required before they assign. See App\RequisitionForm.
+  // required before they assign. A is the ship's own part, reopened here
+  // only so Master/Chief Engineer can correct it while it's on their desk -
+  // see Order::canEditPartA(). See App\RequisitionForm.
   Route::post('/order/{order}/official-remarks', 'OrderOfficialRemarksController@update')->name('order.official-remarks');
   Route::post('/order/{order}/form-part/{part}', 'OrderFormPartController@store')
-      ->whereIn('part', ['B', 'C'])->name('order.form-part');
+      ->whereIn('part', ['A', 'B', 'C'])->name('order.form-part');
   Route::get('/approved/requisition', 'RoleController@approvedRequisition');
 
   // Service requisitions: same chain as an item requisition up to GM
@@ -216,6 +222,7 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   Route::post('/change/file','HomeController@changeFile');
   Route::get('/delivered/requisition','HomeController@deliverReqForAll');
   Route::get('/received/requisition','HomeController@rcvReqForAll');
+  Route::get('/rejected/requisition','RoleController@rejectedRequisition')->name('rejected.requisition');
   // Master/Chief Engineer's own approval history - where the "Approve" click
   // redirects them, separate from the vessel-wide lifecycle pages above.
   Route::get('/my/approvals','RoleController@myApprovals')->name('my.approvals');

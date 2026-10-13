@@ -118,11 +118,18 @@ class CatalogController extends Controller
             $query->with(['vessels' => fn ($q) => $q->select('vessels.id', 'vessels.name')]);
         }
 
-        $items = $query->orderBy('name')
+        $items = $query->with('itemGroup:id,name')->orderBy('name')
             ->get([
-                'id', 'name', 'article_number', 'unit', 'account_number', 'description',
-                'part_number', 'drawing_number', 'hs_code', 'manufacturer',
+                'id', 'name', 'article_number', 'impa_code', 'unit', 'account_number', 'description',
+                'part_number', 'drawing_number', 'hs_code', 'manufacturer', 'item_group_id',
             ]);
+
+        // The item's own group name - what the requisition wizard's live
+        // table shows as "Equipment Name" for Lub Oil (see
+        // App\RequisitionPrintForm). Appended here rather than left for the
+        // front end to infer from the browsing path, since search() below
+        // returns items from several groups at once with no such path.
+        $items->each(fn ($item) => $item->item_group_name = $item->itemGroup->name ?? null);
 
         return response()->json($this->withVesselStock($items));
     }
@@ -160,9 +167,11 @@ class CatalogController extends Controller
         }
 
         $groups = $groupsQuery->orderBy('name')->limit(20)->get(['id', 'parent_id', 'name']);
-        $items = $itemsQuery->orderBy('name')->limit(20)->get([
-            'id', 'name', 'article_number', 'unit', 'part_number', 'drawing_number', 'manufacturer',
+        $items = $itemsQuery->with('itemGroup:id,name')->orderBy('name')->limit(20)->get([
+            'id', 'name', 'article_number', 'impa_code', 'unit', 'part_number', 'drawing_number',
+            'manufacturer', 'description', 'item_group_id',
         ]);
+        $items->each(fn ($item) => $item->item_group_name = $item->itemGroup->name ?? null);
 
         return response()->json(['groups' => $groups, 'items' => $this->withVesselStock($items)]);
     }

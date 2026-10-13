@@ -55,6 +55,10 @@ class ServiceRequisitionApprovalController extends Controller
             $query->where('vessel_id', $vesselId);
         }
 
+        // ?status= from the super-admin dashboard's cards.
+        $status = in_array(request()->query('status'), \App\Order::OVERVIEW_STATUSES, true) ? request()->query('status') : null;
+        $query->overviewStatus($status);
+
         $requisitions = $query->get();
 
         return view('layouts.service-requisition-index', [
@@ -62,13 +66,19 @@ class ServiceRequisitionApprovalController extends Controller
             'pendingIds' => $requisitions->filter(
                 fn ($r) => $r->hasPendingActionFor($role, auth()->id())
             )->pluck('id')->all(),
+            // From a ship dashboard, "delivered" (work done, awaiting the vessel's
+            // confirmation) is the officer's Approved card.
+            'listTitle' => $status === 'delivered' && (auth()->user()->role->user_type ?? null) === 'ship'
+                ? 'Approved Service Requisitions (awaiting confirmation)'
+                : ($status ? ucfirst($status).' Service Requisitions' : null),
+            'showRejection' => $status === 'rejected',
         ]);
     }
 
     /** Service requisitions not yet received on board. */
     public function pending()
     {
-        return $this->bucket('Pending Service Requisitions', fn ($q) => $q->pendingList(), 'No pending service requisitions.');
+        return $this->bucket('Pending Service Requisitions', fn ($q) => $this->srdOwnPending($q->pendingList($this->srdLevel(), $this->isRaiser())), 'No pending service requisitions.');
     }
 
     /** Service requisitions the vessel has confirmed as received. */
@@ -76,7 +86,7 @@ class ServiceRequisitionApprovalController extends Controller
     {
         // Paged and searched on the server (15 a page by default, like the
         // Delivered item requisitions list): once received they pile up for good.
-        return $this->bucket('Approved Service Requisitions', fn ($q) => $q->approvedList(), 'No service has been received yet.', true);
+        return $this->bucket('Approved Service Requisitions', fn ($q) => $q->approvedList($this->srdLevel()), 'No service has been received yet.', true);
     }
 
     public function rejected()
@@ -114,7 +124,7 @@ class ServiceRequisitionApprovalController extends Controller
             } else {
                 $a->where(self::SRD_COLUMNS[$role][1], $userId);
             }
-        })->pendingList();
+        })->pendingList(true);
     }
 
     /**
@@ -136,15 +146,65 @@ class ServiceRequisitionApprovalController extends Controller
             ? $q->where('vessel_id', $vesselId)
             : $q;
 
-        $pending = $scope(ServiceRequisition::with('approval')->pendingList())->get();
+        $pending = $scope($this->srdOwnPending(ServiceRequisition::with('approval')->pendingList($isSrd, $this->isRaiser())))->get();
 
         return [
             'pending' => $pending->count(),
             'pending_action' => $pending->filter(fn ($r) => $r->hasPendingActionFor($role, $userId))->count(),
             'my_approvals' => $isSrd ? $this->approvedByMe(ServiceRequisition::query(), $role, $userId)->count() : null,
-            'approved' => $scope(ServiceRequisition::approvedList())->count(),
+            'approved' => $scope(ServiceRequisition::approvedList($isSrd))->count(),
+            // Work done by SRD, waiting on the vessel to confirm it.
+            'awaiting_confirmation' => $scope(ServiceRequisition::overviewStatus('delivered'))->count(),
             'rejected' => $scope(ServiceRequisition::rejectedList())->count(),
+            // The vessel has confirmed the work (invoice/payment may follow).
+            'received' => $scope(ServiceRequisition::overviewStatus('received'))->count(),
         ];
+    }
+
+    /**
+     * Ship roles whose dashboard has a separate "Delivered" card (work done,
+     * awaiting the vessel's confirmation): the officers who raise requisitions,
+     * and the Master. For them those requisitions leave Pending, so nothing is
+     * counted twice.
+     */
+    private function isRaiser(): bool
+    {
+        return in_array(auth()->user()->role->role ?? null, array_merge(\App\Order::RAISER_ROLES, ['master']), true);
+    }
+
+    /**
+     * GM (SRD) and its four delegates: for them a requisition is still in
+     * progress after receipt (invoice, finance clearance, payment are theirs),
+     * so their Pending/Approved split falls at Closed, not at receipt.
+     */
+    private function srdLevel(): bool
+    {
+        $role = auth()->user()->role->role ?? null;
+
+        return $role === 'gm-srd' || isset(self::SRD_COLUMNS[$role]);
+    }
+
+    /**
+     * An SRD officer's Pending only holds what is actually theirs: nothing
+     * still on the ship (not yet forwarded ashore by Master / Chief Engineer),
+     * and for GM's four delegates only what GM delegated to them personally.
+     * GM sees everything that has reached SRD. Other roles are left as is.
+     */
+    private function srdOwnPending($query)
+    {
+        if (! $this->srdLevel()) {
+            return $query;
+        }
+
+        $role = auth()->user()->role->role ?? null;
+        $userId = auth()->id();
+
+        return $query->whereHas('approval', function ($a) use ($role, $userId) {
+            $a->where(fn ($w) => $w->whereNotNull('master_app')->orWhereNotNull('chief_eng_app'));
+            if ($role !== 'gm-srd') {
+                $a->where('assigned_to_srd', $userId);
+            }
+        });
     }
 
     /** One filtered list, same table and vessel scoping as the full index. */

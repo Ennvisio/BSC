@@ -153,7 +153,16 @@ class RequisitionController extends Controller
         $liveStock = app(StockService::class)
             ->snapshotFor($order->vessel_id, $order->orderItems->pluck('item_id')->all());
 
-        return view('layouts.requisition-step2', compact('order', 'categories', 'liveStock'));
+        // The category-specific item columns (same shape the detail page and
+        // printed form use - see App\RequisitionPrintForm) for whatever
+        // category this draft currently has, and for every category the
+        // officer might switch to - the table's header and the item-picker's
+        // added rows both follow these rather than a fixed Stores-shaped set.
+        $headCols = \App\RequisitionPrintForm::headColumns($order->category->symbol ?? null);
+        $headColumnsBySymbol = collect(['SPR', 'STR', 'CHM', 'LUB', 'PNT'])
+            ->mapWithKeys(fn ($symbol) => [$symbol => \App\RequisitionPrintForm::headColumns($symbol)]);
+
+        return view('layouts.requisition-step2', compact('order', 'categories', 'liveStock', 'headCols', 'headColumnsBySymbol'));
     }
 
     public function storeStep2(Request $request, Order $order)
@@ -169,7 +178,39 @@ class RequisitionController extends Controller
                 ->withErrors(['item_id' => 'Add at least one item before continuing.']);
         }
 
+        // One requisition holds one category's items only - the page stops the
+        // category being switched once items are added, and this is the backstop.
+        $foreign = \App\Item::whereIn('id', (array) $request->item_id)
+            ->where('category_id', '!=', $request->Category_Name)->count();
+        if ($foreign > 0) {
+            return redirect()->route('requisition.step2', $order)
+                ->withErrors(['item_id' => $foreign.' of the items belong to a different category. A requisition can only hold items from one category - remove them or raise a separate requisition.']);
+        }
+
         $order->category_id = $request->Category_Name;
+
+        // Spares carry a Machinery Details block (see RequisitionPrintForm) -
+        // optional, same as the paper form leaves it blank for anyone to fill
+        // in by hand if it isn't known yet. Every other category has none, so
+        // switching away from Spares clears it.
+        $category = Category::find($request->Category_Name);
+        if (\App\RequisitionPrintForm::hasMachineryBlock($category->symbol ?? null)) {
+            $machinery = $request->validate([
+                'machinery_name' => 'nullable|string|max:255',
+                'maker_details' => 'nullable|string|max:255',
+                'machinery_model' => 'nullable|string|max:120',
+                'machinery_type' => 'nullable|string|max:120',
+                'maker_contact' => 'nullable|string|max:255',
+            ]);
+            foreach ($machinery as $column => $value) {
+                $order->{$column} = $value !== null ? trim($value) : null;
+            }
+        } else {
+            foreach (array_keys(\App\RequisitionPrintForm::MACHINERY_FIELDS) as $column) {
+                $order->{$column} = null;
+            }
+        }
+
         $order->save();
 
         // Stock figures are SNAPSHOTTED onto each line, not read live at

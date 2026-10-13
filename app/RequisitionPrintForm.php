@@ -4,8 +4,9 @@ namespace App;
 
 /**
  * The printed BSC requisition form, which is a DIFFERENT form per category:
- * Stores asks for an IMPA code, Lub Oil for the equipment and brand, Chemicals
- * for the Unitor code and what the chemical is for. Everything from Unit
+ * Spares asks for drawing/part/item numbers (plus a machinery block above the
+ * table), Stores for an IMPA code, Lub Oil for the equipment and brand,
+ * Chemicals for the Unitor code and what the chemical is for. Everything from Unit
  * rightwards is the same on all of them.
  *
  * The printed attachment checklist these forms carry was dropped - the app
@@ -23,9 +24,18 @@ class RequisitionPrintForm
      * valueFor() rather than stored as a closure, so this stays plain data.
      */
     private const HEAD_COLUMNS = [
+        'SPR' => [
+            // Manufacturer rides along in this same cell (name + manufacturer)
+            // rather than its own column - see valueFor()'s
+            // 'name_with_manufacturer' case.
+            ['label' => 'Item Name', 'get' => 'name_with_manufacturer', 'align' => 'left', 'width' => '21%'],
+            ['label' => 'Article No', 'get' => 'article_number', 'width' => '8%', 'code' => true],
+            ['label' => 'Part No', 'get' => 'part_number', 'width' => '8%', 'code' => true],
+            ['label' => 'Item Number', 'get' => 'drawing_number', 'width' => '8%', 'code' => true],
+        ],
         'STR' => [
             ['label' => 'Item Name with full Specifications', 'get' => 'name_with_spec', 'align' => 'left', 'width' => '30%'],
-            ['label' => 'IMPA Code', 'get' => 'impa_code', 'width' => '11%'],
+            ['label' => 'IMPA Code', 'get' => 'impa_code', 'width' => '11%', 'code' => true],
         ],
         'LUB' => [
             ['label' => 'Item Name', 'get' => 'name', 'align' => 'left', 'width' => '17%'],
@@ -34,7 +44,7 @@ class RequisitionPrintForm
         ],
         'CHM' => [
             ['label' => 'Item Name', 'get' => 'name', 'align' => 'left', 'width' => '15%'],
-            ['label' => 'Unitor Code', 'get' => 'article_number', 'width' => '11%'],
+            ['label' => 'Unitor Code', 'get' => 'article_number', 'width' => '11%', 'code' => true],
             ['label' => 'Purpose of Chemical', 'get' => 'purpose', 'align' => 'left', 'width' => '15%'],
         ],
     ];
@@ -54,6 +64,38 @@ class RequisitionPrintForm
         // Filled in by hand after printing - always blank on the page.
         ['label' => 'Office Use', 'get' => null, 'width' => '9%'],
     ];
+
+    /**
+     * The block the Spares form opens with, above the item table: which
+     * machinery these spares are for. Typed by the officer raising it and
+     * stored on the order (column => label).
+     */
+    const MACHINERY_FIELDS = [
+        'machinery_name' => 'Machinery Name',
+        'maker_details' => 'Maker Details',
+        'machinery_model' => 'Model',
+        'machinery_type' => 'Type',
+        'maker_contact' => 'Maker Contact Details',
+    ];
+
+    /** Does this category's form carry the machinery block (Spares)? */
+    public static function hasMachineryBlock(?string $symbol): bool
+    {
+        return strtoupper(trim((string) $symbol)) === 'SPR';
+    }
+
+    /**
+     * Just the category-specific columns (item identity), without the shared
+     * stock/quantity tail - what the order detail page builds its table from,
+     * since its own tail carries the workflow columns (Delivered, Received,
+     * Invoice) the paper form doesn't have.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public static function headColumns(?string $symbol): array
+    {
+        return self::HEAD_COLUMNS[self::key($symbol)];
+    }
 
     /** What the form is titled, where the category has its own wording. */
     private const TITLES = [
@@ -113,7 +155,13 @@ class RequisitionPrintForm
             'name' => self::text($item->name ?? null),
             'name_with_spec' => trim(self::text($item->name ?? null)
                 .(self::text($item->description ?? null) !== '' ? "\n".self::text($item->description) : '')),
+            // Spares: manufacturer in the same cell as the name rather than
+            // its own column - "Pipe - J.P. Sauer & Sohn...".
+            'name_with_manufacturer' => trim(self::text($item->name ?? null)
+                .(self::text($item->manufacturer ?? null) !== '' ? ' - '.self::text($item->manufacturer) : '')),
             'impa_code' => self::text($item->impa_code ?? null),
+            'drawing_number' => self::text($item->drawing_number ?? null),
+            'part_number' => self::text($item->part_number ?? null),
             'article_number' => self::text($item->article_number ?? null),
             'brand' => self::text($item->manufacturer ?? null),
             'purpose' => self::text($item->description ?? null),

@@ -75,6 +75,7 @@ position: absolute;
 				@if(! $serverPaged)@csrf @else
 				@if(!empty($q))<input type="hidden" name="q" value="{{ $q }}">@endif
 				@if(!empty($perPageChoice) && $perPageChoice !== '15')<input type="hidden" name="per_page" value="{{ $perPageChoice }}">@endif
+				@if(!empty($status))<input type="hidden" name="status" value="{{ $status }}">@endif
 				@endif
 				<div class="req-filter-fields">
 					<div class="req-filter-field">
@@ -145,7 +146,7 @@ position: absolute;
 			</style>
 			@endif
 
-			@if($serverPaged)@include('partials.server-list-controls', ['orders' => $orders, 'position' => 'top', 'q' => $q ?? '', 'perPage' => $perPageChoice ?? '15', 'withSearch' => auth()->user()->role->vessel_id !== null, 'keep' => array_filter(['ship_id' => $ship_id ?? null, 'cat_id' => $cat_id ?? null, 'from_date' => $from_date ?? null, 'end_date' => $end_date ?? null])])@endif
+			@if($serverPaged)@include('partials.server-list-controls', ['orders' => $orders, 'position' => 'top', 'q' => $q ?? '', 'perPage' => $perPageChoice ?? '15', 'withSearch' => auth()->user()->role->vessel_id !== null, 'keep' => array_filter(['status' => $status ?? null, 'ship_id' => $ship_id ?? null, 'cat_id' => $cat_id ?? null, 'from_date' => $from_date ?? null, 'end_date' => $end_date ?? null])])@endif
 			{{-- data-server-paginated: rows are paged by the server, so DataTables
 				 must leave this table alone (see admin-master / dataForm.js). --}}
 			<table id="example" class="table table-bordered dt-responsive" style="width: 100%;" @if($serverPaged) data-server-paginated="1" @endif>

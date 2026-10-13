@@ -44,7 +44,7 @@
         <div class="footer-inner" >
           <div class="row">
             <div class="col-sm-6">
-              Copyright &copy; 2019.
+              Copyright &copy; {{ date('Y') }}.
 বাংলাদেশ শিপিং কর্পোরেশন
             </div>
             <div class="col-sm-6 text-right">

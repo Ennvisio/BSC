@@ -69,6 +69,23 @@ class Order extends Model
 		'official_remarks_at' => 'datetime',
 	];
 
+	/** The four lifecycle buckets the super-admin overview counts and filters by. */
+	const OVERVIEW_STATUSES = ['pending', 'delivered', 'received', 'rejected'];
+
+	/**
+	 * Pending = submitted and still moving (not yet delivered by SSM);
+	 * Delivered = SSM has supplied it, the ship hasn't confirmed yet;
+	 * Received = the ship confirmed it on board; Rejected = called off.
+	 */
+	public function scopeOverviewStatus($query, ?string $status)
+	{
+		return match ($status) {
+			'pending' => $query->whereNotIn('status', ['delivered', 'received', 'rejected']),
+			'delivered', 'received', 'rejected' => $query->where('status', $status),
+			default => $query,
+		};
+	}
+
 	/** GM (SRD) and the four officers GM can delegate to. */
 	const SRD_ROLES = ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd'];
 
@@ -93,6 +110,30 @@ class Order extends Model
 			&& ! $this->isRejected()
 			&& $approval
 			&& ($approval->master_app !== null || $approval->chief_eng_app !== null);
+	}
+
+	/**
+	 * Master can correct what Chief Officer put in Part A, Chief Engineer
+	 * what Second Engineer put in it - the officer reviewing it is senior to
+	 * whoever raised it and signing off on the same form, so they can fix a
+	 * mistake in it rather than only approve or reject it as-is. Only while
+	 * it's actually on their desk: hasPendingActionFor() already closes this
+	 * off once they've acted, or if it was never theirs to review (the other
+	 * department's requisition, or anyone further down/up the chain).
+	 *
+	 * hasPendingActionFor() alone isn't enough here, unlike most of its other
+	 * callers: it checks the STAGE (has Chief Officer signed, has Master not
+	 * yet) but not which vessel the role belongs to, because the ship-side
+	 * list queries it backs are already vessel-scoped before this ever runs.
+	 * This is reached directly by order id, so it needs the same "own vessel
+	 * only" check canConfirmReceipt() uses - without it, any vessel's Master
+	 * could correct another vessel's Part A.
+	 */
+	public function canEditPartA(?string $role): bool
+	{
+		return in_array($role, ['master', 'chief-engineer'], true)
+			&& $this->hasPendingActionFor($role)
+			&& $this->vessel_id == (auth()->user()->role->vessel_id ?? null);
 	}
 
 	/** Completed procurement stages, oldest first - the timeline. */
@@ -125,6 +166,19 @@ class Order extends Model
 			return [];
 		}
 
+		// Technical/Marine Superintendent can stand in for an SRD delegate's
+		// own review (RoleController@approveRequisition) when GM has
+		// delegated it and that delegate hasn't acted yet - it writes the
+		// Superintendent's own id into THAT delegate's column (e.g.
+		// superintendent_srd_app) so the chain still progresses, exactly as
+		// if the real delegate had reviewed it. Left as-is, that prints a
+		// second, misleading line - "Superintendent (SRD): <their name>" -
+		// as if GM had assigned them there, when they never were. Their real
+		// action is already correctly captured below under their own title,
+		// so a stood-in delegate column is dropped whenever its signer is
+		// the same person as this order's tech/marine superintendent.
+		$standIn = array_filter([$approval->tech_superintendent_app, $approval->marine_superintendent_app]);
+
 		$steps = [
 			['Chief Officer', $approval->cheif_ofcr_app],
 			['Second Engineer', $approval->second_eng_app],
@@ -145,11 +199,20 @@ class Order extends Model
 			['Marine Superintendent', $approval->marine_superintendent_app],
 		];
 
+		// Only the four delegate slots a stand-in can ever fill are eligible
+		// to be dropped - never Chief Officer/Master/etc, where the id on
+		// file is never anyone but who it claims to be.
+		$delegateLabels = ['DGM (SRD)', 'AGM (SRD)', 'AM (SRD)', 'Superintendent (SRD)'];
+
 		$signed = [];
 		foreach ($steps as [$label, $userId]) {
-			if ($userId !== null) {
-				$signed[] = ['role' => $label, 'user' => User::find($userId)];
+			if ($userId === null) {
+				continue;
 			}
+			if (in_array($label, $delegateLabels, true) && in_array($userId, $standIn, true)) {
+				continue;
+			}
+			$signed[] = ['role' => $label, 'user' => User::find($userId)];
 		}
 
 		return $signed;

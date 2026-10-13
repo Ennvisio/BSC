@@ -133,7 +133,7 @@
 	font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
 	color: var(--od-muted-2, #778483); font-weight: 600; margin-bottom: 8px;
 }
-.od-reason-text{ font-size: 14px; line-height: 1.6; color: var(--od-ink-soft); max-width: 70ch; }
+.od-reason-text{ font-size: 14px; line-height: 1.6; color: var(--od-ink-soft); }
 
 /* ---- Item table ---- */
 .od-card .table-responsive{ margin: 0; max-width: 100%; }

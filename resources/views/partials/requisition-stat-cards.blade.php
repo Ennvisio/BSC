@@ -1,4 +1,7 @@
-{{-- Shared by every role that gets a personal approval-chain dashboard -
+{{-- No My Approvals card: on a dashboard it repeated Pending My Action
+	 almost one for one. The My Approvals lists stay in the sidebar menus.
+
+	 Shared by every role that gets a personal approval-chain dashboard -
 	 currently GM (SRD) on home.blade.php and DGM/AGM/AM (SSM) on
 	 layouts/order.blade.php. Expects $stats with these four keys, each
 	 read off the SAME view instances the destination pages themselves
@@ -17,7 +20,7 @@
 		 adding it here made the gap under this row larger than between the
 		 rows that follow. --}}
 	<div class="row">
-		<div class="col-6 col-md-3 mb-3">
+		<div class="col-6 col-md-4 mb-3">
 			<a href="{{url('/pending/requisition')}}" class="text-decoration-none">
 				<div class="srd-stat-card">
 					<div class="srd-stat-icon is-blue"><i class="fas fa-hourglass-half"></i></div>
@@ -28,32 +31,21 @@
 				</div>
 			</a>
 		</div>
-		<div class="col-6 col-md-3 mb-3">
-			<a href="{{ route('my.approvals') }}" class="text-decoration-none">
-				<div class="srd-stat-card">
-					<div class="srd-stat-icon is-indigo"><i class="fas fa-check-circle"></i></div>
-					<div class="srd-stat-body">
-						<div class="srd-stat-label">My Approvals</div>
-						<div class="srd-stat-value">{{ $stats['my_approvals'] }}</div>
-					</div>
-				</div>
-			</a>
-		</div>
-		<div class="col-6 col-md-3 mb-3">
+		<div class="col-6 col-md-4 mb-3">
 			<a href="{{url('/approved/requisition')}}" class="text-decoration-none">
 				<div class="srd-stat-card">
 					<div class="srd-stat-icon is-green"><i class="fas fa-truck"></i></div>
 					<div class="srd-stat-body">
-						<div class="srd-stat-label">Approved</div>
+						<div class="srd-stat-label">Delivered</div>
 						<div class="srd-stat-value">{{ $stats['approved'] }}</div>
 					</div>
 				</div>
 			</a>
 		</div>
-		<div class="col-6 col-md-3 mb-3">
+		<div class="col-6 col-md-4 mb-3">
 			<a href="{{url('/received/requisition')}}" class="text-decoration-none">
 				<div class="srd-stat-card">
-					<div class="srd-stat-icon is-slate"><i class="fas fa-inbox"></i></div>
+					<div class="srd-stat-icon is-indigo"><i class="fas fa-inbox"></i></div>
 					<div class="srd-stat-body">
 						<div class="srd-stat-label">Received</div>
 						<div class="srd-stat-value">{{ $stats['received'] }}</div>
@@ -78,16 +70,16 @@
 			$serviceCards = array_values(array_filter([
 				['route' => route('service-requisition.pending'), 'icon' => 'fa-hourglass-half', 'tone' => 'is-blue',
 					'label' => $srdLevel ? 'Pending My Action' : 'Pending', 'value' => $srdLevel ? $serviceStats['pending_action'] : $serviceStats['pending']],
-				$srdLevel ? ['route' => route('service-requisition.my-approvals'), 'icon' => 'fa-check-circle', 'tone' => 'is-indigo',
-					'label' => 'My Approvals', 'value' => $serviceStats['my_approvals']] : null,
-				['route' => route('service-requisition.approved'), 'icon' => 'fa-clipboard', 'tone' => 'is-green',
-					'label' => 'Approved', 'value' => $serviceStats['approved']],
-				['route' => route('service-requisition.rejected'), 'icon' => 'fa-times-circle', 'tone' => 'is-pink',
-					'label' => 'Rejected', 'value' => $serviceStats['rejected']],
+				// SRD: Delivered (SRD finished the work, vessel yet to confirm) and
+				// Received (vessel confirmed it); no Rejected card.
+				['route' => route('service-requisition.index', ['status' => 'delivered']), 'icon' => 'fa-truck', 'tone' => 'is-green',
+					'label' => 'Delivered', 'value' => $serviceStats['awaiting_confirmation']],
+				['route' => route('service-requisition.index', ['status' => 'received']), 'icon' => 'fa-inbox', 'tone' => 'is-indigo',
+					'label' => 'Received', 'value' => $serviceStats['received']],
 			]));
 		@endphp
 		@foreach($serviceCards as $card)
-		<div class="col-6 col-md-3 mb-3">
+		<div class="col-6 col-md-4 mb-3">
 			<a href="{{ $card['route'] }}" class="text-decoration-none">
 				<div class="srd-stat-card">
 					<div class="srd-stat-icon {{ $card['tone'] }}"><i class="fas {{ $card['icon'] }}"></i></div>

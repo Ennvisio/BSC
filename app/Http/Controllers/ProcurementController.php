@@ -184,6 +184,14 @@ class ProcurementController extends Controller
     /**
      * Invoice Verification's figures, checked before anything is written.
      * Returns an error message, or null when it's good.
+     *
+     * Per-item unit price/invoice quantity are optional - some invoices
+     * price every line, some just give one lump figure for the whole
+     * shipment, and this has to take either. Subtotal is the one thing
+     * that's always required, since it's what Payable is actually computed
+     * from; the JS pre-fills it from summed line totals when those are
+     * entered, but the figure saved is always whatever ends up in that
+     * field, not a server-side recalculation of it.
      */
     private function validateInvoice(Request $request, Order $order): ?string
     {
@@ -191,28 +199,38 @@ class ProcurementController extends Controller
             return 'Choose the currency the invoice is billed in.';
         }
 
+        $subtotal = $request->input('subtotal');
+
+        if ($subtotal === null || $subtotal === '' || ! is_numeric($subtotal) || $subtotal < 0) {
+            return 'Enter the invoice subtotal.';
+        }
+
         $prices = (array) $request->input('unit_price', []);
         $quantities = (array) $request->input('invoice_qty', []);
 
-        if ($prices === []) {
-            return 'Enter the unit price and invoiced quantity for each item.';
-        }
-
-        $subtotal = 0;
-
         foreach ($order->orderItems as $line) {
             $price = $prices[$line->id] ?? null;
-            $qty = $quantities[$line->id] ?? null;
+            $price = ($price === '' ? null : $price);
 
-            if ($price === null || $price === '' || $qty === null || $qty === '') {
-                return 'Every item needs a unit price and an invoiced quantity.';
+            // Whether this line is priced is decided by unit_price alone -
+            // invoice_qty always arrives with a default (Rcv Qty/Deliver Qty,
+            // see the table above), so it's never actually blank on its own
+            // and can't be used to tell "not priced" from "priced". Nothing
+            // left in it matters when there's no price to multiply it by.
+            if ($price === null) {
+                continue;
+            }
+
+            $qty = $quantities[$line->id] ?? null;
+            $qty = ($qty === '' ? null : $qty);
+
+            if ($qty === null) {
+                return 'Give this item an invoiced quantity to go with its unit price.';
             }
 
             if (! is_numeric($price) || ! is_numeric($qty) || $price < 0 || $qty < 0) {
                 return 'Unit prices and quantities must be zero or more.';
             }
-
-            $subtotal += round($price * $qty, 2);
         }
 
         $discount = (float) $request->input('discount', 0);
@@ -221,38 +239,46 @@ class ProcurementController extends Controller
             return 'Discount cannot be negative.';
         }
 
-        if (round($discount, 2) > round($subtotal, 2)) {
-            return 'Discount cannot be more than the invoice subtotal ('.number_format($subtotal, 2).').';
+        if (round($discount, 2) > round((float) $subtotal, 2)) {
+            return 'Discount cannot be more than the invoice subtotal ('.number_format((float) $subtotal, 2).').';
         }
 
         return null;
     }
 
     /**
-     * Writes the priced lines and the invoice header.
-     *
-     * Subtotal is deliberately not stored - it's SUM(line_total). Payable IS
-     * stored, as the frozen as-billed figure that was approved for payment.
+     * Writes whichever lines were priced and the invoice header. Subtotal is
+     * the figure that was actually in the field when this was submitted -
+     * usually the sum of the priced lines below (the JS pre-fills it that
+     * way), but not recomputed from them here, since an invoice with no
+     * per-item prices at all still needs somewhere to have come from.
      */
     private function saveInvoice(Request $request, Order $order): void
     {
         $prices = (array) $request->input('unit_price', []);
         $quantities = (array) $request->input('invoice_qty', []);
-        $subtotal = 0;
 
         foreach ($order->orderItems as $line) {
-            $price = round((float) $prices[$line->id], 2);
-            $qty = (int) $quantities[$line->id];
-            $lineTotal = round($price * $qty, 2);
-            $subtotal += $lineTotal;
+            $price = $prices[$line->id] ?? null;
+            $qty = $quantities[$line->id] ?? null;
+
+            // Left blank for this line - validateInvoice() already confirmed
+            // both are blank together, never just one.
+            if ($price === null || $price === '') {
+                continue;
+            }
+
+            $price = round((float) $price, 2);
+            $qty = (int) $qty;
 
             OrderItem::where('id', $line->id)->where('order_id', $order->id)->update([
                 'unit_price' => $price,
                 'invoice_qty' => $qty,
-                'line_total' => $lineTotal,
+                'line_total' => round($price * $qty, 2),
             ]);
         }
 
+        $subtotal = round((float) $request->input('subtotal'), 2);
         $discount = round((float) $request->input('discount', 0), 2);
 
         OrderInvoice::updateOrCreate(
@@ -261,6 +287,7 @@ class ProcurementController extends Controller
                 'invoice_no' => $request->filled('invoice_no') ? trim($request->invoice_no) : null,
                 'invoice_date' => $request->filled('invoice_date') ? $request->invoice_date : null,
                 'currency_code' => $request->input('currency_code'),
+                'subtotal' => $subtotal,
                 'discount' => $discount,
                 'payable' => round($subtotal - $discount, 2),
                 'verified_by' => auth()->user()->id,

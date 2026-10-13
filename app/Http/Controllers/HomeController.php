@@ -69,10 +69,10 @@ class HomeController extends Controller
         $scoped = fn () => app(RoleController::class)->shipTrackingScope();
 
         $stats = [
-          'draft' => Order::where('status', 'draft')->where('created_by', auth()->user()->id)->count(),
           'in_progress' => $scoped()->whereNotIn('status', ['delivered', 'received', 'rejected'])->count(),
           'delivered' => $scoped()->where('status', 'delivered')->count(),
           'received' => $scoped()->where('status', 'received')->count(),
+          'rejected' => app(RoleController::class)->shipTrackingScope(true)->count(),
           'items' => DB::table('vessel_items')->where('vessel_id', $vesselId)->count(),
           'low_stock' => DB::table('vessel_items')->where('vessel_id', $vesselId)
             ->whereNotNull('min_qty')->whereColumn('stock_qty', '<=', 'min_qty')->count(),
@@ -92,12 +92,10 @@ class HomeController extends Controller
           ->orderBy('created_at', 'desc')
           ->get();
 
-        // The Master follows service requisitions too (Pending / Approved /
+        // Every ship role follows service requisitions too (Pending / Approved /
         // Rejected under the Service Requisition menu), so the dashboard gets
         // its own labelled row of them next to the item ones.
-        $serviceStats = auth()->user()->role->role === 'master'
-          ? app(ServiceRequisitionApprovalController::class)->stats()
-          : null;
+        $serviceStats = app(ServiceRequisitionApprovalController::class)->stats();
 
         return view('layouts.ship-home', compact('orders', 'drafts', 'stats', 'serviceStats'));
       }else{
@@ -149,12 +147,24 @@ class HomeController extends Controller
       $stats = auth()->user()->role->role === 'gm-srd' ? $this->requisitionDashboardStats() : null;
       $serviceStats = auth()->user()->role->role === 'gm-srd' ? app(ServiceRequisitionApprovalController::class)->stats() : null;
 
+      // Super-admin's overview: item and service requisitions side by side,
+      // fleet-wide, split Pending / Delivered / Received / Rejected. Each card
+      // links to the list filtered to exactly what it counts.
+      $overview = null;
+      if (auth()->user()->role->role === 'super-admin') {
+        $overview = [];
+        foreach (Order::OVERVIEW_STATUSES as $status) {
+          $overview['item'][$status] = Order::where('ord_status', true)->overviewStatus($status)->count();
+          $overview['service'][$status] = \App\ServiceRequisition::overviewStatus($status)->count();
+        }
+      }
+
       // Vessel summary + per-category expansion, built from each vessel's
       // own certificates rather than the legacy fixed certificate-type list
       // (see App\CertificateValidityReport for why that grid no longer fits).
       $certificateReport = \App\CertificateValidityReport::forVessels($vessels);
 
-      return view('home',compact('surveys','certificates','vessels','stats','serviceStats','certificateReport'));
+      return view('home',compact('surveys','certificates','vessels','stats','serviceStats','overview','certificateReport'));
     }
 
     // Nothing above claimed this account (a role with no department). Say so
@@ -672,6 +682,9 @@ public function getOrder(Request $request){
   $from_date = $filterable ? ($request->query('from_date') ?: null) : null;
   $end_date = $filterable ? ($request->query('end_date') ?: null) : null;
   $category = $cat_id ? Category::find($cat_id) : null;
+  // ?status= from the super-admin dashboard's cards (pending/delivered/received/rejected).
+  $status = in_array($request->query('status'), Order::OVERVIEW_STATUSES, true) ? $request->query('status') : null;
+  $query->overviewStatus($status);
 
   $query->when($ship_id, fn ($q, $id) => $q->where('vessel_id', $id))
     ->when($cat_id, fn ($q, $id) => $q->where('category_id', $id))
@@ -691,7 +704,9 @@ public function getOrder(Request $request){
     return redirect($orders->url($orders->lastPage()));
   }
 
-  return view('layouts.order',compact('items','categories','vessels','orders','q','perPageChoice','ship_id','cat_id','from_date','end_date','category'));
+  $listTitle = $status ? ucfirst($status).' Item Requisitions' : null;
+
+  return view('layouts.order',compact('items','categories','vessels','orders','q','perPageChoice','ship_id','cat_id','from_date','end_date','category','status','listTitle'));
 }
 
 /** Free-text search across req. no, port, category, vessel and creator (all pages, not just the visible one). */
@@ -1158,6 +1173,7 @@ public function viewVesselDetail($id){
 public function viewOrderDetail($id){
  $order=Order::with([
    'orderItems.attachments.uploader',
+   'orderItems.quantityChanges',
    'procurementSteps.completedBy',
    'procurementSteps.attachments',
    'invoice',

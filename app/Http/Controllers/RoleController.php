@@ -6,6 +6,7 @@ use App\Category;
 use App\Item;
 use App\Order;
 use App\OrderItem;
+use App\OrderItemQuantityChange;
 use App\ProcurementStage;
 use App\ProcurementStep;
 use App\Services\StockService;
@@ -94,11 +95,13 @@ class RoleController extends Controller
 	 * list it links to can disagree, which is worse than not having the
 	 * count at all.
 	 */
-	public function shipTrackingScope()
+	public function shipTrackingScope(bool $rejected = false)
 	{
 		$role = auth()->user()->role->role;
 
-		$query = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+		// $rejected flips it to ONLY the rejected ones - the same who-sees-what
+		// rules, for the Rejected list and its dashboard card.
+		$query = Order::where('ord_status', true)->where('status', $rejected ? '=' : '!=', 'rejected')
 			->where('vessel_id', auth()->user()->role->vessel_id);
 
 		if ($role === 'chief-officer' || $role === 'second-engineer') {
@@ -146,6 +149,22 @@ class RoleController extends Controller
 	 * assigning to a named officer (see assignToSsm()) rather than approving
 	 * through approveRequisition(), but it still counts here the same way.
 	 */
+	/**
+	 * Ship side: item requisitions that were rejected, with the same
+	 * who-sees-what scoping as Pending/Approved/Delivered (the officer who
+	 * raised it, Chief Engineer the engine room's, Master the whole vessel).
+	 */
+	public function rejectedRequisition()
+	{
+		abort_unless(auth()->user()->role->user_type == 'ship', 403);
+
+		$orders = $this->shipTrackingScope(true)->orderBy('updated_at', 'desc')->get();
+		$drafts = collect();
+		$listTitle = 'Rejected Requisitions';
+
+		return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle'));
+	}
+
 	public function myApprovals()
 	{
 		$role = auth()->user()->role->role;
@@ -844,14 +863,7 @@ class RoleController extends Controller
 			$order_approval->{$column} = auth()->user()->id;
 			$order_approval->update();
 
-			foreach ((array) $req->deliver_qty as $orderItemId => $qty) {
-				if ($qty === '' || $qty === null) {
-					continue;
-				}
-				OrderItem::where('id', $orderItemId)->where('order_id', $order->id)->update([
-					'del_item_qty' => $qty,
-				]);
-			}
+			$this->applyQuantityCorrection($order, 'del_item_qty', (array) $req->deliver_qty);
 		}
 		// Technical/Marine Superintendent: normally a purely informational
 		// sign-off that never touches order->status and can never block or
@@ -901,14 +913,7 @@ class RoleController extends Controller
 		// for them at their own review turn (see view-order-detail's req_qty
 		// column), so this only ever touches a line they were actually shown.
 		if (in_array(auth()->user()->role->role, ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd'], true)) {
-			foreach ((array) $req->req_qty as $orderItemId => $qty) {
-				if ($qty === '' || $qty === null) {
-					continue;
-				}
-				OrderItem::where('id', $orderItemId)->where('order_id', $order->id)->update([
-					'item_qty' => $qty,
-				]);
-			}
+			$this->applyQuantityCorrection($order, 'item_qty', (array) $req->req_qty);
 		}
 
 		$data = $already_approved
@@ -1163,5 +1168,69 @@ class RoleController extends Controller
 		$data = 'Requisition assigned to '.$assignee->name.' ('.$roleLabel.') successfully!';
 
 		return [$data, 'redirect' => route('my.approvals')];
+	}
+
+	/**
+	 * Applies a quantity correction to each posted order line and logs it -
+	 * $field is the OrderItem column being corrected ('item_qty' for Req
+	 * Qty, corrected by SRD; 'del_item_qty' for Deliver Qty, corrected by
+	 * SSM). Only an actual change is logged: re-submitting the same figure
+	 * isn't a correction, and logging it would just be noise in the history
+	 * the detail page's strikethrough diff reads back (see
+	 * OrderItem::quantityChangesFor()).
+	 */
+	private function applyQuantityCorrection(Order $order, string $field, array $posted): void
+	{
+		if (empty($posted)) {
+			return;
+		}
+
+		$items = OrderItem::where('order_id', $order->id)
+			->whereIn('id', array_keys($posted))
+			->get(['id', $field]);
+
+		$user = auth()->user();
+
+		foreach ($items as $item) {
+			$qty = $posted[$item->id] ?? null;
+			if ($qty === '' || $qty === null) {
+				continue;
+			}
+
+			$qty = (int) $qty;
+			$rawOld = $item->{$field};
+			$old = (int) $rawOld;
+
+			if ($qty === $old) {
+				continue;
+			}
+
+			// Only an edit to an EXISTING figure is a correction worth
+			// logging. Deliver Qty starts out null - SSM's first entry for
+			// a line is the initial record, not a change from anything, so
+			// it's applied without a log row (same as every other quantity
+			// column being filled in for the first time elsewhere in this
+			// app). Req Qty is never null by this point, so this never
+			// skips a real SRD correction.
+			if ($rawOld !== null) {
+				OrderItemQuantityChange::create([
+					'order_item_id' => $item->id,
+					'field' => $field,
+					'old_qty' => $old,
+					'new_qty' => $qty,
+					'changed_by' => $user->id,
+					'changed_by_name' => $user->name,
+					'changed_by_role' => $user->role->role ?? null,
+				]);
+			}
+
+			// Not update([$field => $qty]): OrderItem has no $fillable (every
+			// other write to it in this controller goes through the query
+			// builder for the same reason), so a mass-assigned update()
+			// throws. Direct property assignment + save() isn't mass
+			// assignment and needs no guard changes.
+			$item->{$field} = $qty;
+			$item->save();
+		}
 	}
 }

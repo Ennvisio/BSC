@@ -82,7 +82,7 @@ class RequisitionForm
     {
         return [
             [
-                'key' => 'why_required', 'no' => 1, 'required' => true, 'type' => 'single',
+                'key' => 'why_required', 'no' => 1, 'required' => false, 'type' => 'single',
                 'en' => 'Why is the item required?',
                 'options' => [
                     'breakdown' => 'Breakdown/Failure',
@@ -100,7 +100,7 @@ class RequisitionForm
                 ],
             ],
             [
-                'key' => 'why_now', 'no' => 2, 'required' => true, 'type' => 'single',
+                'key' => 'why_now', 'no' => 2, 'required' => false, 'type' => 'single',
                 'en' => 'Why is procurement needed now?',
                 'options' => [
                     'existing_failed' => 'Existing item failed',
@@ -117,7 +117,7 @@ class RequisitionForm
                     'options' => self::yesNo(),
                 ],
                 'fields' => [
-                    ['key' => 'required_by', 'label' => 'Required by', 'type' => 'date', 'required' => true],
+                    ['key' => 'required_by', 'label' => 'Required by', 'type' => 'date', 'required' => false],
                 ],
             ],
             [
@@ -247,16 +247,17 @@ class RequisitionForm
 
     /**
      * Part B - SRD's own cross-check of what the ship claimed in Part A,
-     * against office and technical records. Every question is required: a
-     * half-filled verification isn't a verification, and each one carries an
-     * escape hatch ("Record unavailable", "cannot verify", "N/A") for the
-     * cases where the records genuinely don't answer it.
+     * against office and technical records. Every question is optional, same
+     * as Part A - each one still carries an escape hatch ("Record
+     * unavailable", "cannot verify", "N/A") for the cases where the records
+     * genuinely don't answer it, but SRD isn't blocked from submitting over
+     * one they haven't gotten to yet.
      */
     private static function partB(): array
     {
         return [
             [
-                'key' => 'matches_records', 'no' => 1, 'required' => true, 'type' => 'single',
+                'key' => 'matches_records', 'no' => 1, 'required' => false, 'type' => 'single',
                 'en' => 'Does the stated requirement match available records?',
                 'options' => [
                     'yes_maintenance' => 'YES — Maintenance/Operational record',
@@ -268,7 +269,7 @@ class RequisitionForm
                 ],
             ],
             [
-                'key' => 'failure_supported', 'no' => 2, 'required' => true, 'type' => 'single',
+                'key' => 'failure_supported', 'no' => 2, 'required' => false, 'type' => 'single',
                 'en' => 'Is the failure/condition and date supported by records?',
                 'options' => [
                     'yes' => 'YES',
@@ -278,7 +279,7 @@ class RequisitionForm
                 ],
             ],
             [
-                'key' => 'history_supports', 'no' => 3, 'required' => true, 'type' => 'single',
+                'key' => 'history_supports', 'no' => 3, 'required' => false, 'type' => 'single',
                 'en' => 'Does service history support the reason for replacement?',
                 'options' => [
                     'yes' => 'YES',
@@ -288,7 +289,7 @@ class RequisitionForm
                 ],
             ],
             [
-                'key' => 'replacement_over_repair', 'no' => 4, 'required' => true, 'type' => 'single',
+                'key' => 'replacement_over_repair', 'no' => 4, 'required' => false, 'type' => 'single',
                 'en' => 'Does the technical assessment support replacement over repair?',
                 'options' => [
                     'yes' => 'YES',
@@ -298,7 +299,7 @@ class RequisitionForm
                 ],
             ],
             [
-                'key' => 'stock_matches', 'no' => 5, 'required' => true, 'type' => 'single',
+                'key' => 'stock_matches', 'no' => 5, 'required' => false, 'type' => 'single',
                 'en' => "Does stock position match the vessel's statement?",
                 'options' => [
                     'yes_no_usable' => 'YES — No usable stock',
@@ -313,7 +314,7 @@ class RequisitionForm
                 ],
             ],
             [
-                'key' => 'quantity_matches', 'no' => 6, 'required' => true, 'type' => 'single',
+                'key' => 'quantity_matches', 'no' => 6, 'required' => false, 'type' => 'single',
                 'en' => 'Does quantity match the verified requirement?',
                 'options' => [
                     'yes' => 'YES',
@@ -326,7 +327,7 @@ class RequisitionForm
                 ],
             ],
             [
-                'key' => 'urgency_supported', 'no' => 7, 'required' => true, 'type' => 'single',
+                'key' => 'urgency_supported', 'no' => 7, 'required' => false, 'type' => 'single',
                 'en' => 'Do verified facts support the claimed urgency?',
                 'options' => [
                     'yes' => 'YES',
@@ -342,6 +343,9 @@ class RequisitionForm
      * Part C - the assigned SSM officer's review before procurement starts: is the price defensible, is the budget there, does the
      * whole chain of claims hold together.
      *
+     * Every question is optional, same as Parts A and B - the SSM officer
+     * isn't blocked from submitting over one they haven't settled yet.
+     *
      * Renumbered 1-8. The paper form runs 1,2,3,4,5,7,8,5 - two questions
      * numbered 5 and no 6 - which would be reproduced here as two colliding
      * keys and a confusing screen.
@@ -350,7 +354,7 @@ class RequisitionForm
     {
         return [
             [
-                'key' => 'price_verifiable', 'no' => 1, 'required' => true, 'type' => 'single',
+                'key' => 'price_verifiable', 'no' => 1, 'required' => false, 'type' => 'single',
                 'en' => 'Is the quoted price independently verifiable?',
                 'options' => [
                     'previous_purchase' => 'Previous BSC purchase',
@@ -372,7 +376,7 @@ class RequisitionForm
                 ],
             ],
             [
-                'key' => 'consolidation', 'no' => 2, 'required' => true, 'type' => 'single',
+                'key' => 'consolidation', 'no' => 2, 'required' => false, 'type' => 'single',
                 'en' => 'Can other requirements for the same vessel be consolidated with the same supplier/OEM/agent?',
                 'options' => [
                     'no' => 'NO',
@@ -385,7 +389,7 @@ class RequisitionForm
                 ],
             ],
             [
-                'key' => 'budget_available', 'no' => 3, 'required' => true, 'type' => 'single',
+                'key' => 'budget_available', 'no' => 3, 'required' => false, 'type' => 'single',
                 'en' => 'Is the required budget available?',
                 'options' => self::yesNo(),
                 'fields' => [
@@ -394,7 +398,7 @@ class RequisitionForm
                 ],
             ],
             [
-                'key' => 'method_compliant', 'no' => 4, 'required' => true, 'type' => 'single',
+                'key' => 'method_compliant', 'no' => 4, 'required' => false, 'type' => 'single',
                 'en' => 'Is the procurement method compliant with applicable rules?',
                 'options' => [
                     'yes' => 'YES',
@@ -413,12 +417,12 @@ class RequisitionForm
                 ],
             ],
             [
-                'key' => 'performance_guarantee', 'no' => 6, 'required' => true, 'type' => 'single',
+                'key' => 'performance_guarantee', 'no' => 6, 'required' => false, 'type' => 'single',
                 'en' => 'Was a Performance Guarantee of 06 months executed?',
                 'options' => self::yesNo(),
             ],
             [
-                'key' => 'tender_procedure', 'no' => 7, 'required' => true, 'type' => 'single',
+                'key' => 'tender_procedure', 'no' => 7, 'required' => false, 'type' => 'single',
                 'en' => 'Tender procedure',
                 'options' => [
                     'rfq' => 'RFQ',
@@ -426,7 +430,7 @@ class RequisitionForm
                 ],
             ],
             [
-                'key' => 'consistent_story', 'no' => 8, 'required' => true, 'type' => 'single',
+                'key' => 'consistent_story', 'no' => 8, 'required' => false, 'type' => 'single',
                 'en' => 'Does the complete chain of information tell one consistent story?',
                 'options' => [
                     'yes' => 'YES',

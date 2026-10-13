@@ -12,12 +12,14 @@ class OrderFormPart extends Model
 {
     protected $fillable = [
         'order_id', 'part', 'form_version', 'answers', 'completed_at', 'declaration', 'filled_by',
+        'edited_by', 'edited_at',
     ];
 
     protected $casts = [
         'answers' => 'array',
         'declaration' => 'array',
         'completed_at' => 'datetime',
+        'edited_at' => 'datetime',
     ];
 
     public function order()
@@ -28,6 +30,12 @@ class OrderFormPart extends Model
     public function filledBy()
     {
         return $this->belongsTo(User::class, 'filled_by');
+    }
+
+    /** Whoever corrected this part after it was originally declared, if anyone did. */
+    public function editedBy()
+    {
+        return $this->belongsTo(User::class, 'edited_by');
     }
 
     /** Every required answer and the declaration are in. */

@@ -8,6 +8,45 @@
 @include('partials.requisition-stat-cards')
 @endisset
 
+@if(!empty($overview))
+{{-- Super-admin: item and service requisitions side by side, fleet-wide.
+     Each card opens its list filtered to exactly what it counts. --}}
+@php
+    $overviewCards = [
+        'pending' => ['Pending', 'fa-hourglass-half', 'is-blue'],
+        'delivered' => ['Delivered', 'fa-truck', 'is-green'],
+        'received' => ['Received', 'fa-inbox', 'is-indigo'],
+        'rejected' => ['Rejected', 'fa-times-circle', 'is-pink'],
+    ];
+    $overviewRows = [
+        'item' => ['Item Requisition', 'fa-list-alt', url('/home/order')],
+        'service' => ['Service Requisition', 'fa-wrench', route('service-requisition.index')],
+    ];
+@endphp
+@foreach($overviewRows as $kind => [$heading, $headIcon, $listUrl])
+<div class="col-lg-12">
+    <div class="srd-stat-section"><i class="fas {{ $headIcon }}"></i> {{ $heading }}</div>
+    <div class="row">
+        @foreach($overviewCards as $status => [$label, $icon, $tone])
+        <div class="col-6 col-md-3 mb-3">
+            <a href="{{ $listUrl }}?status={{ $status }}" class="text-decoration-none">
+                <div class="srd-stat-card">
+                    <div class="srd-stat-icon {{ $tone }}"><i class="fas {{ $icon }}"></i></div>
+                    <div class="srd-stat-body">
+                        <div class="srd-stat-label">{{ $label }}</div>
+                        <div class="srd-stat-value">{{ $overview[$kind][$status] }}</div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        @endforeach
+    </div>
+</div>
+@endforeach
+<div class="col-lg-12">
+    <div class="srd-stat-section"><i class="fas fa-ship"></i> Fleet</div>
+</div>
+@endif
 <div class="col-lg-12">
     <div class="row">
         <div class="col-6 col-md-3 mb-3">
@@ -65,6 +104,8 @@
                 </div>
             </a>
         </div>
+        {{-- Super-admin gets these split by item / service below instead. --}}
+        @if(empty($overview))
         <div class="col-6 col-md-3 mb-3">
             <a href="{{url('/home/order')}}" class="text-decoration-none">
                 <div class="srd-stat-card">
@@ -79,7 +120,7 @@
         <div class="col-6 col-md-3 mb-3">
             <a href="{{url('/home/order')}}" class="text-decoration-none">
                 <div class="srd-stat-card">
-                    <div class="srd-stat-icon is-slate"><i class="fas fa-inbox"></i></div>
+                    <div class="srd-stat-icon is-indigo"><i class="fas fa-inbox"></i></div>
                     <div class="srd-stat-body">
                         <div class="srd-stat-label">Received</div>
                         <div class="srd-stat-value"><span class="count">{{\App\Order::where('ord_status',true)->where('status','received')->get()->count()}}</span></div>
@@ -87,6 +128,7 @@
                 </div>
             </a>
         </div>
+        @endif
     </div>
 </div>
 

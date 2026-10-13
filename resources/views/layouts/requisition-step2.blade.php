@@ -1,6 +1,13 @@
 @extends('layouts.admin-master')
 @section('main-content')
 <style>
+	/* A narrow header (e.g. "Article No") was breaking mid-word ("Articl" /
+	   "e No") rather than at the space between words - word-break: keep-all
+	   stops a word splitting on its own; overflow-wrap: normal (the default,
+	   stated explicitly in case anything upstream sets break-word) keeps that
+	   true even when the word alone is wider than the column. */
+	#example1 thead th{ word-break: keep-all; overflow-wrap: normal; }
+
 	/* ---- Attachments column: chips on a saved line, an Add trigger, a
 		 quiet hint on a line that hasn't been saved yet. ---- */
 	.attachments-cell{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:150px; }
@@ -117,7 +124,7 @@
 								<select class="form-control Category_Name" id="cate_name" name="Category_Name" required>
 									<option value="" {{ $selectedCategory ? '' : 'selected' }} class='cat_opt'>-- Choose Category --</option>
 									@foreach($categories as $category)
-									<option value="{{$category->id}}" class='cat_opt' data-catalog="{{$category->is_catalog ? 1 : 0}}" {{ (string) $selectedCategory === (string) $category->id ? 'selected' : '' }}>{{$category->name}}</option>
+									<option value="{{$category->id}}" class='cat_opt' data-catalog="{{$category->is_catalog ? 1 : 0}}" data-symbol="{{ $category->symbol }}" {{ (string) $selectedCategory === (string) $category->id ? 'selected' : '' }}>{{$category->name}}</option>
 									@endforeach
 								</select>
 							</div>
@@ -127,6 +134,26 @@
 								<button type="button" class="btn btn-info" id="open-item-picker" data-toggle="modal" data-target="#item-picker-modal">
 									<i class="fa fa-plus"></i> Add Item
 								</button>
+							</div>
+						</div>
+
+						{{-- Spares only: the machinery these spares are for. The Spares
+							 form opens with this block, so it's shown as soon as Spares is
+							 picked - optional, same as the paper form leaves it blank for
+							 anyone to fill in by hand if it isn't known yet. --}}
+						<div id="machinery-block" class="card mt-3" style="display:none;">
+							<div class="card-body">
+								<h6 class="mb-3" style="font-weight:600;">Machinery Details</h6>
+								<div class="form-row">
+									@foreach(\App\RequisitionPrintForm::MACHINERY_FIELDS as $column => $label)
+									{{-- Two per row filling the full width (Name + Maker, Model + Type), Maker Contact on its own full row. --}}
+									<div class="form-group col-md-{{ $column === 'maker_contact' ? 12 : 6 }}">
+										<label for="{{ $column }}">{{ $label }}</label>
+										<input type="text" class="form-control machinery-input" id="{{ $column }}" name="{{ $column }}" maxlength="{{ in_array($column, ['machinery_model', 'machinery_type'], true) ? 120 : 255 }}"
+											value="{{ old($column, $order->{$column}) }}">
+									</div>
+									@endforeach
+								</div>
 							</div>
 						</div>
 
@@ -161,13 +188,26 @@
 									 pushed the whole page wider than the viewport. Let it take
 									 the width its content actually needs and scroll horizontally
 									 inside this box instead - never the page itself. --}}
-								<div class="table-responsive">
+								{{-- Rebuilt wholesale (not just its header cells) when the category
+									 changes - see rebuildIdentityColumns() in the script below.
+									 DataTables 1.10.19 stamps column-width bookkeeping onto a
+									 <th> it has seen before, and on a destroy+reinit with FEWER
+									 columns than last time that stale bookkeeping crashes its own
+									 width calculation - reusing the same <table> node across a
+									 column-count change just isn't safe in this version, so a
+									 fresh node is given to it instead. --}}
+								<div class="table-responsive" id="order-items-table-wrap">
 									<table id="example1" class="table table-striped table-bordered orderedItemTable" style="width:auto; min-width:100%;">
 										<thead>
 											<tr>
 												<th>SL NO</th>
-												<th>Item Name with full Specifications</th>
-												<th>IMPA Code</th>
+												{{-- Identity columns follow the category's own BSC form (App\RequisitionPrintForm) -
+													 Spares shows drawing/part/article numbers and manufacturer, Stores an
+													 IMPA code, and so on. class="identity-col" is how the JS finds and
+													 replaces these when the category is switched. --}}
+												@foreach($headCols as $col)
+												<th class="identity-col">{{ $col['label'] }}</th>
+												@endforeach
 												<th>Unit</th>
 												<th>Opening Stock</th>
 												<th>Quantity of Last Supply</th>
@@ -191,8 +231,17 @@
 												 only from the page. --}}
 											<tr id="row_ordered_item-{{ $orderItem->item_id }}" data-saved="1" data-item-id="{{ $orderItem->item_id }}">
 												<td><b class="serial">{{ $loop->iteration }}</b></td>
-												<td>{{ $orderItem->item->name ?? '' }}<input type="hidden" name="item_id[]" value="{{ $orderItem->item_id }}"></td>
-												<td>{{ $orderItem->item->article_number ?? '' }}</td>
+												{{-- The hidden item_id[] input rides on whichever identity column is
+													 the item's name (always the first one) - every category's form
+													 leads with it. --}}
+												@foreach($headCols as $col)
+												@php $cellValue = \App\RequisitionPrintForm::valueFor($col['get'], $orderItem, $liveStock); @endphp
+												@if($loop->first)
+												<td>{!! nl2br(e($cellValue !== '' ? $cellValue : ($orderItem->item->name ?? ''))) !!}<input type="hidden" name="item_id[]" value="{{ $orderItem->item_id }}"></td>
+												@else
+												<td>{{ $cellValue }}</td>
+												@endif
+												@endforeach
 												<td>{{ $orderItem->item->unit ?? '' }}</td>
 												<td>{{ $orderItem->opening_stock ?? '' }}</td>
 												<td>{{ $orderItem->last_supply_qty ?? '' }}</td>
@@ -354,24 +403,146 @@
 @section('home-js')
 <script>
 $(function () {
+	// One requisition = one category. Switching category with items already
+	// on the list asks first (same as the service requisition form's
+	// "Change service type?"), and on Yes clears the list - saved lines are
+	// removed from the draft too, so they don't come back on reload. Bound
+	// before every other change handler on the select, so the switch is held
+	// back until the officer has answered.
+	var $category = $('#cate_name');
+	$category.data('prev', $category.val());
+
+	function itemRows() {
+		return $('#example1 tbody tr').filter(function () { return $(this).find('input[name="item_id[]"]').length > 0; });
+	}
+
+	function clearAllItems() {
+		var csrf = $('meta[name="csrf-token"]').attr('content');
+		var removals = [];
+		itemRows().each(function () {
+			var row = $(this);
+			if (row.data('saved')) {
+				removals.push($.ajax({
+					url: '{{ url("/requisition/".$order->id."/items") }}/' + row.data('item-id') + '/remove',
+					method: 'POST',
+					data: { _token: csrf }
+				}));
+			}
+			pageOrderTable.row(row).remove();
+		});
+		pageOrderTable.draw();
+		return $.when.apply($, removals);
+	}
+
+	$category.on('change', function (e) {
+		var prev = $category.data('prev');
+		var next = $category.val();
+		var count = itemRows().length;
+
+		if (count === 0 || !prev || next === prev) {
+			if (next && next !== prev) {
+				rebuildIdentityColumns($category.children('option:selected').data('symbol'));
+			}
+			$category.data('prev', next);
+			return;
+		}
+
+		// Hold the switch back until the officer answers.
+		e.stopImmediatePropagation();
+		$category.val(prev);
+
+		swal({
+			title: 'Change category?',
+			text: 'The ' + count + ' item(s) already added belong to the other category and will be removed.',
+			type: 'warning',
+			showCancelButton: true,
+			confirmButtonColor: '#d33',
+			confirmButtonText: 'Yes, start the list again',
+			cancelButtonText: 'No, keep them',
+		}).then(function (result) {
+			if (result === true || (result && result.value)) {
+				clearAllItems().always(function () {
+					$category.val(next).trigger('change');
+				});
+			}
+		}, function () { /* cancelled - category stays as it was */ });
+		return false;
+	});
+
+	// Machinery Details only shows for Spares - optional, nothing to require.
+	function syncMachineryBlock() {
+		var spares = $('#cate_name option:selected').data('symbol') === 'SPR';
+		$('#machinery-block').toggle(spares);
+	}
+	$('#cate_name').on('change', syncMachineryBlock);
+	syncMachineryBlock();
+
+	// Every category's identity columns (label + which field to read), the
+	// same definitions the printed form and detail page use (see
+	// App\RequisitionPrintForm) - embedded once server-side so the item
+	// picker's added rows and a category switch both draw from the same
+	// source of truth instead of a second, JS-only copy of the list.
+	var REQ_HEAD_COLUMNS = {!! $headColumnsBySymbol->toJson() !!};
+	// Which columns the table is currently built for - starts as whatever the
+	// server rendered the thead with, and is replaced in rebuildIdentityColumns().
+	var currentIdentityColumns = {!! collect($headCols)->toJson() !!};
+
 	// dataForm.js already calls $('#example1').DataTable() with defaults
 	// inside its own closure (assigned there to a local `orderTable` this
 	// script can't see) - destroy+reinit here so this page can apply its own
 	// options (no pagination/length menu - every added item should just be
 	// visible in one list) and get a usable reference to the table back.
-	var pageOrderTable = $('#example1').DataTable({
-		destroy: true,
-		paging: false,
-		lengthChange: false,
-		info: false,
-		// Sorting by any column made no sense here anyway (SL NO is just the
-		// order items were added in, not a stable id to sort by) - and with
-		// 12 columns already tight for space, cramming a sort-icon glyph into
-		// every header on top of that was the other half of why they were
-		// wrapping unreadably ("Quantit / y of Last / Supply").
-		ordering: false,
-		dom: 'frt',
-	});
+	// Wrapped in a function since switching category rebuilds the thead
+	// (a different number of identity columns) and has to reinit on top of it.
+	function initOrderTable() {
+		return $('#example1').DataTable({
+			destroy: true,
+			paging: false,
+			lengthChange: false,
+			info: false,
+			// Sorting by any column made no sense here anyway (SL NO is just the
+			// order items were added in, not a stable id to sort by) - and with
+			// a dozen-plus columns already tight for space, cramming a
+			// sort-icon glyph into every header on top of that was the other
+			// half of why they were wrapping unreadably
+			// ("Quantit / y of Last / Supply").
+			ordering: false,
+			dom: 'frt',
+		});
+	}
+
+	var pageOrderTable = initOrderTable();
+
+	// The tail headers - everything after the identity columns - never change
+	// with category, so they're the one piece of markup worth keeping as a
+	// plain constant rather than rebuilding from scratch each time.
+	var ORDER_TABLE_TAIL_HEAD =
+		'<th>Unit</th><th>Opening Stock</th><th>Quantity of Last Supply</th>'
+		+ '<th>Date of Last Supply</th><th>In Stock</th><th>Required</th>'
+		+ '<th>Attachments</th><th>Office Use</th><th class="action">Action</th>';
+
+	function tableSkeletonHtml(identityColumns) {
+		var identityHead = identityColumns.map(function (col) {
+			return '<th class="identity-col">' + esc(col.label) + '</th>';
+		}).join('');
+		return '<table id="example1" class="table table-striped table-bordered orderedItemTable" style="width:auto; min-width:100%;">'
+			+ '<thead><tr><th>SL NO</th>' + identityHead + ORDER_TABLE_TAIL_HEAD + '</tr></thead>'
+			+ '<tbody></tbody></table>';
+	}
+
+	// Gives the table a whole new DOM node built for the chosen category's
+	// identity columns, and initialises DataTables fresh on top of it - see
+	// the comment on #order-items-table-wrap for why this replaces the node
+	// rather than editing the existing one's header cells in place. Only
+	// called once the category change has actually been allowed through (see
+	// the "Change category?" guard above) - the table is always empty at
+	// that point (the guard clears it first), so there's no row data to
+	// carry across.
+	function rebuildIdentityColumns(symbol) {
+		currentIdentityColumns = REQ_HEAD_COLUMNS[symbol] || REQ_HEAD_COLUMNS['STR'];
+		$('#order-items-table-wrap').html(tableSkeletonHtml(currentIdentityColumns));
+		pageOrderTable = initOrderTable();
+	}
 
 	// Persistence for this page is server-side per draft (Save & Next), so the
 	// draft's own saved lines - rendered into the table above - are the only
@@ -393,6 +564,37 @@ $(function () {
 
 	function esc(value) {
 		return $('<div>').text(value === null || value === undefined ? '' : value).html();
+	}
+
+	// Mirrors App\RequisitionPrintForm::valueFor()/PLACEHOLDERS exactly, for
+	// the handful of get-keys HEAD_COLUMNS actually uses - a staged row needs
+	// to read these from the picker's `staged` item the same way the server
+	// reads them from a saved OrderItem, so a row looks identical whichever
+	// way it got onto the table.
+	var IDENTITY_PLACEHOLDERS = ['-', '--', '—', 'none', 'n/a', 'na', 'null', 'nil'];
+	function stripPlaceholder(value) {
+		if (value === undefined || value === null) { return ''; }
+		value = String(value).trim();
+		return IDENTITY_PLACEHOLDERS.indexOf(value.toLowerCase()) !== -1 ? '' : value;
+	}
+	function valueForIdentityColumn(get, item) {
+		switch (get) {
+			case 'name': return stripPlaceholder(item.name);
+			case 'name_with_spec':
+				var name = stripPlaceholder(item.name), description = stripPlaceholder(item.description);
+				return description ? (name + '\n' + description) : name;
+			case 'name_with_manufacturer':
+				var nm = stripPlaceholder(item.name), mfr = stripPlaceholder(item.manufacturer);
+				return mfr ? (nm + ' - ' + mfr) : nm;
+			case 'impa_code': return stripPlaceholder(item.impa_code);
+			case 'article_number': return stripPlaceholder(item.article_number);
+			case 'drawing_number': return stripPlaceholder(item.drawing_number);
+			case 'part_number': return stripPlaceholder(item.part_number);
+			case 'brand': return stripPlaceholder(item.manufacturer);
+			case 'purpose': return stripPlaceholder(item.description);
+			case 'equipment': return stripPlaceholder(item.item_group_name);
+			default: return '';
+		}
 	}
 
 	/* ---------- Item picker modal: browse + search + stage + commit ---------- */
@@ -515,6 +717,12 @@ $(function () {
 		// row - without this, In Stock stayed blank for anything added through
 		// the picker even though the card right above it showed the figure.
 		return '<div class="item-picker-card" data-id="' + item.id + '" data-name="' + esc(item.name) + '" data-unit="' + esc(item.unit) + '" data-article="' + esc(item.article_number) + '" '
+			// The rest of the identity fields a category's form might ask for
+			// (App\RequisitionPrintForm) - carried the same way as article
+			// number above, so whichever ones the current category needs are
+			// there when the row is actually built in #commit-staged-items.
+			+ 'data-impa="' + esc(item.impa_code) + '" data-drawing="' + esc(item.drawing_number) + '" data-part="' + esc(item.part_number) + '" '
+			+ 'data-manufacturer="' + esc(item.manufacturer) + '" data-description="' + esc(item.description) + '" data-equipment="' + esc(item.item_group_name) + '" '
 			+ 'data-stock-qty="' + (item.stock_qty === undefined ? '' : item.stock_qty) + '" '
 			+ 'data-opening-stock="' + (item.opening_stock === undefined || item.opening_stock === null ? '' : item.opening_stock) + '" '
 			+ 'data-last-supply-qty="' + (item.last_supply_qty === undefined || item.last_supply_qty === null ? '' : item.last_supply_qty) + '" '
@@ -620,6 +828,11 @@ $(function () {
 
 		staged[id] = {
 			id: id, name: card.data('name'), unit: card.data('unit'), article_number: card.data('article'), qty: qty,
+			// The rest of what a category's identity columns might ask for -
+			// see itemCardHtml for where these data-* attributes come from,
+			// and valueForIdentityColumn() below for where they're read back.
+			impa_code: card.data('impa'), drawing_number: card.data('drawing'), part_number: card.data('part'),
+			manufacturer: card.data('manufacturer'), description: card.data('description'), item_group_name: card.data('equipment'),
 			stockQty: card.data('stock-qty'), openingStock: card.data('opening-stock'),
 			lastSupplyQty: card.data('last-supply-qty'), lastSupplyDate: card.data('last-supply-date')
 		};
@@ -653,14 +866,16 @@ $(function () {
 			var orBlank = function (value) {
 				return (value === undefined || value === null || value === '') ? '' : esc(String(value));
 			};
-			// Column order matches the paper-form layout (SL NO / Item Name /
-			// IMPA Code / Unit / Opening Stock / Qty of Last Supply / Date of
-			// Last Supply / In Stock / Required / Attachments / Office Use /
-			// Action). The four stock figures come from the same data the
-			// picker card showed - carried onto the card as data attributes,
-			// then into `staged` on Add (see itemCardHtml / .item-picker-add).
-			// Article Number stands in for IMPA Code since imported items
-			// always carry the '-' placeholder for the latter.
+			// Column order matches the paper-form layout (SL NO / identity
+			// columns for this category / Unit / Opening Stock / Qty of Last
+			// Supply / Date of Last Supply / In Stock / Required /
+			// Attachments / Office Use / Action). The identity columns - how
+			// many there are and what each one reads - follow
+			// currentIdentityColumns (see rebuildIdentityColumns()), the same
+			// definitions the printed form and detail page use. The stock
+			// figures come from the same data the picker card showed -
+			// carried onto the card as data attributes, then into `staged` on
+			// Add (see itemCardHtml / .item-picker-add).
 			//
 			// A staged row's own order_items id doesn't exist until Save & Next,
 			// so a file can't be LINKED yet - but it can still be UPLOADED right
@@ -668,20 +883,26 @@ $(function () {
 			// attachment_ids[itemId][] input for storeStep2() to link once the
 			// row is real. attachmentsCellHtml (defined below) builds the same
 			// chip+hidden-input markup this cell will be re-rendered with.
-			var stagedRow = pageOrderTable.row.add([
-				'<b class="serial">' + idx + '</b>',
-				esc(item.name) + '<input type="hidden" name="item_id[]" value="' + item.id + '">',
-				esc(item.article_number),
-				esc(item.unit),
-				orBlank(item.openingStock),
-				orBlank(item.lastSupplyQty),
-				orBlank(item.lastSupplyDate),
-				orBlank(item.stockQty),
-				'<input type="number" min="1" class="form-control form-control-sm required-qty" name="item_qty[]" style="width:80px;" value="' + item.qty + '" data-original="' + item.qty + '" required>',
-				attachmentsCellHtml(item.id, [], esc(item.name)),
-				'',
-				'<button type="button" class="btn btn-danger btn-sm delete-order-item-row"><i class="fas fa-trash-alt"></i></button>',
-			]).draw().node();
+			var identityCells = currentIdentityColumns.map(function (col, colIdx) {
+				var raw = valueForIdentityColumn(col.get, item);
+				var display = raw === '' ? '' : esc(raw).replace(/\n/g, '<br>');
+				// The item_id[] input rides on the first identity column -
+				// every category's form leads with the item's name.
+				return colIdx === 0 ? (display || esc(item.name)) + '<input type="hidden" name="item_id[]" value="' + item.id + '">' : display;
+			});
+			var stagedRow = pageOrderTable.row.add(
+				['<b class="serial">' + idx + '</b>'].concat(identityCells, [
+					esc(item.unit),
+					orBlank(item.openingStock),
+					orBlank(item.lastSupplyQty),
+					orBlank(item.lastSupplyDate),
+					orBlank(item.stockQty),
+					'<input type="number" min="1" class="form-control form-control-sm required-qty" name="item_qty[]" style="width:80px;" value="' + item.qty + '" data-original="' + item.qty + '" required>',
+					attachmentsCellHtml(item.id, [], esc(item.name)),
+					'',
+					'<button type="button" class="btn btn-danger btn-sm delete-order-item-row"><i class="fas fa-trash-alt"></i></button>',
+				])
+			).draw().node();
 			stagedRow.id = 'row_ordered_item-' + item.id;
 
 			// row.add() builds the <td> wrappers itself, so the cell contents

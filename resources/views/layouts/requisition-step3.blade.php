@@ -38,6 +38,13 @@
 						</div>
 						<div class="col-md-9"><strong>Reason of Requisition:</strong><br>{{ $order->reason }}</div>
 					</div>
+					@if(\App\RequisitionPrintForm::hasMachineryBlock($order->category->symbol ?? null))
+					<div class="row mb-3">
+						@foreach(\App\RequisitionPrintForm::MACHINERY_FIELDS as $column => $label)
+						<div class="col-md-{{ $loop->last ? 6 : 3 }} mb-2"><strong>{{ $label }}:</strong><br>{{ $order->{$column} ?: '—' }}</div>
+						@endforeach
+					</div>
+					@endif
 
 					<hr>
 

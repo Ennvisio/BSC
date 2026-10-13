@@ -22,28 +22,19 @@
 	 reuse this same view for every ship role without passing $stats, so
 	 they render exactly as before. --}}
 @isset($stats)
+@php
+	// The officers who raise requisitions, and the Master, get an extra "Delivered" card in each
+	// row (supplied / work done, waiting on their confirmation - what used to
+	// be labelled Approved), so four a row. "Received" = confirmed on board.
+	$raiser = in_array(auth()->user()->role->role, array_merge(\App\Order::RAISER_ROLES, ['master']), true);
+	$cardCol = $raiser ? 'col-6 col-md-3 mb-3' : 'col-6 col-md-4 mb-3';
+@endphp
 @if(!empty($serviceStats))
 <div class="srd-stat-section"><i class="fas fa-list-alt"></i> Item Requisition</div>
 @endif
 {{-- No mb-3 on the row: every card column already carries one. --}}
 <div class="row">
-	{{-- Only Chief Officer/Second Engineer can ever start a draft (they're the
-		 only roles the wizard's "Add Requisition" link is shown to) - Master
-		 and Chief Engineer would always see a meaningless permanent 0 here. --}}
-	@if(in_array(auth()->user()->role->role, ['chief-officer', 'second-engineer']))
-	<div class="col-6 col-md-4 mb-3">
-		<a href="{{url('/home')}}" class="text-decoration-none">
-			<div class="srd-stat-card">
-				<div class="srd-stat-icon is-amber"><i class="fas fa-file-alt"></i></div>
-				<div class="srd-stat-body">
-					<div class="srd-stat-label">My Draft Requisitions</div>
-					<div class="srd-stat-value">{{ $stats['draft'] }}</div>
-				</div>
-			</div>
-		</a>
-	</div>
-	@endif
-	<div class="col-6 col-md-4 mb-3">
+	<div class="{{ $cardCol }}">
 		<a href="{{url('/pending/requisition')}}" class="text-decoration-none">
 			<div class="srd-stat-card">
 				<div class="srd-stat-icon is-blue"><i class="fas fa-hourglass-half"></i></div>
@@ -54,24 +45,37 @@
 			</div>
 		</a>
 	</div>
-	<div class="col-6 col-md-4 mb-3">
+	@if($raiser)
+	<div class="{{ $cardCol }}">
 		<a href="{{url('/approved/requisition')}}" class="text-decoration-none">
 			<div class="srd-stat-card">
-				<div class="srd-stat-icon is-green"><i class="fas fa-truck"></i></div>
+				<div class="srd-stat-icon is-green"><i class="fas fa-check-circle"></i></div>
 				<div class="srd-stat-body">
-					<div class="srd-stat-label">Approved by SSM</div>
+					<div class="srd-stat-label">Delivered</div>
 					<div class="srd-stat-value">{{ $stats['delivered'] }}</div>
 				</div>
 			</div>
 		</a>
 	</div>
-	<div class="col-6 col-md-4 mb-3">
+	@endif
+	<div class="{{ $cardCol }}">
 		<a href="{{url('/received/requisition')}}" class="text-decoration-none">
 			<div class="srd-stat-card">
-				<div class="srd-stat-icon is-slate"><i class="fas fa-inbox"></i></div>
+				<div class="srd-stat-icon is-indigo"><i class="fas fa-inbox"></i></div>
 				<div class="srd-stat-body">
-					<div class="srd-stat-label">Delivered</div>
+					<div class="srd-stat-label">Received</div>
 					<div class="srd-stat-value">{{ $stats['received'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	<div class="{{ $cardCol }}">
+		<a href="{{ route('rejected.requisition') }}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-pink"><i class="fas fa-times-circle"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Rejected</div>
+					<div class="srd-stat-value">{{ $stats['rejected'] }}</div>
 				</div>
 			</div>
 		</a>
@@ -82,7 +86,7 @@
 	 their own labelled row (each card links to the matching list). --}}
 <div class="srd-stat-section"><i class="fas fa-wrench"></i> Service Requisition</div>
 <div class="row">
-	<div class="col-6 col-md-4 mb-3">
+	<div class="{{ $cardCol }}">
 		<a href="{{ route('service-requisition.pending') }}" class="text-decoration-none">
 			<div class="srd-stat-card">
 				<div class="srd-stat-icon is-blue"><i class="fas fa-hourglass-half"></i></div>
@@ -93,18 +97,31 @@
 			</div>
 		</a>
 	</div>
-	<div class="col-6 col-md-4 mb-3">
+	@if($raiser)
+	<div class="{{ $cardCol }}">
+		<a href="{{ route('service-requisition.index', ['status' => 'delivered']) }}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-green"><i class="fas fa-check-circle"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Delivered</div>
+					<div class="srd-stat-value">{{ $serviceStats['awaiting_confirmation'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	@endif
+	<div class="{{ $cardCol }}">
 		<a href="{{ route('service-requisition.approved') }}" class="text-decoration-none">
 			<div class="srd-stat-card">
-				<div class="srd-stat-icon is-green"><i class="fas fa-clipboard"></i></div>
+				<div class="srd-stat-icon is-indigo"><i class="fas fa-inbox"></i></div>
 				<div class="srd-stat-body">
-					<div class="srd-stat-label">Approved</div>
+					<div class="srd-stat-label">Received</div>
 					<div class="srd-stat-value">{{ $serviceStats['approved'] }}</div>
 				</div>
 			</div>
 		</a>
 	</div>
-	<div class="col-6 col-md-4 mb-3">
+	<div class="{{ $cardCol }}">
 		<a href="{{ route('service-requisition.rejected') }}" class="text-decoration-none">
 			<div class="srd-stat-card">
 				<div class="srd-stat-icon is-pink"><i class="fas fa-times-circle"></i></div>

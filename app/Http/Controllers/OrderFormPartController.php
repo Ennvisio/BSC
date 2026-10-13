@@ -68,6 +68,14 @@ class OrderFormPartController extends Controller
 
     public function store(Request $request, Order $order, string $part)
     {
+        // Part A isn't "owned" the way B/C are - it's the ship's part,
+        // already declared before submission. This only lets Master/Chief
+        // Engineer correct it while it's on their desk; it never gates
+        // Approve/Forward the way outstanding() does for B/C.
+        if ($part === RequisitionForm::PART_A) {
+            return $this->updatePartA($request, $order);
+        }
+
         if (! isset(self::PART_OWNERS[$part])) {
             return response()->json(['message' => 'Unknown form part.'], 404);
         }
@@ -121,6 +129,53 @@ class OrderFormPartController extends Controller
             'message' => 'Part '.$part.' completed.'.($part === RequisitionForm::PART_C
                 ? ' You can now start procurement.'
                 : ' You can now approve or forward this requisition.'),
+            'redirect' => route('view.order.detail', $order->id),
+        ]);
+    }
+
+    /**
+     * Master correcting what Chief Officer sent in Part A, or Chief Engineer
+     * correcting what Second Engineer sent - see Order::canEditPartA(). The
+     * ship's original declaration (who declared it true and correct, and
+     * when) is left untouched; this only records who last corrected it.
+     */
+    private function updatePartA(Request $request, Order $order)
+    {
+        $role = auth()->user()->role->role ?? null;
+
+        if (! $order->canEditPartA($role)) {
+            return response()->json([
+                'message' => 'Part A is not open for you to edit right now.',
+            ], 403);
+        }
+
+        $part = RequisitionForm::PART_A;
+        $result = RequisitionForm::clean($part, (array) $request->input('q', []));
+
+        if ($result['errors'] !== []) {
+            return response()->json([
+                'message' => 'Answer every question before submitting.',
+                'errors' => $result['errors'],
+            ], 422);
+        }
+
+        $existing = $order->formPart($part);
+
+        OrderFormPart::updateOrCreate(
+            ['order_id' => $order->id, 'part' => $part],
+            [
+                'form_version' => RequisitionForm::VERSION,
+                'answers' => $result['answers'],
+                'declaration' => $existing->declaration ?? null,
+                'completed_at' => $existing->completed_at ?? Carbon::now(),
+                'filled_by' => $existing->filled_by ?? auth()->id(),
+                'edited_by' => auth()->id(),
+                'edited_at' => Carbon::now(),
+            ]
+        );
+
+        return response()->json([
+            'message' => 'Part A updated.',
             'redirect' => route('view.order.detail', $order->id),
         ]);
     }

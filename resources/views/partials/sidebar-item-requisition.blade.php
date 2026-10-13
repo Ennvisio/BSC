@@ -11,7 +11,7 @@
 --}}
 @php
 	$role = auth()->user()->role->role ?? null;
-	$childUris = ['pending/requisition', 'my/approvals', 'approved/requisition', 'received/requisition', 'order/detail/{order_id}'];
+	$childUris = ['pending/requisition', 'my/approvals', 'approved/requisition', 'received/requisition', 'rejected/requisition', 'order/detail/{order_id}'];
 	$groupActive = in_array(Route::current()->uri(), $childUris, true) || Route::is('requisition.*');
 	$link = fn ($uris) => in_array(Route::current()->uri(), (array) $uris, true) ? 'active' : '';
 @endphp
@@ -31,5 +31,8 @@
 		@endif
 		<a href="{{ url('/approved/requisition') }}" class="srd-nav-item {{ $link('approved/requisition') }}"><i class="fas fa-clipboard"></i>Approved Requisition</a>
 		<a href="{{ url('/received/requisition') }}" class="srd-nav-item {{ $link('received/requisition') }}"><i class="fas fa-inbox"></i>{{ $mode === 'ship' ? 'Delivered' : 'Received' }} Requisition</a>
+		@if($mode === 'ship')
+		<a href="{{ route('rejected.requisition') }}" class="srd-nav-item {{ $link('rejected/requisition') }}"><i class="fas fa-times-circle"></i>Rejected Requisition</a>
+		@endif
 	</div>
 </div>

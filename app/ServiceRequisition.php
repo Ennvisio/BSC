@@ -107,25 +107,63 @@ class ServiceRequisition extends Model
     }
 
     /**
-     * The service requisition lists: Pending = submitted and not yet received
-     * on board, Approved = the vessel has confirmed the service was received
-     * (whatever invoicing/payment is still to come), Rejected = called off.
+     * The service requisition lists. Where the line between Pending and
+     * Approved falls depends on whose list it is:
+     *  - ship side: Pending until the service has been received on board,
+     *    Approved once the vessel has confirmed it;
+     *  - SRD side ($untilClosed): Invoice Verification, Finance Clearance and
+     *    Payment come AFTER receipt and are SRD's own work, so a requisition
+     *    stays Pending for them until it is closed, and only then is Approved.
+     * Rejected = called off, either way.
      */
-    public function scopePendingList($query)
+    public function scopePendingList($query, bool $untilClosed = false, bool $excludeAwaitingConfirmation = false)
     {
+        $done = $untilClosed ? [ServiceProcurementStage::CLOSED] : ServiceProcurementStage::receivedStages();
+        // For the officer who raised it, work SRD has finished and that is
+        // waiting on THEIR confirmation is "Approved", its own card/list, not Pending.
+        if ($excludeAwaitingConfirmation && ! $untilClosed) {
+            $done[] = ServiceProcurementStage::RECEIPT_VERIFICATION;
+        }
+
         return $query->where('is_submitted', true)
             ->where('status', '!=', 'rejected')
-            ->where(function ($q) {
+            ->where(function ($q) use ($done) {
                 $q->whereNull('procurement_stage')
-                    ->orWhereNotIn('procurement_stage', ServiceProcurementStage::receivedStages());
+                    ->orWhereNotIn('procurement_stage', $done);
             });
     }
 
-    public function scopeApprovedList($query)
+    public function scopeApprovedList($query, bool $untilClosed = false)
     {
+        $done = $untilClosed ? [ServiceProcurementStage::CLOSED] : ServiceProcurementStage::receivedStages();
+
         return $query->where('is_submitted', true)
             ->where('status', '!=', 'rejected')
-            ->whereIn('procurement_stage', ServiceProcurementStage::receivedStages());
+            ->whereIn('procurement_stage', $done);
+    }
+
+    /**
+     * The super-admin overview's buckets, the service equivalent of
+     * Order::scopeOverviewStatus(): Pending = not yet done by SRD;
+     * Delivered = SRD completed Delivery, the vessel hasn't confirmed;
+     * Received = the vessel confirmed the work (invoice/payment may still
+     * follow); Rejected = called off.
+     */
+    public function scopeOverviewStatus($query, ?string $status)
+    {
+        $received = ServiceProcurementStage::receivedStages();
+        $live = fn ($q) => $q->where('is_submitted', true)->where('status', '!=', 'rejected');
+
+        return match ($status) {
+            'pending' => $live($query)->where(function ($q) use ($received) {
+                $q->whereNull('procurement_stage')
+                    ->orWhereNotIn('procurement_stage', array_merge($received, [ServiceProcurementStage::RECEIPT_VERIFICATION]));
+            }),
+            'delivered' => $live($query)->where('procurement_stage', ServiceProcurementStage::RECEIPT_VERIFICATION),
+            'received' => $live($query)->whereIn('procurement_stage', $received),
+            'rejected' => $query->where('status', 'rejected'),
+            default => $query,
+        };
     }
 
     public function scopeRejectedList($query)
