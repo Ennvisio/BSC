@@ -30,6 +30,8 @@ class StockConsumption extends Model
     const TYPE_EXPIRED = 'expired';
     const TYPE_LOST = 'lost';
     const TYPE_OTHER = 'other';
+    /** Taken for a PMS job; written by PmsPartsService, not offered in the consumption form's TYPES. */
+    const TYPE_PMS_JOB = 'pms_job';
 
     const TYPES = [
         self::TYPE_USED => 'Used',
@@ -70,6 +72,10 @@ class StockConsumption extends Model
 
     public function typeLabel(): string
     {
+        if ($this->consumption_type === self::TYPE_PMS_JOB) {
+            return 'PMS job';
+        }
+
         return self::TYPES[$this->consumption_type] ?? ucfirst($this->consumption_type);
     }
 }

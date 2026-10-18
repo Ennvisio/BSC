@@ -143,6 +143,8 @@
   @endif
   @endif
 
+  @include('partials.sidebar-pms')
+
   {{-- Parenthesised deliberately: && binds tighter than ||, so written as
        "guard && A || B" the guard covers only A and B is left to evaluate
        on a null user. --}}

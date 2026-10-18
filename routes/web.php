@@ -206,6 +206,46 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   Route::get('/vessel/equipment/template', 'EquipmentController@template')->name('equipment.template');
   Route::post('/vessel/equipment/upload', 'EquipmentController@upload')->name('equipment.upload');
 
+  // PMS (planned maintenance) - step 1: master data, the per-vessel
+  // component tree and running-hour readings. Who can do what is enforced in
+  // the controllers (see Concerns\PmsAccess), same as the rest of this app.
+  Route::get('/pms/components', 'PmsComponentController@index')->name('pms.components.index');
+  Route::get('/pms/components/import', 'PmsComponentImportController@create')->name('pms.components.import');
+  Route::get('/pms/components/import/template', 'PmsComponentImportController@template')->name('pms.components.import.template');
+  Route::post('/pms/components/import', 'PmsComponentImportController@upload')->name('pms.components.import.upload');
+  Route::get('/pms/components/import/{token}', 'PmsComponentImportController@preview')->whereUuid('token')->name('pms.components.import.preview');
+  Route::post('/pms/components/import/{token}/confirm', 'PmsComponentImportController@confirm')->whereUuid('token')->name('pms.components.import.confirm');
+  Route::post('/pms/components', 'PmsComponentController@store')->name('pms.components.store');
+  Route::post('/pms/components/{component}/update', 'PmsComponentController@update')->name('pms.components.update');
+  Route::post('/pms/components/{component}/delete', 'PmsComponentController@destroy')->name('pms.components.delete');
+  Route::get('/pms/components/{component}/readings', 'PmsCounterReadingController@index')->name('pms.readings.index');
+  Route::post('/pms/components/{component}/readings', 'PmsCounterReadingController@store')->name('pms.readings.store');
+  Route::post('/pms/readings/{reading}/delete', 'PmsCounterReadingController@destroy')->name('pms.readings.delete');
+  Route::get('/pms/counters', 'PmsCounterController@index')->name('pms.counters.index');
+  Route::post('/pms/counters', 'PmsCounterController@store')->name('pms.counters.store');
+  Route::get('/pms/master/{type}', 'PmsMasterDataController@index')->name('pms.master.index');
+  Route::post('/pms/master/{type}', 'PmsMasterDataController@store')->name('pms.master.store');
+  Route::post('/pms/master/{type}/{id}/update', 'PmsMasterDataController@update')->whereNumber('id')->name('pms.master.update');
+  Route::post('/pms/master/{type}/{id}/delete', 'PmsMasterDataController@destroy')->whereNumber('id')->name('pms.master.delete');
+  Route::get('/pms/jobs', 'PmsJobController@index')->name('pms.jobs.index');
+  Route::get('/pms/jobs/data', 'PmsJobController@data')->name('pms.jobs.data');
+  Route::get('/pms/jobs/export', 'PmsJobController@export')->name('pms.jobs.export');
+  Route::get('/pms/jobs/{job}', 'PmsJobController@show')->whereUuid('job')->name('pms.jobs.show');
+  Route::post('/pms/jobs/{job}/complete', 'PmsJobController@complete')->whereUuid('job')->name('pms.jobs.complete');
+  Route::post('/pms/jobs/{job}/reschedule', 'PmsJobController@reschedule')->whereUuid('job')->name('pms.jobs.reschedule');
+  Route::post('/pms/jobs/{job}/approve', 'PmsJobController@approve')->whereUuid('job')->name('pms.jobs.approve');
+  Route::post('/pms/components/{component}/job-definitions', 'PmsJobDefinitionController@store')->name('pms.job-definitions.store');
+  Route::get('/pms/job-definitions/{definition}', 'PmsJobDefinitionController@show')->name('pms.job-definitions.show');
+  Route::post('/pms/job-definitions/{definition}/update', 'PmsJobDefinitionController@update')->name('pms.job-definitions.update');
+  Route::get('/pms/parts', 'PmsRequiredPartController@index')->name('pms.parts.index');
+  Route::get('/pms/parts/search-items', 'PmsRequiredPartController@searchItems')->name('pms.parts.search-items');
+  Route::get('/pms/jobs/{job}/stock-items', 'PmsRequiredPartController@stockItems')->whereUuid('job')->name('pms.jobs.stock-items');
+  Route::post('/pms/jobs/{job}/parts', 'PmsRequiredPartController@store')->whereUuid('job')->name('pms.jobs.parts.store');
+  Route::post('/pms/jobs/{job}/requisition', 'PmsRequiredPartController@requisition')->whereUuid('job')->name('pms.jobs.requisition');
+  Route::post('/pms/parts/{part}/update', 'PmsRequiredPartController@update')->whereNumber('part')->name('pms.parts.update');
+  Route::post('/pms/parts/{part}/delete', 'PmsRequiredPartController@destroy')->whereNumber('part')->name('pms.parts.delete');
+  Route::post('/pms/parts/{part}/remove-from-requisition', 'PmsRequiredPartController@removeFromRequisition')->whereNumber('part')->name('pms.parts.remove-from-requisition');
+
   Route::get('/ports/search', 'PortController@search')->name('ports.search');
 
   Route::get('/home/user', 'HomeController@getUser');

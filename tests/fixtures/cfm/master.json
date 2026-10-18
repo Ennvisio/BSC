@@ -1,0 +1,30 @@
+{
+  "exportedAt": "2026-10-14T00:00:00Z",
+  "master": {
+    "ranks": [
+      {"ID": 1, "Name": "MASTER"},
+      {"ID": 5, "Name": "CHIEF ENGINEER"},
+      {"ID": 99, "Name": "SOME UNKNOWN RANK"}
+    ],
+    "jobTypes": {"Result": [
+      {"Guid": "jt-check", "Name": "CHECK", "Abbreviation": "CH"},
+      {"Guid": "jt-lubricate", "Name": "LUBRICATE", "Abbreviation": "LU"},
+      {"Guid": "jt-weird", "Name": "COMPANY SPECIFIC-BULK", "Abbreviation": "CSB"}
+    ]},
+    "locations": {"Result": [
+      {"Guid": "loc-engine", "Name": "ENGINE"},
+      {"Guid": "loc-deck", "Name": "DECK"}
+    ]},
+    "categories": {"Result": [
+      {"Guid": "cat-unknown", "Name": "Unknown"}
+    ]},
+    "conditions": [
+      {"Guid": "cond-good", "Name": "Good"},
+      {"Guid": "cond-not-classified", "Name": "Not Classified"}
+    ],
+    "manufacturers": [
+      {"Guid": "mfr-sperre", "Name": "Sperre"},
+      {"Guid": "mfr-blank", "Name": ""}
+    ]
+  }
+}
