@@ -45,6 +45,12 @@ storage/logs/*.log
 *.js.map
 
 # ============================================================
+# Third-party reference datasets - large, re-downloadable, not source.
+# The UN/LOCODE import command (ports:import) reads these at seed time.
+# ============================================================
+storage/app/unlocode/
+
+# ============================================================
 # User-uploaded runtime content (certificates, signatures, photos) —
 # written by the app at runtime, not part of the source tree.
 # ============================================================

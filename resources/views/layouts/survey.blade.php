@@ -3,6 +3,9 @@
 <div class="col-lg-6 col-xl-12">
 	<div class="card">
 		<div class="card-header pv-card-hader">
+			@if($lockedVessel)
+			<strong class="pptitle">Survey List &mdash; {{ $lockedVessel->name }}</strong>
+			@else
 			<strong class="pptitle">Survey Lists</strong>
 			<form id="order_search_form" class="form form-inline" method="post" action="{{url('/search/survey')}}">
 				@csrf
@@ -17,9 +20,10 @@
 					</select>
 				</div>
 				<button type="submit" class="btn btn-primary ml-2"> <i class="fa fa-search" aria-hidden="true"></i> Search </button>
-			</form>			
+			</form>
+			@endif
 
-			<div class="right-buttons">  
+			<div class="right-buttons">
 				<button type="button" class="btn btn-primary" data-toggle="modal" data-target="#myModal"> <i class="fas fa-plus-square"></i> Add New Survey </button>
 				<button class="btn btn-info btn-bvprint" onClick="print_this();"><i class="fa fa-print"></i>  Print</button>
 			</div>
@@ -34,7 +38,9 @@
 					<th>Society Name</th>
 					<th>Survey Date</th>
 					<th>Exp Date</th>
+					@if(!$lockedVessel)
 					<th>Vessel Name</th>
+					@endif
 					<th class="action">Action</th>
 				</thead>
 				<tbody>
@@ -46,7 +52,9 @@
 						<td>{{!empty($vessel_survey->society_name)?$vessel_survey->society_name:''}}</td>
 						<td>{{!empty($vessel_survey->survey_date)?$vessel_survey->survey_date:''}}</td>
 						<td>{{!empty($vessel_survey->survey_exp_date)?$vessel_survey->survey_exp_date:''}}</td>
+						@if(!$lockedVessel)
 						<td>{{!empty($vessel_survey->vessel->name)?$vessel_survey->vessel->name:''}}</td>
+						@endif
 						<td class="action">
 							<button class="btn btn-info edit-survey" data-id="{{$vessel_survey->id}}" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>
 							<button class="btn btn-danger delete-survey" data-id="{{$vessel_survey->id}}" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>
@@ -74,7 +82,7 @@
 				<div class="modal-body">
 					<div class="row justify-content-center form-group">
 						<div class="col-md-11 alert alert-danger alert-dismissible fade show form_error" style="display:none" role="alert">
-							<strong>Error Submission!!</strong> Please correct following info and resubmit. 
+							<strong>Error Submission!!</strong> Please correct following info and resubmit.
 							<label>    </label>
 							<button type="button" class="close close_error_alert">
 								<span aria-hidden="true">&times;</span>
@@ -86,6 +94,10 @@
 							<label for="Vessel_Name">Vessel: </label>
 						</div>
 						<div class="col-md-7">
+							@if($lockedVessel)
+							<input type="text" class="form-control" value="{{$lockedVessel->name}}" disabled>
+							<input type="hidden" name="Vessel_Name" value="{{$lockedVessel->id}}">
+							@else
 							<select class="form-control Vessel_Name" name="Vessel_Name">
 								<option selected="" value="">-- Choose Vessel --</option>
 								@if(!empty($vessels))
@@ -94,6 +106,7 @@
 								@endforeach
 								@endif
 							</select>
+							@endif
 						</div>
 					</div>
 					<div class="row justify-content-center form-group">
@@ -110,7 +123,7 @@
 								@endif
 							</select>
 						</div>
-					</div><!-- 
+					</div><!--
 					<div class="row justify-content-center form-group">
 						<div class="col-md-3">
 							<label for="Survey_Name">Survey Name: </label>
@@ -172,7 +185,7 @@
 				<div class="modal-body">
 					<div class="row justify-content-center form-group">
 						<div class="col-md-11 alert alert-danger alert-dismissible fade show form_error" style="display:none" role="alert">
-							<strong>Error Submission!!</strong> Please correct following info and resubmit. 
+							<strong>Error Submission!!</strong> Please correct following info and resubmit.
 							<label>    </label>
 							<button type="button" class="close close_error_alert">
 								<span aria-hidden="true">&times;</span>
@@ -184,6 +197,10 @@
 							<label for="Vessel_Name">Vessel Name: </label>
 						</div>
 						<div class="col-md-7">
+							@if($lockedVessel)
+							<input type="text" class="form-control" value="{{$lockedVessel->name}}" disabled>
+							<input type="hidden" name="Vessel_Name" value="{{$lockedVessel->id}}">
+							@else
 							<select class="form-control Vessel_Name" name="Vessel_Name">
 								<option selected="" value="" class='vessel_opt'>-- Choose Vessel --</option>
 								@if(!empty($vessels))
@@ -192,6 +209,7 @@
 								@endforeach
 								@endif
 							</select>
+							@endif
 						</div>
 					</div>
 					<!-- <div class="row justify-content-center form-group">

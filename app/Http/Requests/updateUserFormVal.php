@@ -29,6 +29,10 @@ class updateUserFormVal extends FormRequest
             'Vessel_Name' => 'required',
             'User_Role' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email,'.$_POST['user_id'].',id',
+            // Optional: editing a user's details should never force a
+            // password change. 'confirmed' only fires validation when
+            // 'password' is actually present, so leaving both blank passes.
+            'password' => 'nullable|string|min:6|confirmed',
         ];
     }
 }

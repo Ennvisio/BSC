@@ -177,12 +177,17 @@ img.police-st-field-loader {
 
 			<div class="row justify-content-center mb-3 mt-2">
 				<div class="col-md-10 changing-pass-wrap" style="">
+					{{-- Two separate forms, not one. Each posts only its own file, so
+						 replacing a signature no longer means re-picking a photo that
+						 is already on file. --}}
+					<h5><strong><i class="far fa-file"></i> File Upload</strong></h5>
+
 					<form class='form' action="{{url('/change/file')}}" method="post" enctype="multipart/form-data">
 						{{csrf_field()}}
-						<h5><strong><i class="far fa-file"></i> File Upload</strong></h5>
 						<div class="row form-group">
 							<div class="col-md-4 ">
 								<label class="vmiddle"> {{!empty(auth()->user()->photo) ? 'Change Photo' : 'Upload Photo'}} </label>
+								<div class="text-muted small">JPG, PNG or GIF, up to 5 MB.</div>
 							</div>
 							<div class="col-md-4">
 								<div class="image-show text-center">
@@ -193,7 +198,7 @@ img.police-st-field-loader {
 									@endif
 								</div>
 								@if(!empty(auth()->user()->photo))
-								<input type="file" accept="image/*" class="form-control" id="photo_exist" name="photo">
+								<input type="file" accept="image/*" class="form-control" id="photo_exist" name="photo" required="">
 								@else
 								<input type="file" accept="image/*" class="form-control" id="photo" name="photo" required="">
 								@endif
@@ -206,11 +211,17 @@ img.police-st-field-loader {
 									</span>
 								</div>
 								@endif
+								<button type="submit" class="btn btn-success float-right mt-2"><i class="fas fa-upload"></i> Upload Photo</button>
 							</div>
 						</div>
+					</form>
+
+					<form class='form' action="{{url('/change/file')}}" method="post" enctype="multipart/form-data">
+						{{csrf_field()}}
 						<div class="row form-group">
 							<div class="col-md-4">
 								<label class="vmiddle">{{!empty(auth()->user()->sign) ? 'Change Signature' : 'Upload Signature'}}</label>
+								<div class="text-muted small">JPG, PNG or GIF, up to 5 MB.</div>
 							</div>
 							<div class="col-md-4">
 								<div class="image-show text-center">
@@ -221,7 +232,7 @@ img.police-st-field-loader {
 									@endif
 								</div>
 								@if(!empty(auth()->user()->sign))
-								<input type="file" accept="image/*" class="usersign form-control" id="user_sign_ex" name="signature">
+								<input type="file" accept="image/*" class="usersign form-control" id="user_sign_ex" name="signature" required="">
 								@else
 								<input type="file" accept="image/*" class="usersign form-control" id="user_sign" name="signature" required="">
 								@endif
@@ -234,17 +245,9 @@ img.police-st-field-loader {
 									</span>
 								</div>
 								@endif
+								<button type="submit" class="btn btn-success float-right mt-2"><i class="fas fa-upload"></i> Upload Signature</button>
 							</div>
 						</div>
-						<div class="row form-group">
-							<div class="col-md-4">
-							</div>
-							<div class="col-md-4">
-								<button type="submit"  class="btn btn-success float-right">	<i class="fas fa-upload"></i> Upload</button>
-							</div>
-
-						</div>
-
 					</form>
 				</div>
 				
@@ -325,9 +328,13 @@ img.police-st-field-loader {
 	// 	showError: true,
 	// 	ignoreError: false
 	// });
+	// Matches the server's max:5120 rule exactly - a mismatch here would
+	// either block files the server accepts or wave through files it rejects.
+	var MAX_MB = 5;
+
 	function readURL(input) {
 		imgId = '#prev_'+ $(input).attr('id');
-		if (input.files && (input.files[0].size / 1024 / 1024) < 0.25) {
+		if (input.files && input.files[0] && (input.files[0].size / 1024 / 1024) <= MAX_MB) {
 			var reader = new FileReader();
 			reader.onload = function (e) {
 				$(imgId).attr('src', e.target.result);
@@ -339,9 +346,10 @@ img.police-st-field-loader {
 			$(input).siblings('div.err_msg').attr('hidden',true);
 		}
 		else{
-			$(input).val('');  
+			var mb = input.files && input.files[0] ? (input.files[0].size / 1024 / 1024).toFixed(1) : '?';
+			$(input).val('');
 			$(imgId).attr('hidden',true);
-			$(input).siblings('div.err_msg').find('span').text('File size exceeds 250 KB.Please reduce file size less than 250kb');
+			$(input).siblings('div.err_msg').find('span').text('That file is ' + mb + ' MB. Please choose one under ' + MAX_MB + ' MB.');
 			$(input).siblings('div.err_msg').attr('hidden',false);
 		}
 	}

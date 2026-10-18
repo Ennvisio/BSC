@@ -16,3 +16,7 @@ use Illuminate\Foundation\Inspiring;
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->describe('Display an inspiring quote');
+
+// PMS: DueSoon/Overdue depend on today's date, so open jobs are re-evaluated
+// every night. Needs the usual `* * * * * php artisan schedule:run` cron.
+Illuminate\Support\Facades\Schedule::command('pms:refresh-jobs')->dailyAt('00:15')->withoutOverlapping();

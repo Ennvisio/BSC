@@ -17,18 +17,202 @@
 		padding: 0;
 	}
 </style>
+{{-- Only present when HomeController@index built the dashboard for
+	 chief-officer/second-engineer - Pending/Approved/Received Requisition
+	 reuse this same view for every ship role without passing $stats, so
+	 they render exactly as before. --}}
+@isset($stats)
+@php
+	// The officers who raise requisitions, and the Master, get an extra "Delivered" card in each
+	// row (supplied / work done, waiting on their confirmation - what used to
+	// be labelled Approved), so four a row. "Received" = confirmed on board.
+	$raiser = in_array(auth()->user()->role->role, array_merge(\App\Order::RAISER_ROLES, ['master']), true);
+	$cardCol = $raiser ? 'col-6 col-md-3 mb-3' : 'col-6 col-md-4 mb-3';
+@endphp
+@if(!empty($serviceStats))
+<div class="srd-stat-section"><i class="fas fa-list-alt"></i> Item Requisition</div>
+@endif
+{{-- No mb-3 on the row: every card column already carries one. --}}
+<div class="row">
+	<div class="{{ $cardCol }}">
+		<a href="{{url('/pending/requisition')}}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-blue"><i class="fas fa-hourglass-half"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Pending</div>
+					<div class="srd-stat-value">{{ $stats['in_progress'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	@if($raiser)
+	<div class="{{ $cardCol }}">
+		<a href="{{url('/approved/requisition')}}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-green"><i class="fas fa-check-circle"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Delivered</div>
+					<div class="srd-stat-value">{{ $stats['delivered'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	@endif
+	<div class="{{ $cardCol }}">
+		<a href="{{url('/received/requisition')}}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-indigo"><i class="fas fa-inbox"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Received</div>
+					<div class="srd-stat-value">{{ $stats['received'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	<div class="{{ $cardCol }}">
+		<a href="{{ route('rejected.requisition') }}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-pink"><i class="fas fa-times-circle"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Rejected</div>
+					<div class="srd-stat-value">{{ $stats['rejected'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+@if(!empty($serviceStats))
+</div>
+{{-- Service requisitions are a separate module from item ones, so they get
+	 their own labelled row (each card links to the matching list). --}}
+<div class="srd-stat-section"><i class="fas fa-wrench"></i> Service Requisition</div>
+<div class="row">
+	<div class="{{ $cardCol }}">
+		<a href="{{ route('service-requisition.pending') }}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-blue"><i class="fas fa-hourglass-half"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Pending</div>
+					<div class="srd-stat-value">{{ $serviceStats['pending'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	@if($raiser)
+	<div class="{{ $cardCol }}">
+		<a href="{{ route('service-requisition.index', ['status' => 'delivered']) }}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-green"><i class="fas fa-check-circle"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Delivered</div>
+					<div class="srd-stat-value">{{ $serviceStats['awaiting_confirmation'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	@endif
+	<div class="{{ $cardCol }}">
+		<a href="{{ route('service-requisition.approved') }}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-indigo"><i class="fas fa-inbox"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Received</div>
+					<div class="srd-stat-value">{{ $serviceStats['approved'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	<div class="{{ $cardCol }}">
+		<a href="{{ route('service-requisition.rejected') }}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-pink"><i class="fas fa-times-circle"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Rejected</div>
+					<div class="srd-stat-value">{{ $serviceStats['rejected'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+</div>
+<div class="srd-stat-section"><i class="fas fa-cubes"></i> Vessel Catalog</div>
+<div class="row">
+@endif
+	<div class="col-6 col-md-4 mb-3">
+		<a href="{{url('/catalog/browse')}}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-indigo"><i class="fas fa-cubes"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Catalog Items</div>
+					<div class="srd-stat-value">{{ $stats['items'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+	<div class="col-6 col-md-4 mb-3">
+		<a href="{{url('/catalog/browse')}}" class="text-decoration-none">
+			<div class="srd-stat-card">
+				<div class="srd-stat-icon is-pink"><i class="fas fa-exclamation-triangle"></i></div>
+				<div class="srd-stat-body">
+					<div class="srd-stat-label">Low Stock Items</div>
+					<div class="srd-stat-value">{{ $stats['low_stock'] }}</div>
+				</div>
+			</div>
+		</a>
+	</div>
+</div>
+@endisset
+
+@if(isset($drafts) && $drafts->count() > 0)
 <div class="col-lg-6 col-xl-12">
 	<div class="card">
 		<div class="card-header pv-card-hader">
+			<strong class="pptitle">My Draft Requisitions</strong>
+		</div>
+		<div class="card-body">
+			<table class="table table-bordered">
+				<thead>
+					<tr>
+						<th>Title</th>
+						<th>Port</th>
+						<th>Category</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					@foreach($drafts as $draft)
+					<tr>
+						<td>{{ $draft->title }}</td>
+						<td>{{ $draft->port_name }}</td>
+						<td>{{ $draft->category->name ?? '—' }}</td>
+						<td>
+							@if(empty($draft->category_id))
+							<a href="{{ route('requisition.step2', $draft) }}" class="btn btn-sm btn-info" style="color:#fff;">Continue - Add Items</a>
+							@else
+							<a href="{{ route('requisition.step3', $draft) }}" class="btn btn-sm btn-info" style="color:#fff;">Continue - Review &amp; Submit</a>
+							@endif
+						</td>
+					</tr>
+					@endforeach
+				</tbody>
+			</table>
+		</div>
+	</div>
+</div>
+@endif
+<div class="col-lg-6 col-xl-12">
+	<div class="card">
+		<div class="card-header pv-card-hader">
+			{{-- Pending / Approved / Delivered all render this same view, so the
+				 heading has to say which bucket this is - otherwise the three
+				 pages are indistinguishable. --}}
 			<strong class="pptitle">
-				Requisition List of 
+				{{ $listTitle ?? 'Requisition List' }} of
 				<span style="color:red;display: inline-block;padding-left: 5px;">
 					{{auth()->user()->role->vessel->name}}
 				</span>
 			</strong>
 			<div class="right-buttons">	
 				@if(auth()->user()->role->role=='operator')	
-				<a href="{{url('/create/order')}}" class="btn btn-primary">
+				<a href="{{url('/create/order')}}" class="btn btn-success">
 					<i class="fas fa-plus-square"></i> Add New Requisition
 				</a>
 				@endif
@@ -40,7 +224,11 @@
 		<!-- /card-hader -->
 		<!-- card-body -->
 		<div class="card-body">
-			<table id="example" class="table table-bordered dt-responsive" style="width: 100%;">
+			@php $serverPaged = $orders instanceof \Illuminate\Pagination\LengthAwarePaginator; @endphp
+			@if($serverPaged)@include('partials.server-list-controls', ['orders' => $orders, 'position' => 'top', 'q' => $q ?? '', 'perPage' => $perPageChoice ?? '15'])@endif
+			{{-- data-server-paginated: rows are paged by the server, so DataTables
+				 must leave this table alone (see admin-master / dataForm.js). --}}
+			<table id="example" class="table table-bordered dt-responsive" style="width: 100%;" @if($serverPaged) data-server-paginated="1" @endif>
 				<thead>
 					<th>#</th>
 					<th>Req. No</th>
@@ -48,17 +236,15 @@
 					<th>Vessel Name</th>
 					<th>Req. Date</th>
 					<th>Port</th>
-					<th>status</th>
-					<th>status from ssm</th>
+					<th>Stage</th>
 					<th>Created By</th>
-					<th>Updated By</th>
 					<!-- <th class="action">Action</th> -->
 				</thead>
 				<tbody>
 					@if(!empty($orders))
 					@foreach($orders as $order)
 					<tr id="order-{{$order->id}}">
-						<td class="sl_no"> <b class="serial"> {{$loop->iteration}}</b> </td>
+						<td class="sl_no"> <b class="serial"> {{ $serverPaged ? $orders->firstItem() + $loop->index : $loop->iteration }}</b> </td>
 						<td>
 							<a href="{{url('/order/detail/'.$order->id)}}" class="req_no_link">
 								{{!empty($order->req_no)?$order->req_no:''}}
@@ -68,15 +254,14 @@
 						<td>{{!empty($order->vessel->name)?$order->vessel->name:''}}</td>
 						<td>{{!empty($order->req_date)?$order->req_date:''}}</td>
 						<td>{{!empty($order->port_name)?$order->port_name:''}}</td>
-						<td>{{!empty($order->status)?$order->status:''}}</td>
-						<td>{{!empty($order->status_from_am)?$order->status_from_am:''}}</td>
-						<td>{{!empty($order->created_by)?$order->created_by:''}}</td>
-						<td>{{!empty($order->updated_by)?$order->updated_by:''}}</td>
+						<td><span class="badge badge-info">{{ $order->currentStageLabel() }}</span></td>
+						<td>{{ $order->creator->name ?? '' }}</td>
 					</tr>
 					@endforeach
 					@endif
 				</tbody>
 			</table>
+			@if($serverPaged)@include('partials.server-list-controls', ['orders' => $orders, 'position' => 'bottom'])@endif
 		</div>
 	</div>
 </div>

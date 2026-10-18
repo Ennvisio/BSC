@@ -10,6 +10,22 @@ use Illuminate\Database\Eloquent\Model;
 
 class Order extends Model
 {
+	/**
+	 * GM (SRD)'s four possible delegates, as [forwarded-to column, reviewed
+	 * column]. A forwarded_to_* column set with no matching reviewed column
+	 * means it's currently sitting on that delegate's desk. Single source of
+	 * truth for both currentStageLabel() and hasPendingActionFor() - they used
+	 * to each keep their own copy of this list, which is exactly how GM kept
+	 * seeing Approve/Forward for an order they'd just delegated away.
+	 */
+	private const SRD_DELEGATE_COLUMNS = [
+		'AGM (SRD)' => ['forwarded_to_agm_by_gm_srd', 'agm_app'],
+		'AM (SRD)' => ['forwarded_to_am_by_agm_srd', 'ast_m_app'],
+		'DGM (SRD)' => ['forwarded_to_dgm_srd', 'dgm_srd_app'],
+		'Superintendent (SRD)' => ['forwarded_to_superintendent_srd', 'superintendent_srd_app'],
+	];
+
+
 	public function vessel(){
 		return $this->belongsTo(Vessel::class);
 	}
@@ -19,8 +35,507 @@ class Order extends Model
 	public function category(){
 		return $this->belongsTo(Category::class);
 	}
+	public function budgetGroup(){
+		return $this->belongsTo(BudgetGroup::class);
+	}
 	public function orderApproval()
     {
         return $this->hasOne(OrderApproval::class);
     }
+
+	/** created_by stores the creator's user id, not a name. */
+	public function creator()
+	{
+		return $this->belongsTo(User::class, 'created_by');
+	}
+
+	/** Whoever rejected it, if anyone did. */
+	public function rejectedBy()
+	{
+		return $this->belongsTo(User::class, 'rejected_by');
+	}
+
+	/**
+	 * Rejection is terminal - nobody acts on it again, it leaves every queue,
+	 * and the originator raises a fresh requisition instead. Checked first by
+	 * both hasPendingActionFor() and currentStageLabel().
+	 */
+	public function isRejected(): bool
+	{
+		return $this->status === 'rejected';
+	}
+
+	protected $casts = [
+		'official_remarks_at' => 'datetime',
+	];
+
+	/** The four lifecycle buckets the super-admin overview counts and filters by. */
+	const OVERVIEW_STATUSES = ['pending', 'delivered', 'received', 'rejected'];
+
+	/**
+	 * Pending = submitted and still moving (not yet delivered by SSM);
+	 * Delivered = SSM has supplied it, the ship hasn't confirmed yet;
+	 * Received = the ship confirmed it on board; Rejected = called off.
+	 */
+	public function scopeOverviewStatus($query, ?string $status)
+	{
+		return match ($status) {
+			'pending' => $query->whereNotIn('status', ['delivered', 'received', 'rejected']),
+			'delivered', 'received', 'rejected' => $query->where('status', $status),
+			default => $query,
+		};
+	}
+
+	/** GM (SRD) and the four officers GM can delegate to. */
+	const SRD_ROLES = ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd'];
+
+	public function officialRemarksBy()
+	{
+		return $this->belongsTo(User::class, 'official_remarks_by');
+	}
+
+	/**
+	 * SRD's Official Remarks are written once, by any SRD-level officer, once
+	 * the requisition has actually reached SRD (Master / Chief Engineer has
+	 * forwarded it ashore). After that they're a record - shown with who
+	 * wrote them and when - and can't be changed. Closed on a rejected
+	 * requisition.
+	 */
+	public function canEditOfficialRemarks(?string $role): bool
+	{
+		$approval = $this->orderApproval;
+
+		return in_array($role, self::SRD_ROLES, true)
+			&& $this->official_remarks === null
+			&& ! $this->isRejected()
+			&& $approval
+			&& ($approval->master_app !== null || $approval->chief_eng_app !== null);
+	}
+
+	/**
+	 * Master can correct what Chief Officer put in Part A, Chief Engineer
+	 * what Second Engineer put in it - the officer reviewing it is senior to
+	 * whoever raised it and signing off on the same form, so they can fix a
+	 * mistake in it rather than only approve or reject it as-is. Only while
+	 * it's actually on their desk: hasPendingActionFor() already closes this
+	 * off once they've acted, or if it was never theirs to review (the other
+	 * department's requisition, or anyone further down/up the chain).
+	 *
+	 * hasPendingActionFor() alone isn't enough here, unlike most of its other
+	 * callers: it checks the STAGE (has Chief Officer signed, has Master not
+	 * yet) but not which vessel the role belongs to, because the ship-side
+	 * list queries it backs are already vessel-scoped before this ever runs.
+	 * This is reached directly by order id, so it needs the same "own vessel
+	 * only" check canConfirmReceipt() uses - without it, any vessel's Master
+	 * could correct another vessel's Part A.
+	 */
+	public function canEditPartA(?string $role): bool
+	{
+		return in_array($role, ['master', 'chief-engineer'], true)
+			&& $this->hasPendingActionFor($role)
+			&& $this->vessel_id == (auth()->user()->role->vessel_id ?? null);
+	}
+
+	/** Completed procurement stages, oldest first - the timeline. */
+	public function procurementSteps()
+	{
+		return $this->hasMany(ProcurementStep::class)->orderBy('completed_at');
+	}
+
+	public function invoice()
+	{
+		return $this->hasOne(OrderInvoice::class);
+	}
+
+	/** The saved parts (A/B/C) of this requisition's approval form. */
+	/**
+	 * Everyone who has signed this requisition, in the order they signed -
+	 * what the Authorisation block and the printed form list.
+	 *
+	 * Ordered by chain position rather than by role, so it reads the way the
+	 * requisition actually travelled. Reads the approval columns directly
+	 * instead of walking every Role in the system and testing each one's user
+	 * id against them, which is what the order detail page does.
+	 *
+	 * @return array<int,array{role:string,user:?User}>
+	 */
+	public function signatories(): array
+	{
+		$approval = $this->orderApproval;
+		if (! $approval) {
+			return [];
+		}
+
+		// Technical/Marine Superintendent can stand in for an SRD delegate's
+		// own review (RoleController@approveRequisition) when GM has
+		// delegated it and that delegate hasn't acted yet - it writes the
+		// Superintendent's own id into THAT delegate's column (e.g.
+		// superintendent_srd_app) so the chain still progresses, exactly as
+		// if the real delegate had reviewed it. Left as-is, that prints a
+		// second, misleading line - "Superintendent (SRD): <their name>" -
+		// as if GM had assigned them there, when they never were. Their real
+		// action is already correctly captured below under their own title,
+		// so a stood-in delegate column is dropped whenever its signer is
+		// the same person as this order's tech/marine superintendent.
+		$standIn = array_filter([$approval->tech_superintendent_app, $approval->marine_superintendent_app]);
+
+		$steps = [
+			['Chief Officer', $approval->cheif_ofcr_app],
+			['Second Engineer', $approval->second_eng_app],
+			['Master', $approval->master_app],
+			['Chief Engineer', $approval->chief_eng_app],
+			['DGM (SRD)', $approval->dgm_srd_app],
+			['AGM (SRD)', $approval->agm_app],
+			['AM (SRD)', $approval->ast_m_app],
+			['Superintendent (SRD)', $approval->superintendent_srd_app],
+			['GM (SRD)', $approval->gm_app],
+			['DGM (SSM)', $approval->dgm_app_ssm],
+			['AGM (SSM)', $approval->agm_app_ssm],
+			['AM (SSM)', $approval->am_app_ssm],
+			['Superintendent (SSM)', $approval->superintendent_ssm_app],
+			// Cross-cutting sign-offs - they never gate the chain, but if one
+			// was given it belongs on the printed form like any other.
+			['Technical Superintendent', $approval->tech_superintendent_app],
+			['Marine Superintendent', $approval->marine_superintendent_app],
+		];
+
+		// Only the four delegate slots a stand-in can ever fill are eligible
+		// to be dropped - never Chief Officer/Master/etc, where the id on
+		// file is never anyone but who it claims to be.
+		$delegateLabels = ['DGM (SRD)', 'AGM (SRD)', 'AM (SRD)', 'Superintendent (SRD)'];
+
+		$signed = [];
+		foreach ($steps as [$label, $userId]) {
+			if ($userId === null) {
+				continue;
+			}
+			if (in_array($label, $delegateLabels, true) && in_array($userId, $standIn, true)) {
+				continue;
+			}
+			$signed[] = ['role' => $label, 'user' => User::find($userId)];
+		}
+
+		return $signed;
+	}
+
+	public function formParts()
+	{
+		return $this->hasMany(OrderFormPart::class);
+	}
+
+	/** One part of the form by letter, or null if it hasn't been started. */
+	public function formPart(string $part): ?OrderFormPart
+	{
+		return $this->formParts->firstWhere('part', $part);
+	}
+
+	/** Ship roles that raise requisitions - and so confirm their receipt. */
+	const RAISER_ROLES = ['chief-officer', 'second-engineer'];
+
+	/**
+	 * Who confirms receipt once SSM has delivered: the panel that raised it,
+	 * since they're the ones who asked for these goods. Master is only the
+	 * fallback for a requisition with no recognisable raiser on record.
+	 */
+	public function receiptConfirmerRole(): string
+	{
+		return in_array($this->created_by_role, self::RAISER_ROLES, true)
+			? $this->created_by_role
+			: 'master';
+	}
+
+	/** "Chief Officer", "Second Engineer" - for stage labels and hints. */
+	public function receiptConfirmerLabel(): string
+	{
+		return ucwords(str_replace('-', ' ', $this->receiptConfirmerRole()));
+	}
+
+	/** Delivered by SSM and waiting for the ship to confirm it arrived. */
+	public function awaitingReceipt(): bool
+	{
+		if ($this->isRejected()) {
+			return false;
+		}
+
+		return $this->inProcurement()
+			? ProcurementStage::owner($this->procurement_stage) === ProcurementStage::OWNER_SHIP
+			: $this->status === 'delivered';
+	}
+
+	/**
+	 * Can this role confirm receipt right now? The raiser's role, and only on
+	 * their own vessel - another ship's Chief Officer has no business
+	 * confirming goods they never received.
+	 */
+	public function canConfirmReceipt(?string $role): bool
+	{
+		return $role !== null
+			&& $this->awaitingReceipt()
+			&& $role === $this->receiptConfirmerRole()
+			&& $this->vessel_id == (auth()->user()->role->vessel_id ?? null);
+	}
+
+	/** Has this requisition entered the SSM procurement workflow at all? */
+	public function inProcurement(): bool
+	{
+		return ProcurementStage::exists($this->procurement_stage);
+	}
+
+	public function procurementClosed(): bool
+	{
+		return $this->procurement_stage === ProcurementStage::CLOSED;
+	}
+
+	/**
+	 * Whether a procurement stage has already been completed - the guard
+	 * against completing the same stage twice from a stale page.
+	 */
+	public function hasCompletedStage(string $stage): bool
+	{
+		return $this->procurementSteps()->where('step', $stage)->exists();
+	}
+
+	/**
+	 * A human-readable label for where this requisition currently sits in
+	 * the approval chain - computed from orderApproval's columns, never
+	 * stored, and never touches the free-text `status` column (other code
+	 * already compares that against literal strings like 'delivered', so
+	 * repurposing it would be risky). Checked in order from latest stage
+	 * to earliest, so the most specific true condition wins.
+	 */
+	public function currentStageLabel(): string
+	{
+		// Terminal, and checked before everything else - a rejected
+		// requisition has no live stage, whatever the chain columns or the
+		// procurement stage it was frozen at still say.
+		if ($this->isRejected()) {
+			return 'Rejected';
+		}
+
+		// Once it's in procurement, the sub-stage IS the answer - otherwise
+		// this reported a static "With SSM Officers for Final Action" for the
+		// weeks a tender actually takes.
+		if ($this->inProcurement()) {
+			if ($this->procurementClosed()) {
+				return 'Closed';
+			}
+
+			return ProcurementStage::owner($this->procurement_stage) === ProcurementStage::OWNER_SHIP
+				? 'Delivered — Awaiting '.$this->receiptConfirmerLabel().' Confirmation'
+				: ProcurementStage::label($this->procurement_stage);
+		}
+
+		// Requisitions that never entered procurement (they predate it, or
+		// haven't reached DGM SSM yet) keep the original status-based labels.
+		if ($this->status === 'received') {
+			return 'Closed';
+		}
+
+		if ($this->status === 'delivered') {
+			return 'Delivered — Awaiting '.$this->receiptConfirmerLabel().' Confirmation';
+		}
+
+		$approval = $this->orderApproval;
+		if (! $approval) {
+			return 'Awaiting Officer Approval';
+		}
+
+		if ($approval->dgm_app_ssm !== null) {
+			if ($approval->assigned_to_ssm !== null) {
+				$assignee = User::find($approval->assigned_to_ssm);
+
+				return $assignee
+					? 'Assigned to '.$assignee->name.' for Final Action'
+					: 'With SSM Officers for Final Action';
+			}
+
+			return 'With SSM Officers for Final Action';
+		}
+
+		if ($approval->gm_app !== null) {
+			return 'Awaiting DGM (SSM)';
+		}
+
+		// SRD delegate stage. A delegate's *_app column being set means they
+		// have FINISHED reviewing (it's back with GM for the actual approval);
+		// a forwarded_to_* column set with no matching *_app means it's still
+		// sitting on their desk. Checked reviewed-first, since once reviewed
+		// both columns are set.
+		foreach (self::SRD_DELEGATE_COLUMNS as $name => [$forwardedColumn, $reviewedColumn]) {
+			if ($approval->{$reviewedColumn} !== null) {
+				// The column just stores whoever's user id reviewed it - normally
+				// that's the delegate themselves, but a Technical/Marine
+				// Superintendent can stand in for a stuck delegate (see
+				// RoleController::approveRequisition()), so check who it really
+				// was rather than assuming it matches the delegate's own role.
+				$reviewer = User::find($approval->{$reviewedColumn});
+				$reviewerRole = $reviewer->role->role ?? null;
+				if (in_array($reviewerRole, ['technical-superintendent', 'marine-superintendent'], true)) {
+					$standInLabel = $reviewerRole === 'technical-superintendent' ? 'Technical Superintendent' : 'Marine Superintendent';
+
+					return $standInLabel.' reviewed on behalf of '.$name.' — Awaiting GM (SRD)';
+				}
+
+				return 'Reviewed by '.$name.' — Awaiting GM (SRD)';
+			}
+		}
+
+		foreach (self::SRD_DELEGATE_COLUMNS as $name => [$forwardedColumn, $reviewedColumn]) {
+			if ($approval->{$forwardedColumn} !== null) {
+				return 'With '.$name.' for Review';
+			}
+		}
+
+		if ($approval->master_app !== null || $approval->chief_eng_app !== null) {
+			return 'Awaiting GM (SRD)';
+		}
+
+		if ($approval->cheif_ofcr_app !== null) {
+			return 'Awaiting Master Review';
+		}
+
+		if ($approval->second_eng_app !== null) {
+			return 'Awaiting Chief Engineer Review';
+		}
+
+		return 'Awaiting Officer Approval';
+	}
+
+	/**
+	 * Whether this role has an action to take on this requisition *right now* -
+	 * used to decide whether to show them the Approve/Forward buttons. This
+	 * deliberately mirrors the per-role pending queues in RoleController, so a
+	 * button only appears when the order would also be sitting in that role's
+	 * pending list: not before their turn, and not once they've signed off.
+	 */
+	public function hasPendingActionFor(?string $role, ?int $userId = null): bool
+	{
+		$approval = $this->orderApproval;
+
+		// Terminal. This single guard is what removes Approve, Forward,
+		// Assign, Confirm Receipt, the procurement stage panel AND the
+		// Reject button itself from a rejected requisition, for every role
+		// at once - they are all gated on this method.
+		if ($this->isRejected()) {
+			return false;
+		}
+
+		if (! $approval || $role === null) {
+			return false;
+		}
+
+		// 'received' only means finished for requisitions that never entered
+		// procurement. Once they do, it means goods are confirmed on board and
+		// there are still four stages to run (Invoice Verification onwards) -
+		// returning false here was what would have left the SSM officer with
+		// no button at all and no visible reason why.
+		if (! $this->inProcurement() && $this->status === 'received') {
+			return false;
+		}
+
+		// Technical/Marine Superintendent sit alongside the chain rather than
+		// in it - they can acknowledge any live requisition, once each.
+		if ($role === 'technical-superintendent') {
+			return $approval->tech_superintendent_app === null;
+		}
+		if ($role === 'marine-superintendent') {
+			return $approval->marine_superintendent_app === null;
+		}
+
+		// In procurement the current stage decides everything: Receipt &
+		// Verification belongs to whoever raised it, every other stage to the
+		// officer DGM assigned it to, and 'closed' to nobody.
+		if ($this->inProcurement()) {
+			$owner = ProcurementStage::owner($this->procurement_stage);
+
+			if ($owner === ProcurementStage::OWNER_SHIP) {
+				return $this->canConfirmReceipt($role);
+			}
+
+			if ($owner === ProcurementStage::OWNER_SSM) {
+				return in_array($role, ['agm-ssm', 'am-ssm', 'superintendent-ssm'], true)
+					&& ($approval->assigned_to_ssm === null || $approval->assigned_to_ssm === $userId);
+			}
+
+			return false;
+		}
+
+		// The raiser closes the loop once it's delivered - and that's the only
+		// action anyone has left at that point.
+		if ($this->status === 'delivered') {
+			return $this->canConfirmReceipt($role);
+		}
+
+		$forwardedAshore = $approval->master_app !== null || $approval->chief_eng_app !== null;
+
+		return match ($role) {
+			// Origin: whoever raised it signs off first (the wizard now does
+			// this on submit, so this mainly covers older requisitions).
+			'chief-officer' => $this->created_by_role === 'chief-officer' && $approval->cheif_ofcr_app === null,
+			'second-engineer' => $this->created_by_role === 'second-engineer' && $approval->second_eng_app === null,
+
+			// Deck goes via Master, engine room via Chief Engineer.
+			'master' => $approval->cheif_ofcr_app !== null && $approval->master_app === null,
+			'chief-engineer' => $approval->second_eng_app !== null && $approval->chief_eng_app === null,
+
+			// GM (SRD) holds the approval - but only while it's actually on
+			// their desk. Once they've delegated it out, it's on the
+			// delegate's desk instead and GM has nothing to do until that
+			// delegate reviews it (at which point the *_app column is set,
+			// srdDelegationPending() goes false, and Approve reappears).
+			'gm-srd' => $forwardedAshore && $approval->gm_app === null && ! $this->srdDelegationPending($approval),
+
+			// SRD delegates only act on what GM actually delegated to THEM
+			// specifically - assigned_to_srd null means it predates named
+			// assignment (falls back to visible-to-the-whole-role), otherwise
+			// it must match this exact person. Without this check, a second
+			// person sharing the same role (there are 2 AGM-SRD, 4 AM-SRD in
+			// this fleet) would see Approve/Reject for a requisition GM
+			// delegated to their colleague, not to them - disagreeing with
+			// RoleController::pendingRequisition(), which already scopes this way.
+			'agm-srd' => $forwardedAshore && $approval->gm_app === null
+				&& $approval->forwarded_to_agm_by_gm_srd !== null && $approval->agm_app === null
+				&& ($approval->assigned_to_srd === null || $approval->assigned_to_srd === $userId),
+			'am-srd' => $forwardedAshore && $approval->gm_app === null
+				&& $approval->forwarded_to_am_by_agm_srd !== null && $approval->ast_m_app === null
+				&& ($approval->assigned_to_srd === null || $approval->assigned_to_srd === $userId),
+			'dgm-srd' => $forwardedAshore && $approval->gm_app === null
+				&& $approval->forwarded_to_dgm_srd !== null && $approval->dgm_srd_app === null
+				&& ($approval->assigned_to_srd === null || $approval->assigned_to_srd === $userId),
+			'superintendent-srd' => $forwardedAshore && $approval->gm_app === null
+				&& $approval->forwarded_to_superintendent_srd !== null && $approval->superintendent_srd_app === null
+				&& ($approval->assigned_to_srd === null || $approval->assigned_to_srd === $userId),
+
+			// DGM (SSM)'s action is assigning it to a named SSM officer.
+			'dgm-ssm' => $approval->gm_app !== null && $approval->dgm_app_ssm === null,
+
+			// Final action belongs to whoever DGM assigned it to. A null
+			// assignee means it predates named assignment, so any of the
+			// three can still pick it up.
+			'agm-ssm', 'am-ssm', 'superintendent-ssm' => $approval->gm_app !== null
+				&& $approval->dgm_app_ssm !== null
+				&& ($approval->assigned_to_ssm === null || $approval->assigned_to_ssm === $userId)
+				&& $approval->agm_app_ssm === null
+				&& $approval->am_app_ssm === null
+				&& $approval->superintendent_ssm_app === null,
+
+			default => false,
+		};
+	}
+
+	/**
+	 * Whether one of GM (SRD)'s four delegates currently has this requisition
+	 * on their desk - forwarded to them, not yet reviewed. Used to hide GM's
+	 * own Approve/Delegate/Forward buttons while it's out of their hands.
+	 */
+	private function srdDelegationPending(OrderApproval $approval): bool
+	{
+		foreach (self::SRD_DELEGATE_COLUMNS as [$forwardedColumn, $reviewedColumn]) {
+			if ($approval->{$forwardedColumn} !== null && $approval->{$reviewedColumn} === null) {
+				return true;
+			}
+		}
+
+		return false;
+	}
 }

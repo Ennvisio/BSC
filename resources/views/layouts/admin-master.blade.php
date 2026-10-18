@@ -24,7 +24,7 @@
   <!-- SRD theme — extends Bootstrap's own classes, see css/srd-theme.css -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{url('/css/srd-theme.css')}}?v={{ file_exists(base_path('css/srd-theme.css')) ? filemtime(base_path('css/srd-theme.css')) : 1 }}">
 </head>
 <body class="srd">
@@ -44,7 +44,7 @@
         <div class="footer-inner" >
           <div class="row">
             <div class="col-sm-6">
-              Copyright &copy; 2019.
+              Copyright &copy; {{ date('Y') }}.
 বাংলাদেশ শিপিং কর্পোরেশন
             </div>
             <div class="col-sm-6 text-right">
@@ -79,7 +79,8 @@
 @yield('create-order-js')
 <script type="text/javascript">
   $(document).ready(function(){
-    $('#example').DataTable();
+    // Server-paginated lists (data-server-paginated) page and search on the server.
+    $('#example').not('[data-server-paginated]').DataTable();
     $('input.date').Zebra_DatePicker({
       format: 'Y-m-d'
     });

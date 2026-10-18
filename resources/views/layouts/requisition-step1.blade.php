@@ -1,0 +1,226 @@
+@extends('layouts.admin-master')
+@section('main-content')
+<style>
+	/* Search results as a floating overlay, not a normal block element -
+	   otherwise opening the list pushes Department/Port/everything below it
+	   down the page, then snaps it back up when the list closes.
+
+	   Positioned relative to .rs-search-wrap, NOT the column - a Bootstrap
+	   column has its own 15px side padding, and an absolutely positioned
+	   child's containing block is the PADDING box of its positioned
+	   ancestor, so anchoring to the column made the dropdown 15px wider than
+	   the input on both sides. This wrapper has no padding of its own, so
+	   left:0/right:0 lines up exactly with the input's real edges (see
+	   service-requisition-create.blade.php for the same fix). */
+	.rs-search-wrap{ position: relative; }
+	#budget-group-results{
+		position: absolute; top: 100%; left: 0; right: 0; z-index: 30;
+		margin-top: 2px; background: #fff; border: 1px solid #ddd; border-radius: 6px;
+		box-shadow: 0 8px 24px rgba(0,0,0,.14);
+	}
+	#budget-group-results:empty{ display: none; border: none; box-shadow: none; }
+</style>
+<div class="order-section container">
+	<div class="row">
+		<div class="col-xl-12">
+			<div class="card order-card">
+				@php
+					// The draft always exists by the time this page is reached -
+					// step 1, the justification form, is what creates it. A draft
+					// with no title yet has not been through here before. Every
+					// field below falls back through old() -> the draft -> empty,
+					// so a validation bounce keeps what was typed and a revisit
+					// keeps what was saved.
+					$isNew = $order->title === null;
+				@endphp
+				<div class="card-header first">
+					<strong class="pptitle">{{ $isNew ? 'New requisition for' : 'Edit requisition for' }} &nbsp;
+						<span style="color:red;">{{auth()->user()->role->vessel->name}}</span>
+					</strong>
+					<div class="right-button">Step 2 of 4 — Details</div>
+				</div>
+				<div class="card-body">
+					@if($errors->any())
+					<div class="alert alert-danger">
+						<ul class="mb-0">
+							@foreach($errors->all() as $error)
+							<li>{{ $error }}</li>
+							@endforeach
+						</ul>
+					</div>
+					@endif
+
+					<form method="POST" action="{{ route('requisition.details.store', $order) }}">
+						@csrf
+
+						<div class="form-group row">
+							<div class="col-md-11">
+								<label for="title">Requisition title <span class="text-danger">*</span></label>
+								<input type="text" class="form-control" name="title" id="title" value="{{ old('title', $order->title ?? '') }}" required>
+							</div>
+						</div>
+
+						<div class="form-group row justify-content-between">
+							<div class="col-md-5">
+								<label>Budget group <span class="text-danger">*</span></label>
+								<div class="rs-search-wrap">
+									<input type="text" class="form-control" id="budget-group-search" placeholder="Start typing to get suggestions" autocomplete="off" value="{{ $order->budgetGroup->name ?? '' }}">
+									<input type="hidden" name="budget_group_id" id="budget_group_id" value="{{ old('budget_group_id', $order->budget_group_id ?? '') }}">
+									<div id="budget-group-results" class="list-group" style="max-height:220px; overflow-y:auto;"></div>
+								</div>
+							</div>
+							<div class="col-md-5">
+								<label for="department">Department <span class="text-danger">*</span></label>
+								@php $department = old('department', $order->department ?? ''); @endphp
+								<select class="form-control" name="department" id="department" required>
+									<option value="">Choose…</option>
+									<option value="Deck" {{ $department === 'Deck' ? 'selected' : '' }}>Deck</option>
+									<option value="Engine" {{ $department === 'Engine' ? 'selected' : '' }}>Engine</option>
+								</select>
+							</div>
+						</div>
+
+						<div class="form-group row justify-content-between">
+							<div class="col-md-5">
+								<label for="Port_Name">Port <span class="text-danger">*</span></label>
+								<input type="text" class="form-control" name="port_name" id="Port_Name" value="{{ old('port_name', $order->port_name ?? '') }}" placeholder="Click to choose a port" readonly required style="background:#fff;cursor:pointer;" data-toggle="modal" data-target="#port-picker-modal">
+							</div>
+						</div>
+
+						<div class="modal fade" id="port-picker-modal" tabindex="-1" role="dialog">
+							<div class="modal-dialog" role="document">
+								<div class="modal-content">
+									<div class="modal-header">
+										<h5 class="modal-title">Port</h5>
+										<button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+									</div>
+									<div class="modal-body">
+										<input type="text" id="port-picker-search" class="form-control mb-2" placeholder="Start typing to get suggestions">
+										<div id="port-picker-results" class="list-group" style="max-height:320px; overflow-y:auto;"></div>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="form-group row justify-content-between">
+							<div class="col-md-5">
+								<label for="eta">ETA</label>
+								<input type="text" class="form-control date" name="eta" id="eta" value="{{ old('eta', $order->eta ?? '') }}" autocomplete="off">
+							</div>
+							<div class="col-md-5">
+								<label for="etd">ETD</label>
+								<input type="text" class="form-control date" name="etd" id="etd" value="{{ old('etd', $order->etd ?? '') }}" autocomplete="off">
+							</div>
+						</div>
+
+						{{-- Stated by whoever is raising the requisition, not by Master/Chief
+							 Engineer reviewing it afterwards - they read this, they don't
+							 write it. --}}
+						<div class="form-group row">
+							<div class="col-md-11">
+								<label for="reason">Reason of Requisition <span class="text-danger">*</span></label>
+								<textarea class="form-control" name="reason" id="reason" rows="4" placeholder="Why is this requisition needed?" required>{{ old('reason', $order->reason ?? '') }}</textarea>
+							</div>
+						</div>
+
+						<div class="form-group row">
+							<div class="col-md-11">
+								<div class="form-check">
+									<input type="checkbox" class="form-check-input" name="high_priority" id="high_priority" value="1" {{ old('high_priority', $order->high_priority ?? false) ? 'checked' : '' }}>
+									<label class="form-check-label" for="high_priority">High priority</label>
+								</div>
+							</div>
+						</div>
+
+						<div class="form-group row">
+							<div class="col-md-11 text-right">
+								<a href="{{ route('requisition.form', $order) }}" class="btn btn-srd-outline"><i class="fas fa-arrow-left"></i> Back</a>
+							<button type="submit" class="btn btn-success">Save &amp; Next: Add Items <i class="fas fa-arrow-right"></i></button>
+							</div>
+						</div>
+					</form>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+@endsection
+
+@section('home-js')
+<script>
+$(function () {
+	var budgetGroups = {!! $budgetGroups->map(fn($g) => ['id' => $g->id, 'name' => $g->name])->values() !!};
+
+	function renderBudgetGroups(list) {
+		if (list.length === 0) {
+			$('#budget-group-results').html('<p class="text-muted p-2">No matches.</p>');
+			return;
+		}
+		var html = '';
+		list.forEach(function (g) {
+			html += '<a href="#" class="list-group-item list-group-item-action budget-group-pick" data-id="' + g.id + '" data-name="' + $('<div>').text(g.name).html() + '">' + $('<div>').text(g.name).html() + '</a>';
+		});
+		$('#budget-group-results').html(html);
+	}
+
+	$('#budget-group-search').on('focus keyup', function () {
+		var term = $(this).val().toLowerCase();
+		var filtered = budgetGroups.filter(function (g) { return g.name.toLowerCase().indexOf(term) !== -1; });
+		renderBudgetGroups(filtered);
+	});
+
+	$(document).on('click', '.budget-group-pick', function (e) {
+		e.preventDefault();
+		$('#budget_group_id').val($(this).data('id'));
+		$('#budget-group-search').val($(this).data('name'));
+		$('#budget-group-results').empty();
+	});
+
+	$(document).on('click', function (e) {
+		if (!$(e.target).closest('#budget-group-search, #budget-group-results').length) {
+			$('#budget-group-results').empty();
+		}
+	});
+
+	// Port picker - same search-as-you-type pattern used by Browse Catalog
+	// and the catalog item picker, backed by /ports/search (17,500+ seaports,
+	// too many for a plain <select>).
+	var portSearchTimer = null;
+
+	function loadPorts(term) {
+		$('#port-picker-results').html('<p class="text-muted p-2">Loading…</p>');
+
+		$.getJSON('{{url("/ports/search")}}', { q: term }, function (ports) {
+			if (ports.length === 0) {
+				$('#port-picker-results').html('<p class="text-muted p-2">No matching ports.</p>');
+				return;
+			}
+
+			var html = '';
+			ports.forEach(function (p) {
+				html += '<a href="#" class="list-group-item list-group-item-action port-pick" data-label="'
+					+ $('<div>').text(p.label).html() + '">' + $('<div>').text(p.label).html() + '</a>';
+			});
+			$('#port-picker-results').html(html);
+		});
+	}
+
+	$('#port-picker-modal').on('shown.bs.modal', function () {
+		$('#port-picker-search').val('').trigger('focus');
+		loadPorts('');
+	});
+
+	$('#port-picker-search').on('keyup', function () {
+		var term = $(this).val();
+		clearTimeout(portSearchTimer);
+		portSearchTimer = setTimeout(function () { loadPorts(term); }, 250);
+	});
+
+	$(document).on('click', '.port-pick', function (e) {
+		e.preventDefault();
+		$('#Port_Name').val($(this).data('label'));
+		$('#port-picker-modal').modal('hide');
+	});
+});
+</script>
+@endsection

@@ -13,6 +13,54 @@
 		<!-- card-hader -->
 		<!-- card-body -->
 		<div class="card-body">
+			{{-- Exact-match filters, on top of DataTables' own free-text search
+				 box - a superadmin scanning hundreds of users across a growing
+				 fleet is looking for "everyone on this vessel" far more often
+				 than typing a name, and a dropdown beats remembering/typing a
+				 vessel's exact spelling. Wired in this page's own home-js below,
+				 not dataForm.js - #example is reused by several other pages with
+				 different columns, so filtering by column index has to live
+				 where those indices are actually known. --}}
+			<div class="row mb-3" id="user-filters">
+				<div class="col-md-3">
+					<label class="mb-1" for="filter_user_type">User Type</label>
+					<select id="filter_user_type" class="form-control form-control-sm">
+						<option value="">All types</option>
+						<option value="ship">Ship</option>
+						<option value="srd">SRD</option>
+						<option value="ssm">SSM</option>
+					</select>
+				</div>
+				<div class="col-md-3">
+					<label class="mb-1" for="filter_role">Role</label>
+					<select id="filter_role" class="form-control form-control-sm">
+						<option value="">All roles</option>
+						@foreach($data['roles']->pluck('role')->unique()->sort() as $roleSlug)
+						<option value="{{ $roleSlug }}">{{ ucwords(str_replace('-', ' ', $roleSlug)) }}</option>
+						@endforeach
+					</select>
+				</div>
+				<div class="col-md-4">
+					<label class="mb-1" for="filter_vessel">Vessel</label>
+					<select id="filter_vessel" class="form-control form-control-sm">
+						<option value="">All vessels</option>
+						@if(!empty($data['vessels']))
+						@foreach($data['vessels'] as $vessel)
+						<option value="{{ $vessel->name }}">{{ $vessel->name }}</option>
+						@endforeach
+						@endif
+						<option value="__none__">— Ashore (no vessel) —</option>
+					</select>
+				</div>
+				<div class="col-md-2 d-flex align-items-end">
+					<button type="button" id="clear_user_filters" class="btn btn-outline-secondary btn-sm btn-block">Clear filters</button>
+				</div>
+			</div>
+
+			{{-- .table-responsive: the DataTables responsive plugin isn't loaded
+				 here, so without this wrapper a wide table pushes the whole page
+				 sideways; now it scrolls inside the card instead. --}}
+			<div class="table-responsive">
 			<table id="example" class="table table-bordered dt-responsive" style="width: 100%;">
 				<thead>
 					<th>#</th>
@@ -28,19 +76,34 @@
 				<tbody>
 					@if(!empty($data['roles']))
 					@foreach($data['roles'] as $role)
+					@php
+						// Distinguishes the three user types at a glance in a long,
+						// vessel-mixed list - ship crew (blue), shore SRD (green),
+						// shore SSM (amber).
+						$userTypeBadge = match($role->user_type) {
+							'ship' => 'badge-primary',
+							'srd' => 'badge-success',
+							'ssm' => 'badge-warning',
+							default => 'badge-secondary',
+						};
+					@endphp
 					<tr id="user-{{!empty($role->user->id)?$role->user->id:''}}">
 						<td class="sl_no"> <b class="serial"> {{$loop->iteration}}</b> </td>
 						<td>{{!empty($role->user->name)?$role->user->name:''}}</td>
 						<td>{{!empty($role->user->email)?$role->user->email:''}}</td>
 						<td>{{!empty($role->role)?$role->role:''}}</td>
-						<td>{{!empty($role->user_type)?$role->user_type:''}}</td>
+						<td>
+							@if(!empty($role->user_type))
+							<span class="badge {{ $userTypeBadge }}">{{ strtoupper($role->user_type) }}</span>
+							@endif
+						</td>
 						<td>{{!empty($role->vessel->name)?$role->vessel->name:''}}</td>
 						<td>
-							{{!empty($role->created_by)?$role->created_by:''}} <br> {{!empty($role->user->created_at)?$role->user->created_at:''}}
+							{{!empty($role->created_by)?$role->created_by:''}} <br> <small class="text-muted">{!! str_replace(', ', '<br>', e(optional($role->user->created_at)->format('d M Y, h:i A'))) !!}</small>
 						</td>
 						<td>
 							{{!empty($role->updated_by)?$role->updated_by:''}} <br>
-							{{!empty($role->user->updated_at)?$role->user->updated_at:''}}
+							<small class="text-muted">{!! str_replace(', ', '<br>', e(optional($role->user->updated_at)->format('d M Y, h:i A'))) !!}</small>
 						</td>
 						<td class="action">
 							<button class="btn btn-info edit-user" data-id="{{!empty($role->user->id)?$role->user->id:''}}" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i>
@@ -52,6 +115,7 @@
 					@endif
 				</tbody>
 			</table>
+			</div>
 		</div>
 	</div>
 </div>
@@ -77,6 +141,7 @@
 							</button>
 						</div>
 					</div>
+					<h5 class="text-center mb-3 add-user-type-title">Select User Type</h5>
 					<div class="row funkyradio justify-content-center mb-3">
 						<div class="funkyradio-primary col-md-3">
 							<input type="radio" name="user_type" id="ship_user" value="ship"/>
@@ -120,10 +185,15 @@
 								<option value="chief-engineer" class="ship_role">Chief Engineer</option>
 								<option value="am-srd" class="admin_role role-srd">AM-(SRD)</option>
 								<option value="agm-srd" class="admin_role role-srd">AGM-(SRD)</option>
+								<option value="dgm-srd" class="admin_role role-srd">DGM-(SRD)</option>
+								<option value="superintendent-srd" class="admin_role role-srd">Superintendent-(SRD)</option>
 								<option value="gm-srd" class="admin_role role-srd">GM-(SRD)</option>
 								<option value="dgm-ssm" class="admin_role role-ssm">DGM-(SSM)</option>
 								<option value="agm-ssm" class="admin_role role-ssm">AGM-(SSM)</option>
 								<option value="am-ssm" class="admin_role role-ssm">AM-(SSM)</option>
+								<option value="superintendent-ssm" class="admin_role role-ssm">Superintendent-(SSM)</option>
+								<option value="technical-superintendent" class="admin_role role-srd">Technical Superintendent</option>
+								<option value="marine-superintendent" class="admin_role role-srd">Marine Superintendent</option>
 							</select>
 						</div>
 					</div>
@@ -164,7 +234,9 @@
 				<!-- Modal footer -->
 				<div class="modal-footer">
 					<button type="button" class="btn btn-danger" data-dismiss="modal"> <i class="far fa-window-close"></i> Close</button>
-					<button type="submit" class="btn btn-primary"> <i class="fas fa-check-square"></i> Confirm Add </button>
+					{{-- Hidden until a user type is picked: until then there is
+						 nothing to submit (the form's fields are hidden too). --}}
+					<button type="submit" class="btn btn-primary" id="add_user_submit" hidden> <i class="fas fa-check-square"></i> Confirm Add </button>
 				</div>
 			</form>
 		</div>
@@ -220,10 +292,15 @@
 								<option value="chief-engineer" class="ship_role role_opt">Chief Engineer</option>
 								<option value="am-srd" class="admin_role role-srd role_opt">AM-(SRD)</option>
 								<option value="agm-srd" class="admin_role role-srd role_opt">AGM-(SRD)</option>
+								<option value="dgm-srd" class="admin_role role-srd role_opt">DGM-(SRD)</option>
+								<option value="superintendent-srd" class="admin_role role-srd role_opt">Superintendent-(SRD)</option>
 								<option value="gm-srd" class="admin_role role-srd role_opt">GM-(SRD)</option>
 								<option value="dgm-ssm" class="admin_role role-ssm role_opt">DGM-(SSM)</option>
 								<option value="agm-ssm" class="admin_role role-ssm role_opt">AGM-(SSM)</option>
 								<option value="am-ssm" class="admin_role role-ssm role_opt">AM-(SSM)</option>
+								<option value="superintendent-ssm" class="admin_role role-ssm role_opt">Superintendent-(SSM)</option>
+								<option value="technical-superintendent" class="admin_role role-srd role_opt">Technical Superintendent</option>
+								<option value="marine-superintendent" class="admin_role role-srd role_opt">Marine Superintendent</option>
 							</select>
 						</div>
 					</div>
@@ -260,6 +337,28 @@
 							<input type="hidden" class="form-control vessel_not_for_admin" value="0" name="Vessel_Name" disabled>
 						</div>
 					</div>
+					{{-- Optional - only sent if filled, so editing a user's name or
+						 vessel never forces a password change. Always blank on open
+						 (see the show.bs.modal handler below): the loaded user has no
+						 password to show, and leaving a previously-typed one sitting
+						 here would risk silently resetting the WRONG user's password
+						 if the admin edits someone else next without noticing. --}}
+					<div class="row justify-content-center form-group">
+						<div class="col-md-3">
+							<label for="New_Password">New Password: </label>
+						</div>
+						<div class="col-md-7">
+							<input type="password" class="form-control New_Password" name="password" autocomplete="new-password" placeholder="Leave blank to keep the current password">
+						</div>
+					</div>
+					<div class="row justify-content-center form-group">
+						<div class="col-md-3">
+							<label for="Confirm_New_Password">Confirm New Password: </label>
+						</div>
+						<div class="col-md-7">
+							<input type="password" class="form-control Confirm_New_Password" name="password_confirmation" autocomplete="new-password">
+						</div>
+					</div>
 				</div>
 				<div class="modal-footer">
 					<button type="button" class="btn btn-danger" data-dismiss="modal">Cancel</button>
@@ -273,4 +372,80 @@
 <!-- logo-base64 for pdf page -->
 @include('pdf.logo-base64')
 <!-- logo-base64 for pdf page -->
+@endsection
+
+@section('home-js')
+<style>
+/* Created By / Updated By (cols 7-8): name + short date/time stamp, never
+   wrapped into five-line cells. Action (9) is free to stack its two buttons. */
+#example td:nth-child(7), #example td:nth-child(8){ white-space:nowrap; }
+#example td:nth-child(9) .btn{ margin:1px 0; }
+#example td:nth-child(5), #example th:nth-child(5){ white-space:nowrap; }
+/* css/style.css forces 8px 12px !important on every DataTable cell; nine
+   columns of that pushes Action off a laptop screen, so tighten it here. */
+#example tbody td{ padding:8px 9px !important; }
+#example thead th{ padding:8px 24px 8px 9px !important; }
+#example td .btn{ padding:.25rem .5rem; }
+</style>
+<script>
+$(function () {
+	// Re-grabs the API instance dataForm.js already initialised - calling
+	// .DataTable() again on a table that already has one doesn't reinitialise
+	// it, just hands back the same object, which is what makes it safe to
+	// wire page-specific behaviour here rather than inside dataForm.js
+	// (shared by several other pages with completely different columns).
+	var usersTable = $('#example').DataTable();
+
+	// Column cells carry markup now (the user-type badge), so filtering
+	// compares against their rendered TEXT, not the raw cell content -
+	// otherwise a search would have to know about the badge's own class names.
+	function cellText(html) {
+		return $('<div>').html(html || '').text().trim();
+	}
+
+	$.fn.dataTable.ext.search.push(function (settings, data) {
+		// This search plugin runs for every DataTable on the page, not just
+		// this one - #example is a shared id across the app, so the guard
+		// stops these filters reaching a table they were never meant for.
+		if (settings.nTable.id !== 'example') {
+			return true;
+		}
+
+		var type = $('#filter_user_type').val();
+		var role = $('#filter_role').val();
+		var vessel = $('#filter_vessel').val();
+
+		if (type && cellText(data[4]).toLowerCase() !== type) {
+			return false;
+		}
+		if (role && cellText(data[3]) !== role) {
+			return false;
+		}
+		if (vessel === '__none__' && cellText(data[5]) !== '') {
+			return false;
+		}
+		if (vessel && vessel !== '__none__' && cellText(data[5]) !== vessel) {
+			return false;
+		}
+
+		return true;
+	});
+
+	$('#filter_user_type, #filter_role, #filter_vessel').on('change', function () {
+		usersTable.draw();
+	});
+
+	$('#clear_user_filters').on('click', function () {
+		$('#filter_user_type, #filter_role, #filter_vessel').val('');
+		usersTable.draw();
+	});
+
+	// Cleared on every open, not just after a successful save - Cancelling
+	// out of an edit leaves whatever was typed sitting in the form, and the
+	// next user opened for edit must never inherit it.
+	$('#edit_template_modal').on('show.bs.modal', function () {
+		$(this).find('.New_Password, .Confirm_New_Password').val('');
+	});
+});
+</script>
 @endsection

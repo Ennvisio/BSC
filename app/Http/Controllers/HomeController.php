@@ -1,16 +1,21 @@
 <?php
 namespace App\Http\Controllers;
 use App\Boiler;
+use App\BudgetGroup;
 use App\Category;
 use App\Certificate;
+use App\CertificateCategory;
 use App\Dimension;
 use App\Engine;
 use App\FrameworkDescription;
+use App\Http\Controllers\Concerns\PaginatesRequisitionLists;
 use App\Http\Controllers\RoleController;
 use App\Http\Requests\BoilerValidate;
+use App\Http\Requests\BudgetGroupFormValidate;
 use App\Http\Requests\CategoryFormValidate;
 use App\Http\Requests\CertificateEditFormVal;
 use App\Http\Requests\CertificateFormValidate;
+use App\Http\Requests\CertificateCategoryFormValidate;
 use App\Http\Requests\DimensionValidate;
 use App\Http\Requests\EngineValidate;
 use App\Http\Requests\ItemFormValidate;
@@ -26,6 +31,7 @@ use App\Order;
 use App\OrderApproval;
 use App\OrderItem;
 use App\Role;
+use App\Services\StockService;
 use App\VesselSurvey;
 use App\VesselCertificate;
 use App\Survey;
@@ -34,10 +40,13 @@ use App\Vessel;
 use App\VesselParticular;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 class HomeController extends Controller
 {
+  use PaginatesRequisitionLists;
+
   public function __construct()
   {
     $this->middleware('auth');
@@ -45,19 +54,82 @@ class HomeController extends Controller
   public function index()
   {
     if(!empty(auth()->user()->role->role && auth()->user()->role->user_type=='ship')){
-      if(auth()->user()->role->role=='second-engineer'){
-        $orders=Order::where('status','ready')
-        ->where('ord_status',true)
-        ->where('vessel_id', auth()->user()->role->vessel->id)
-        ->orderBy('created_at','desc')
-        ->get();
-        return view('layouts.ship-home',compact('orders'));  
+      if(in_array(auth()->user()->role->role, ['second-engineer', 'chief-officer', 'chief-engineer', 'master'])){
+        // A real dashboard, landing on login instead of bouncing straight to
+        // Pending: their own vessel's requisition activity, catalog size, and
+        // a low-stock count - never another vessel's data.
+        $vesselId = auth()->user()->role->vessel_id;
+
+        // Same scope RoleController@pendingRequisition/approvedRequisition
+        // actually query - a stat card whose number disagrees with the list
+        // it links to is worse than not showing a count at all. Chief
+        // Officer/Second Engineer see only what they raised; Chief Engineer
+        // sees the engine room's; Master sees the whole vessel (they close
+        // the loop on every delivery regardless of origin).
+        $scoped = fn () => app(RoleController::class)->shipTrackingScope();
+
+        $stats = [
+          'in_progress' => $scoped()->whereNotIn('status', ['delivered', 'received', 'rejected'])->count(),
+          'delivered' => $scoped()->where('status', 'delivered')->count(),
+          'received' => $scoped()->where('status', 'received')->count(),
+          'rejected' => app(RoleController::class)->shipTrackingScope(true)->count(),
+          'items' => DB::table('vessel_items')->where('vessel_id', $vesselId)->count(),
+          'low_stock' => DB::table('vessel_items')->where('vessel_id', $vesselId)
+            ->whereNotNull('min_qty')->whereColumn('stock_qty', '<=', 'min_qty')->count(),
+        ];
+
+        // The full picture, not the old status='ready' slice - a dashboard
+        // should show everything that's happened on this vessel, and the
+        // dedicated Pending/Approved/Received pages already cover the
+        // narrower, role-specific views for anyone who wants those instead.
+        $orders = Order::where('vessel_id', $vesselId)
+          ->where('ord_status', true)
+          ->orderBy('created_at', 'desc')
+          ->get();
+
+        $drafts = Order::where('status', 'draft')
+          ->where('created_by', auth()->user()->id)
+          ->orderBy('created_at', 'desc')
+          ->get();
+
+        // Every ship role follows service requisitions too (Pending / Approved /
+        // Rejected under the Service Requisition menu), so the dashboard gets
+        // its own labelled row of them next to the item ones.
+        $serviceStats = app(ServiceRequisitionApprovalController::class)->stats();
+
+        return view('layouts.ship-home', compact('orders', 'drafts', 'stats', 'serviceStats'));
       }else{
         return redirect('/pending/requisition');
-      } 
+      }
     }
     elseif(!empty(auth()->user()->role->role && auth()->user()->role->user_type=='ssm')){
-      return redirect('/pending/requisition');
+      // A real landing dashboard instead of a bare redirect - stat cards for
+      // Pending/My Approvals/Approved/Received (one per SSM sidebar item).
+      // No list underneath (see partials.requisition-stat-cards and the
+      // @unless(isset($stats)) guard on layouts/order.blade.php's list) -
+      // items/categories/vessels are still needed because that view's
+      // (now-hidden) filter form references them.
+      $stats = $this->requisitionDashboardStats();
+      $items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
+      $categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
+      $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
+
+      return view('layouts.order', compact('items', 'categories', 'vessels', 'stats'));
+    }
+    // GM (SRD)'s four named delegates: each reviews only what GM actually
+    // delegated to them (RoleController::pendingRequisition()'s dgm-srd/
+    // agm-srd/am-srd/superintendent-srd branches), so their job is the same
+    // shape as an SSM officer's - a personal queue, not fleet
+    // administration. Same stats-only dashboard as SSM, not the certificate/
+    // survey/vessel matrix GM (SRD) and super-admin get below.
+    elseif(in_array(auth()->user()->role->role, ['dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd'], true)){
+      $stats = $this->requisitionDashboardStats();
+      $serviceStats = app(ServiceRequisitionApprovalController::class)->stats();
+      $items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
+      $categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
+      $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
+
+      return view('layouts.order', compact('items', 'categories', 'vessels', 'stats', 'serviceStats'));
     }
     elseif(!empty(auth()->user()->role->role && auth()->user()->role->user_type=='srd')||!empty(auth()->user()->role->role && auth()->user()->role->role=='super-admin')){
       $surveys=Survey::where('status',true)->orderBy('name','asc')->get();
@@ -66,24 +138,125 @@ class HomeController extends Controller
       $vessel_surveys=VesselSurvey::orderBy('created_at','desc')->where('status',true)->get();
       $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
 
-      return view('home',compact('surveys','certificates','vessels')); 
+      // GM (SRD) is the only remaining srd-family role reaching this branch
+      // with a personal seat in the approval chain - Technical/Marine
+      // Superintendent sit alongside the chain rather than in it (see
+      // Order::hasPendingActionFor), and super-admin isn't part of it at
+      // all, so neither gets the requisition stat cards. GM's four
+      // delegates are handled above, before this branch.
+      $stats = auth()->user()->role->role === 'gm-srd' ? $this->requisitionDashboardStats() : null;
+      $serviceStats = auth()->user()->role->role === 'gm-srd' ? app(ServiceRequisitionApprovalController::class)->stats() : null;
+
+      // Super-admin's overview: item and service requisitions side by side,
+      // fleet-wide, split Pending / Delivered / Received / Rejected. Each card
+      // links to the list filtered to exactly what it counts.
+      $overview = null;
+      if (auth()->user()->role->role === 'super-admin') {
+        $overview = [];
+        foreach (Order::OVERVIEW_STATUSES as $status) {
+          $overview['item'][$status] = Order::where('ord_status', true)->overviewStatus($status)->count();
+          $overview['service'][$status] = \App\ServiceRequisition::overviewStatus($status)->count();
+        }
+      }
+
+      // Vessel summary + per-category expansion, built from each vessel's
+      // own certificates rather than the legacy fixed certificate-type list
+      // (see App\CertificateValidityReport for why that grid no longer fits).
+      $certificateReport = \App\CertificateValidityReport::forVessels($vessels);
+
+      return view('home',compact('surveys','certificates','vessels','stats','serviceStats','overview','certificateReport'));
     }
+
+    // Nothing above claimed this account (a role with no department). Say so
+    // rather than returning nothing, which the browser shows as a blank page.
+    abort(403, 'This account has no user type set. Ask an administrator to edit the user and choose Ship, SSM or SRD.');
   }
+
+  /**
+   * Requisition dashboard stat cards - Pending My Action/My Approvals/
+   * Approved/Received - for any role with a personal queue in the approval
+   * chain (GM (SRD); DGM/AGM/AM (SSM)). Every count is read off the SAME
+   * view instances RoleController itself builds for those destination pages
+   * (->getData()['orders']->count()), not a hand-rolled copy of their
+   * per-role branching queries - so a card's number can never drift from
+   * the list it links to, the exact failure mode already called out for
+   * the ship dashboard above. The Item/Category/Vessel queries those
+   * methods also run are cheap and re-run a few times over here; trivial
+   * cost for that guarantee.
+   */
+  private function requisitionDashboardStats(): array
+  {
+    $roleController = app(RoleController::class);
+
+    return [
+      'pending_action' => $roleController->pendingRequisition()->getData()['orders']->count(),
+      'my_approvals' => $roleController->myApprovals()->getData()['orders']->count(),
+      'approved' => $roleController->approvedRequisition()->getData()['orders']->count(),
+      // Fleet-wide, not per-officer - matches what /received/requisition
+      // itself shows the shore side (HomeController@rcvReqForAll).
+      'received' => Order::where('ord_status', true)->where('status', 'received')->count(),
+    ];
+  }
+  /**
+   * Certificates/Surveys are fleet-wide reference data, reachable two ways:
+   * super-admin/GM (SRD)/admin manage the whole fleet (any vessel, plus the
+   * certificate TYPE catalog itself - category/validity/permanent); a
+   * vessel's own Master/Chief Engineer see and add records for their OWN
+   * vessel only, never another one and never the type catalog (that stays
+   * standardized fleet-wide, matching the TEC-04 Certificate Checklist's own
+   * fixed nomenclature).
+   */
+  private function isFleetRecordsAdmin(): bool
+  {
+    return in_array(auth()->user()->role->role ?? null, ['super-admin', 'gm-srd', 'admin'], true);
+  }
+
+  private function isVesselRecordsManager(): bool
+  {
+    return in_array(auth()->user()->role->role ?? null, ['master', 'chief-engineer'], true)
+      && ! empty(auth()->user()->role->vessel_id);
+  }
+
+  private function authorizeFleetRecords(): void
+  {
+    abort_unless($this->isFleetRecordsAdmin() || $this->isVesselRecordsManager(), 403);
+  }
+
   public function getSurvey()
   {
-    $vessel_surveys=VesselSurvey::orderBy('created_at','desc')->where('status',true)->get();
-    $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
-    $surveys=Survey::orderBy('created_at','desc')->where('status',true)->get();
-    return view('layouts.survey',compact('vessel_surveys','vessels','surveys'));
+    $this->authorizeFleetRecords();
+
+    $surveys = Survey::orderBy('created_at', 'desc')->where('status', true)->get();
+
+    if ($this->isVesselRecordsManager()) {
+      $vessel_surveys = VesselSurvey::where('status', true)
+        ->where('vessel_id', auth()->user()->role->vessel_id)
+        ->orderBy('created_at', 'desc')->get();
+
+      return view('layouts.survey', [
+        'vessel_surveys' => $vessel_surveys, 'surveys' => $surveys,
+        'vessels' => null, 'lockedVessel' => auth()->user()->role->vessel,
+      ]);
+    }
+
+    $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
+    $vessel_surveys = VesselSurvey::orderBy('created_at', 'desc')->where('status', true)->get();
+
+    return view('layouts.survey', compact('vessel_surveys', 'vessels', 'surveys'))->with('lockedVessel', null);
   }
   public function storeSurvey(SurveyFormValidate $request)
   {
+    $this->authorizeFleetRecords();
+
     $survey=new VesselSurvey;
     $survey->survey_id=$request->Survey_Name;
     $survey->society_name=$request->Survey_Society;
     $survey->survey_date=$request->Survey_Date;
     $survey->survey_exp_date=$request->Survey_Expire_Date;
-    $survey->vessel_id=$request->Vessel_Name;
+    // A vessel's own Master/Chief Engineer can only ever record a survey
+    // against their own vessel - the posted Vessel_Name is trusted only from
+    // the fleet-wide admin roles, who can genuinely pick any vessel.
+    $survey->vessel_id=$this->isVesselRecordsManager() ? auth()->user()->role->vessel_id : $request->Vessel_Name;
     $survey->created_by=auth()->user()->id;
     $survey->save();
     $newsurvey=VesselSurvey::with('vessel')->with('Survey')->where('id',$survey->id)->first();
@@ -93,13 +266,28 @@ class HomeController extends Controller
   }
   public function getOneSurvey($id)
   {
-    return $survey=VesselSurvey::with('vessel')->with('survey')->where('id',$id)->first();
+    $this->authorizeFleetRecords();
+
+    $survey=VesselSurvey::with('vessel')->with('survey')->where('id',$id)->first();
+
+    if ($this->isVesselRecordsManager() && (! $survey || $survey->vessel_id != auth()->user()->role->vessel_id)) {
+      abort(404);
+    }
+
+    return $survey;
   }
   public function updateOneSurvey(SurveyFormValidate $request)
   {
+    $this->authorizeFleetRecords();
+
     $survey=VesselSurvey::findOrFail($request->survey_Id);
+
+    if ($this->isVesselRecordsManager() && $survey->vessel_id != auth()->user()->role->vessel_id) {
+      abort(403, 'This survey belongs to a different vessel.');
+    }
+
     $survey->survey_id=$request->Survey_Name;
-    $survey->vessel_id=$request->Vessel_Name;
+    $survey->vessel_id=$this->isVesselRecordsManager() ? auth()->user()->role->vessel_id : $request->Vessel_Name;
     $survey->society_name=$request->Survey_Society;
     $survey->survey_date=$request->Survey_Date;
     $survey->survey_exp_date=$request->Survey_Expire_Date;
@@ -111,7 +299,14 @@ class HomeController extends Controller
   }
   public function deleteOneSurvey(Request $request)
   {
+    $this->authorizeFleetRecords();
+
     $survey =VesselSurvey::findOrFail($request->id);
+
+    if ($this->isVesselRecordsManager() && $survey->vessel_id != auth()->user()->role->vessel_id) {
+      abort(403, 'This survey belongs to a different vessel.');
+    }
+
     $survey->status=false; 
     $survey->update(); 
     $data ="Requested Vessel Survey has been deleted successfully!";
@@ -119,19 +314,48 @@ class HomeController extends Controller
   }
   public function getCertificates()
   {
-    $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
-    $vessel_certificates=VesselCertificate::orderBy('created_at','desc')->where('status',true)->get();
-    $certificates=Certificate::orderBy('created_at','desc')->where('status',true)->get();
-    return view('layouts.certificate',compact('certificates','vessels','vessel_certificates'));
+    $this->authorizeFleetRecords();
+
+    // The list Master/Chief Engineer choose from when recording a
+    // certificate. Maintained by super-admin only - see
+    // storeCertificateCategory below.
+    $categories = CertificateCategory::where('status', true)->orderBy('name')->get();
+    $categoriesManageable = $this->isFleetRecordsAdmin();
+
+    if ($this->isVesselRecordsManager()) {
+      $vessel_certificates = VesselCertificate::with('category')->where('status', true)
+        ->where('vessel_id', auth()->user()->role->vessel_id)
+        ->orderBy('created_at', 'desc')->get();
+
+      return view('layouts.certificate', [
+        'categories' => $categories, 'vessel_certificates' => $vessel_certificates,
+        'vessels' => null, 'lockedVessel' => auth()->user()->role->vessel,
+        'categoriesManageable' => $categoriesManageable,
+      ]);
+    }
+
+    $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
+    $vessel_certificates = VesselCertificate::with('category')->orderBy('created_at', 'desc')->where('status', true)->get();
+
+    return view('layouts.certificate', compact('categories', 'vessels', 'vessel_certificates', 'categoriesManageable'))
+      ->with('lockedVessel', null);
   }
   public function certificateStore(CertificateFormValidate $request)
   {
+    $this->authorizeFleetRecords();
+
     $certificate=new VesselCertificate; 
-    $certificate->certificate_id=$request->Certificate_Name;
-    $certificate->vessel_id=$request->Vessel_Name;
+    $certificate->title=trim($request->title);
+    $certificate->category_id=$request->category_id;
+    $certificate->vessel_id=$this->isVesselRecordsManager() ? auth()->user()->role->vessel_id : $request->Vessel_Name;
     $certificate->issue_auth=$request->Issuing_Authority;
     $certificate->issue_date=$request->Issue_Date;
-    $certificate->exp_date=$request->Certificate_Expire_Date;
+    $certificate->is_permanent=$request->boolean('is_permanent');
+    // Permanent means nothing else here applies - forced blank server-side
+    // regardless of what a hand-rolled POST tries to sneak past the form's
+    // own JS, which already does the same hiding/clearing client-side.
+    $certificate->validity_years=$certificate->is_permanent ? null : $request->validity_years;
+    $certificate->exp_date=$this->expiryDateFor($request, $certificate->is_permanent);
     $certificate->created_by=auth()->user()->id;
     if($request->hasFile('Certificate_Copy')){
      $name = 'images/cert_copy/'.time() . '.' . $request->Certificate_Copy->getClientOriginalExtension();
@@ -139,23 +363,41 @@ class HomeController extends Controller
      $certificate->cert_copy=$name;
    }
    $certificate->save();
-   $newcertificate=VesselCertificate::with('vessel')->with('certificate')->where('id',$certificate->id)->first();
+   $newcertificate=VesselCertificate::with('vessel')->with('category')->where('id',$certificate->id)->first();
    $data ="New Vessel Certificate has been added successfully.";
    return array($data,$newcertificate,url('/'));
  }
 
  public function getOneCertificate($id)
  {
-  return array ($vessel_certificate=VesselCertificate::with('vessel')->with('certificate')->where('id',$id)->first(),url('/'));
+  $this->authorizeFleetRecords();
+
+  $vessel_certificate = VesselCertificate::with('vessel')->with('category')->where('id', $id)->first();
+
+  if ($this->isVesselRecordsManager() && (! $vessel_certificate || $vessel_certificate->vessel_id != auth()->user()->role->vessel_id)) {
+    abort(404);
+  }
+
+  return array($vessel_certificate, url('/'));
 }
 public function updateOneCertificate(CertificateEditFormVal $request)
 {
+  $this->authorizeFleetRecords();
+
   $certificate= VesselCertificate::findOrFail($request->Cert_Id);
-  $certificate->certificate_id=$request->Certificate_Name;
+
+  if ($this->isVesselRecordsManager() && $certificate->vessel_id != auth()->user()->role->vessel_id) {
+    abort(403, 'This certificate belongs to a different vessel.');
+  }
+
+  $certificate->title=trim($request->title);
+  $certificate->category_id=$request->category_id;
   $certificate->issue_auth=$request->Issuing_Authority;
   $certificate->issue_date=$request->Issue_Date;
-  $certificate->exp_date=$request->Certificate_Expire_Date;
-  $certificate->vessel_id=$request->Vessel_Name;
+  $certificate->is_permanent=$request->boolean('is_permanent');
+  $certificate->validity_years=$certificate->is_permanent ? null : $request->validity_years;
+  $certificate->exp_date=$this->expiryDateFor($request, $certificate->is_permanent);
+  $certificate->vessel_id=$this->isVesselRecordsManager() ? auth()->user()->role->vessel_id : $request->Vessel_Name;
   if($request->hasFile('Certificate_Copy')){
    \File::delete('images/cert_copy/' . basename($certificate->cert_copy));
    $name = 'images/cert_copy/'.time() . '.' . $request->Certificate_Copy->getClientOriginalExtension();
@@ -164,19 +406,106 @@ public function updateOneCertificate(CertificateEditFormVal $request)
  }
  $certificate->updated_by=auth()->user()->id;
  $certificate->update();
- $newcertificate=VesselCertificate::with('vessel')->with('certificate')->where('id',$certificate->id)->first();
+ $newcertificate=VesselCertificate::with('vessel')->with('category')->where('id',$certificate->id)->first();
  $data ="Requested Vessel Certificate has been updated successfully.";
  return array($data,$newcertificate,url('/'));
 }
 public function deleteOneCertificate(Request $request)
 {
+  $this->authorizeFleetRecords();
+
   $certificate =VesselCertificate::findOrFail($request->id);
+
+  if ($this->isVesselRecordsManager() && $certificate->vessel_id != auth()->user()->role->vessel_id) {
+    abort(403, 'This certificate belongs to a different vessel.');
+  }
+
   // \File::delete('images/cert_copy/' . basename($certificate->cert_copy));
   $certificate->status = false; 
   $certificate->update(); 
   $data ="Requested Vessel Certificate has been deleted successfully!";
   return array($data);
 }
+
+/**
+ * When a certificate expires: Issue Date plus however many years it runs
+ * for. A permanent certificate has no expiry at all.
+ *
+ * An explicitly supplied date still wins - the form pre-fills this same
+ * calculation but leaves it editable, because a real certificate's expiry
+ * isn't always exactly issue + N years (this fleet's own TEC-04 checklist
+ * has several: a 5-yearly Certificate of Class issued 07-May-2026 expiring
+ * 21-May-2029, for one).
+ */
+private function expiryDateFor(Request $request, bool $isPermanent): ?string
+{
+  if ($isPermanent) {
+    return null;
+  }
+
+  if ($request->filled('Certificate_Expire_Date')) {
+    return $request->Certificate_Expire_Date;
+  }
+
+  if (! $request->filled('Issue_Date') || ! $request->filled('validity_years')) {
+    return null;
+  }
+
+  return Carbon::parse($request->Issue_Date)->addYears((int) $request->validity_years)->toDateString();
+}
+
+/**
+ * Certificate CATEGORY management - the sections of the TEC-04 Certificate
+ * Checklist that each vessel's certificates are filed under. Super-admin's
+ * own list (isFleetRecordsAdmin): a vessel's Master/Chief Engineer picks
+ * from it when recording a certificate, but never adds to it.
+ */
+public function storeCertificateCategory(CertificateCategoryFormValidate $request)
+{
+  abort_unless($this->isFleetRecordsAdmin(), 403);
+
+  $category = new CertificateCategory;
+  $category->name = trim($request->name);
+  $category->status = true;
+  $category->created_by = auth()->user()->id;
+  $category->save();
+
+  return response()->json(['message' => 'Category "'.$category->name.'" added.', 'category' => $category]);
+}
+
+public function updateCertificateCategory(CertificateCategoryFormValidate $request)
+{
+  abort_unless($this->isFleetRecordsAdmin(), 403);
+
+  $category = CertificateCategory::findOrFail($request->category_id);
+  $category->name = trim($request->name);
+  $category->updated_by = auth()->user()->id;
+  $category->update();
+
+  return response()->json(['message' => 'Category updated.', 'category' => $category]);
+}
+
+public function deleteCertificateCategory(Request $request)
+{
+  abort_unless($this->isFleetRecordsAdmin(), 403);
+
+  $category = CertificateCategory::findOrFail($request->id);
+
+  // Refused while any vessel still files a certificate under it - removing
+  // it would leave those records with no category at all.
+  $inUse = $category->vesselCertificates()->where('status', true)->count();
+  if ($inUse > 0) {
+    return response()->json([
+      'message' => 'This category is used by '.$inUse.' certificate'.($inUse === 1 ? '' : 's').' - reassign those first.',
+    ], 422);
+  }
+
+  $category->status = false;
+  $category->update();
+
+  return response()->json(['message' => 'Category removed.']);
+}
+
 public function getItem(){
   $categories=Category::orderBy('created_at','desc')->where('status',true)->get();
   $items=Item::orderBy('created_at','desc')->where('status',true)->get();
@@ -208,9 +537,44 @@ public function updateCategory(CategoryFormValidate $request){
 }
 public function deleteCategory(Request $request){
   $category =Category::findOrFail($request->id);
-  $category->status = false; 
-  $category->update(); 
+  $category->status = false;
+  $category->update();
   $data ="Requested Category has been deleted successfully!";
+  return array($data);
+}
+public function getBudgetGroup(){
+  abort_unless(auth()->user()->role->role === 'super-admin', 403);
+  $budgetGroups=BudgetGroup::orderBy('created_at','desc')->where('status',true)->get();
+  return view('layouts.budget-group',compact('budgetGroups'));
+}
+public function storeBudgetGroup(BudgetGroupFormValidate $request){
+ abort_unless(auth()->user()->role->role === 'super-admin', 403);
+ $budgetGroup = new BudgetGroup;
+ $budgetGroup->name=$request->name;
+ $budgetGroup->kind=$request->kind ?: BudgetGroup::KIND_ITEM;
+ $budgetGroup->created_by=auth()->user()->name;
+ $budgetGroup->updated_by='';
+ $budgetGroup->status=true;
+ $budgetGroup->save();
+ $data ="New Budget Group has been added successfully.";
+ return array($data,$budgetGroup);
+}
+public function updateBudgetGroup(BudgetGroupFormValidate $request){
+ abort_unless(auth()->user()->role->role === 'super-admin', 403);
+ $budgetGroup = BudgetGroup::findOrFail($request->BudgetGroup_Id);
+ $budgetGroup->name=$request->name;
+ $budgetGroup->kind=$request->kind ?: $budgetGroup->kind;
+ $budgetGroup->updated_by=auth()->user()->name;
+ $budgetGroup->update();
+ $data ="Requested Budget Group has been updated successfully.";
+ return array($data,$budgetGroup);
+}
+public function deleteBudgetGroup(Request $request){
+  abort_unless(auth()->user()->role->role === 'super-admin', 403);
+  $budgetGroup =BudgetGroup::findOrFail($request->id);
+  $budgetGroup->status = false;
+  $budgetGroup->update();
+  $data ="Requested Budget Group has been deleted successfully!";
   return array($data);
 }
 public function getVessels()
@@ -226,6 +590,7 @@ public function storeVesselGenInfo(VesselGenInfoValidate $req)
 {
   $genInfo=new Vessel;
   $genInfo->name=$req->vessel_name;
+  $genInfo->acronym=$req->vessel_acronym;
   $genInfo->owner_name=$req->owner_name;
   $genInfo->owner_address=$req->owner_address;
   $genInfo->manager_name=$req->manager_name;
@@ -288,25 +653,77 @@ public function deleteOneItem(Request $request){
   $data ="Requested Item has been deleted successfully!";
   return array($data);
 }
-public function getOrder(){
+public function getOrder(Request $request){
   $items =Item::orderBy('created_at','desc')->where('status',true)->get();
   $categories =Category::orderBy('created_at','desc')->where('status',true)->get();
   $vessels =Vessel::orderBy('created_at','desc')->where('status',true)->get();
-  
-  if(auth()->user()->role->role=='second-engineer' || auth()->user()->role->role=='chief-officer'){
-    $orders=Order::where('status','ready')
-    ->where('ord_status',true)
-    ->where('vessel_id', auth()->user()->role->vessel->id)
-    ->orderBy('created_at','desc')
-    ->get();
-  } 
-  if(auth()->user()->role->role=='super-admin' || auth()->user()->role->role=='gm-srd'){
-    $orders=Order::
-    where('ord_status',true)
-    ->orderBy('created_at','desc')
-    ->get();
+  $role = auth()->user()->role->role;
+
+  // Which requisitions this role may list at all (unchanged from before the
+  // list was paged): the raising officers see their own vessel's, the head-
+  // office roles below see every vessel's, anyone else sees none here.
+  if($role=='second-engineer' || $role=='chief-officer'){
+    $query = Order::where('ord_status',true)
+      ->where('vessel_id', auth()->user()->role->vessel_id);
+    $filterable = false;
+  } elseif($role=='super-admin' || $role=='gm-srd' || $role=='technical-superintendent' || $role=='marine-superintendent'){
+    $query = Order::where('ord_status',true);
+    $filterable = true;
+  } else {
+    $query = Order::whereRaw('1 = 0');
+    $filterable = false;
   }
-  return view('layouts.order',compact('items','categories','vessels','orders'));
+
+  // Vessel / category / date filters. Dates match on the requisition date:
+  // both = that range, inclusive; one = that exact day. Only roles that see
+  // every vessel get the filter panel, so the rest ignore these inputs.
+  $ship_id = $filterable ? $request->query('ship_id') : null;
+  $cat_id = $filterable ? $request->query('cat_id') : null;
+  $from_date = $filterable ? ($request->query('from_date') ?: null) : null;
+  $end_date = $filterable ? ($request->query('end_date') ?: null) : null;
+  $category = $cat_id ? Category::find($cat_id) : null;
+  // ?status= from the super-admin dashboard's cards (pending/delivered/received/rejected).
+  $status = in_array($request->query('status'), Order::OVERVIEW_STATUSES, true) ? $request->query('status') : null;
+  $query->overviewStatus($status);
+
+  $query->when($ship_id, fn ($q, $id) => $q->where('vessel_id', $id))
+    ->when($cat_id, fn ($q, $id) => $q->where('category_id', $id))
+    ->when($from_date && $end_date, fn ($q) => $q->whereBetween('req_date', [$from_date, $end_date]))
+    ->when($from_date && ! $end_date, fn ($q) => $q->whereDate('req_date', $from_date))
+    ->when($end_date && ! $from_date, fn ($q) => $q->whereDate('req_date', $end_date));
+
+  $q = trim((string) $request->query('q'));
+  $perPageChoice = $this->requisitionPerPage($request);
+
+  $orders = $this->paginateRequisitions(
+    $this->searchRequisitions($query, $q)->with(['category', 'vessel', 'creator'])->orderBy('created_at','desc'),
+    $perPageChoice
+  );
+
+  if ($orders->isEmpty() && $orders->currentPage() > 1) {
+    return redirect($orders->url($orders->lastPage()));
+  }
+
+  $listTitle = $status ? ucfirst($status).' Item Requisitions' : null;
+
+  return view('layouts.order',compact('items','categories','vessels','orders','q','perPageChoice','ship_id','cat_id','from_date','end_date','category','status','listTitle'));
+}
+
+/** Free-text search across req. no, port, category, vessel and creator (all pages, not just the visible one). */
+private function searchRequisitions($query, string $q)
+{
+  if ($q === '') {
+    return $query;
+  }
+  $like = $this->likeTerm($q);
+
+  return $query->where(function ($w) use ($like) {
+    $w->where('req_no', 'like', $like)
+      ->orWhere('port_name', 'like', $like)
+      ->orWhereHas('category', fn ($c) => $c->where('name', 'like', $like))
+      ->orWhereHas('vessel', fn ($v) => $v->where('name', 'like', $like))
+      ->orWhereHas('creator', fn ($u) => $u->where('name', 'like', $like));
+  });
 }
 public function createOrder(){
   $categories =Category::orderBy('created_at','desc')->where('status',true)->get();
@@ -334,7 +751,7 @@ public function storeOrder(Request $request)
     $order->vessel_id = auth()->user()->role->vessel->id;
     $order->category_id = $request->Category_Name;
     $order->req_date =Carbon::now();
-    $order->req_no = 'DK/'.$cat->symbol.'/'.$counter .'/'.Carbon::now()->year;
+    $order->req_no = auth()->user()->role->vessel->reqNoPrefix().'/'.$cat->symbol.'/'.$counter .'/'.Carbon::now()->year;
     $order->port_name = $request->Port_Name;
     $order->created_by_role = auth()->user()->role->role;
     $order->created_by = auth()->user()->id;
@@ -674,6 +1091,7 @@ public function storeGeninfo(VesselGenInfoValidate $req){
   if(empty($check_vessel)){
     $genInfo=new Vessel;
     $genInfo->name=$req->vessel_name;
+    $genInfo->acronym=$req->vessel_acronym;
     $genInfo->owner_name=$req->owner_name;
     $genInfo->owner_address=$req->owner_address;
     $genInfo->manager_name=$req->manager_name;
@@ -692,6 +1110,7 @@ public function storeGeninfo(VesselGenInfoValidate $req){
   }else{
     $genInfo = Vessel::findOrFail($req['vessel_id']);
     $genInfo->name=$req->vessel_name;
+    $genInfo->acronym=$req->vessel_acronym;
     $genInfo->owner_name=$req->owner_name;
     $genInfo->owner_address=$req->owner_address;
     $genInfo->manager_name=$req->manager_name;
@@ -752,10 +1171,53 @@ public function viewVesselDetail($id){
  return view('layouts.view-vessel-detail',compact('vessel'));
 }
 public function viewOrderDetail($id){
- $order=Order::findOrFail($id);
+ $order=Order::with([
+   'orderItems.attachments.uploader',
+   'orderItems.quantityChanges',
+   'procurementSteps.completedBy',
+   'procurementSteps.attachments',
+   'invoice',
+ ])->findOrFail($id);
    // return $vessel->vesselDetail->type;
    // {{!empty($vessel->vesselDetail->type)?$vessel->vesselDetail->type:''}}
- return view('layouts.view-order-detail',compact('order'));
+
+ // DGM (SSM) assigns the requisition to one named officer - the picker is
+ // grouped by role, so hand the view the officers keyed by their role.
+ $ssmOfficers = Role::whereIn('role', ['agm-ssm', 'am-ssm', 'superintendent-ssm'])
+   ->where('status', true)
+   ->with('user')
+   ->get()
+   ->filter(fn($role) => $role->user !== null)
+   ->groupBy('role');
+
+ // GM (SRD) delegates to one named reviewer, same reasoning as $ssmOfficers
+ // above - DGM/AGM/AM/Superintendent (SRD) are each more than one real person.
+ $srdOfficers = Role::whereIn('role', ['dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd'])
+   ->where('status', true)
+   ->with('user')
+   ->get()
+   ->filter(fn($role) => $role->user !== null)
+   ->groupBy('role');
+
+ // The form's stock columns. Opening Stock / Last Supply come off the line
+ // itself (snapshotted when the requisition was raised, so an old form still
+ // prints what justified it at the time); In Stock is deliberately LIVE - it
+ // answers "what is on board now", which is a different question. Total
+ // Supply is everything this vessel has ever received of that item.
+ $itemIds = $order->orderItems->pluck('item_id')->all();
+
+ $liveStock = app(StockService::class)->snapshotFor($order->vessel_id, $itemIds);
+
+ $totalSupplied = empty($itemIds) ? collect() : OrderItem::query()
+   ->select('order_items.item_id', DB::raw('SUM(order_items.rcv_item_qty) as total'))
+   ->join('orders', 'orders.id', '=', 'order_items.order_id')
+   ->where('orders.vessel_id', $order->vessel_id)
+   ->where('orders.status', 'received')
+   ->whereIn('order_items.item_id', $itemIds)
+   ->groupBy('order_items.item_id')
+   ->pluck('total', 'order_items.item_id');
+
+ return view('layouts.view-order-detail',compact('order','ssmOfficers','srdOfficers','liveStock','totalSupplied'));
 }
 
 public function allTrash(){
@@ -931,11 +1393,17 @@ public function storeUser(UserFormVal $request){
     $role->vessel_id= $request->Vessel_Name;
   }
   $role->role=$request->User_Role;
-  $role->user_type=$request->user_type;
+  // The role decides the department; the radio is only the fallback for a
+  // role this app doesn't know, so a forgotten radio can't leave it blank.
+  $role->user_type=\App\Role::TYPE_BY_ROLE[$request->User_Role] ?? $request->user_type;
   $role->created_by=auth()->user()->name;
   $role->updated_by=auth()->user()->name;
   $role->save();
   $vessel_name=!empty($role->vessel->name)?$role->vessel->name:'';
+  // Readable stamps for the row the page adds without reloading - the same
+  // format the table renders on load.
+  $user->setAttribute('created_label', $user->created_at->format('d M Y, h:i A'));
+  $user->setAttribute('updated_label', $user->updated_at->format('d M Y, h:i A'));
   $data ="New user has been created successfully.";
   return array($data,$user,$role,$vessel_name);
 }
@@ -960,6 +1428,9 @@ public function updateOneUser(updateUserFormVal $request){
   $user = User::findOrFail($request->user_id);
   $user->email=$request->email;
   $user->name=$request->User_Name;
+  if ($request->filled('password')) {
+    $user->password = Hash::make($request->password);
+  }
   $user->update();
   $role = Role::findOrFail($user->role->id);
   $role->role = $request->User_Role;
@@ -968,9 +1439,11 @@ public function updateOneUser(updateUserFormVal $request){
   }else{
     $role->vessel_id=null;
   }
-  $role->user_type=$request->user_type;
+  $role->user_type=\App\Role::TYPE_BY_ROLE[$request->User_Role] ?? $request->user_type;
   $role->updated_by=auth()->user()->name;
   $role->update();
+  $user->setAttribute('created_label', $user->created_at->format('d M Y, h:i A'));
+  $user->setAttribute('updated_label', $user->updated_at->format('d M Y, h:i A'));
   $data ="Requested user has been updated successfully.";
   $vessel_name = !empty($role->vessel->name)?$role->vessel->name:'';
   return array ($data,$user, $role, $vessel_name);
@@ -1021,10 +1494,13 @@ public function addsingleDelQty(Request $r){
 }elseif (auth()->user()->role->role=='second-engineer') {
  $colname ='rcv_item_qty';
  $data='Requested Received Quantity Updated Successfully!';
-}elseif (auth()->user()->role->role=='am-srd') {
- $colname ='item_qty';
- $data='Requested Required Quantity Updated Successfully!';
 }
+// am-srd used to have a branch here (editing item_qty with no order-state
+// check at all - any live order, any time), but it only ever reachable
+// through a view-order-detail.blade.php bug that made an unrelated button
+// render for am-srd unconditionally. That markup is gone (see
+// view-order-detail.blade.php and dataForm.js #indSave), so this branch is
+// removed too rather than leaving an unused door open on a real endpoint.
 $orderitem=OrderItem::findOrFail($r->itemId);
 $orderitem->$colname=$r->itemValue;
 $orderitem->update();
@@ -1042,7 +1518,6 @@ public function searchOrder(Request $req){
   $vessels =Vessel::orderBy('created_at','desc')->where('status',true)->get();
   $ship_id=$req->ship_id;
   $cat_id=$req->cat_id;
-  $item_id=$req->item_id;
   $dateBetween=null;
   $category=null;
   $from_date=null;
@@ -1075,15 +1550,14 @@ $orders = Order::where('ord_status',true)
 ->when($end_date, function ($query, $end_date) {
   return $query->whereDate('req_date', $end_date);
 })
-->when($item_id, function ($query, $item_id) {
-  return $query->whereHas('orderItems', function ($query1) use ($item_id) {
-    return $query1->where('item_id', $item_id);
-  })->orWhereDoesntHave('orderItems');
-
-})
 ->orderBy('created_at','desc')
 ->get();
-return view(!empty($item_id)?'layouts.order-item':'layouts.order',compact('orders','items','categories','vessels','item_id','ship_id','cat_id','from_date','end_date','category'));
+// What was typed, not the query's own variables above: those are null when
+// both dates were given (the range goes through $dateBetween), which blanked
+// both boxes again after every range search.
+$from_date=$req->from_date ?: null;
+$end_date=$req->end_date ?: null;
+return view('layouts.order',compact('orders','items','categories','vessels','ship_id','cat_id','from_date','end_date','category'));
 }
 public function getProfile(){
   $profile=User::findOrFail(auth()->id());
@@ -1104,39 +1578,49 @@ public function changePassword(Request $request){
     return back()->with('error','Old Password does not matched!');
   }
 }
+/**
+ * Photo and signature upload independently - the profile page posts one or
+ * the other, never both, so someone who only wants to replace their
+ * signature no longer has to re-pick a photo they already uploaded.
+ *
+ * max:5120 is kilobytes, so 5 MB each. Both are also checked as real images
+ * rather than trusted by extension, which the previous version did not do at
+ * all: it had no size, type or dimension rule on either field.
+ */
 public function changeFile(Request $request){
-  // return $request->all();
-  if($request->photo=='' && $request->signature==''){
-   return back()->with('warning','Photo & Signature required');
- }
- $user=User::findOrFail(auth()->user()->id);
- if($user->photo=='' && $user->sign==''){
-  $this->validate($request,[
-    'photo' => 'required',
-    'signature' => 'required'
+  $request->validate([
+    'photo' => 'nullable|image|mimes:jpeg,jpg,png,gif|max:5120',
+    'signature' => 'nullable|image|mimes:jpeg,jpg,png,gif|max:5120',
+  ], [
+    'photo.max' => 'The photo may not be larger than 5 MB.',
+    'signature.max' => 'The signature may not be larger than 5 MB.',
+    'photo.image' => 'The photo must be an image file (JPG, PNG or GIF).',
+    'signature.image' => 'The signature must be an image file (JPG, PNG or GIF).',
   ]);
-}elseif($user->photo==''){
- $this->validate($request,[
-  'photo' => 'required',
-]);
-}
-elseif($user->sign==''){
-  $this->validate($request,[
-    'signature' => 'required',
-  ]);
-}
-if($request->hasFile('photo')){
- $name ='images/userphoto/'. time() . '.' . $request->photo->getClientOriginalExtension();
- $request->photo->move(base_path('images/userphoto'), $name);
- $user->photo = $name;
-}
-if($request->hasFile('signature')){
- $name ='images/signature/'. time() . '.' . $request->signature->getClientOriginalExtension();
- $request->signature->move(base_path('images/signature'), $name);
- $user->sign = $name;
-}
-$user->update();
-return back()->with('success','Photo & Signature Updated Successfully!');
+
+  if(! $request->hasFile('photo') && ! $request->hasFile('signature')){
+    return back()->with('warning','Choose a file to upload first.');
+  }
+
+  $user=User::findOrFail(auth()->user()->id);
+  $updated=[];
+
+  if($request->hasFile('photo')){
+    $name ='images/userphoto/'. time() . '.' . $request->photo->getClientOriginalExtension();
+    $request->photo->move(base_path('images/userphoto'), $name);
+    $user->photo = $name;
+    $updated[]='Photo';
+  }
+  if($request->hasFile('signature')){
+    $name ='images/signature/'. time() . '.' . $request->signature->getClientOriginalExtension();
+    $request->signature->move(base_path('images/signature'), $name);
+    $user->sign = $name;
+    $updated[]='Signature';
+  }
+
+  $user->update();
+
+  return back()->with('success', implode(' & ', $updated).' updated successfully!');
 }
 public function deliverReqForAll(){
   $items =Item::orderBy('created_at','desc')->where('status',true)->get();
@@ -1162,7 +1646,7 @@ public function deliverReqForAll(){
 			})
    
    ->where('vessel_id', auth()->user()->role->vessel->id)
-   ->orderBy('created_at','desc')
+   ->orderBy('updated_at','desc')
    ->get();
  }else{
   $orders=Order::
@@ -1182,78 +1666,106 @@ public function deliverReqForAll(){
     ->where('agm_app_ssm','!=',null)
     ->where('am_app_ssm','!=',null);
   })
-  ->orderBy('created_at','desc')
+  ->orderBy('updated_at','desc')
   ->get();
 }
 return view('layouts.order',compact('orders','items','categories','vessels'));
 }
-public function rcvReqForAll(){
+/**
+ * Delivered/Received - the closed loop: Master or Chief Engineer has
+ * confirmed the quantities that actually arrived.
+ *
+ * This used to require ast_m_app, agm_app, dgm_app_ssm, agm_app_ssm AND
+ * am_app_ssm to all be non-null at once. A real requisition passes through
+ * exactly ONE SRD reviewer and ONE SSM final-actor, never all of them, so
+ * that condition could never be satisfied and the page was permanently
+ * empty for every role. status='received' is set in exactly one place
+ * (RoleController@approveRequisition, Master's receipt confirmation), which
+ * makes it the reliable thing to key off.
+ */
+public function rcvReqForAll(Request $request){
   $items =Item::orderBy('created_at','desc')->where('status',true)->get();
   $categories =Category::orderBy('created_at','desc')->where('status',true)->get();
   $vessels =Vessel::orderBy('created_at','desc')->where('status',true)->get();
+  $drafts = collect();
+  $q = trim((string) $request->query('q'));
+
+  // Paged and searched on the server (15 a page by default): this list grows
+  // with every requisition ever closed, and shipping all of them to the
+  // browser for DataTables to page was the slow part.
+  $perPageChoice = $this->requisitionPerPage($request);
+
   if(auth()->user()->role->user_type=='ship'){
-   $orders=Order::
-   where('ord_status',true)
-   ->whereHas('orderApproval', function($q){
-     $q->where(function($query){
-      $query->where('master_app','!=',null)
-      ->orWhere('chief_eng_app','!=',null);
-    }) 
-     ->where('status','received')
-     ->where('cheif_ofcr_app','!=',null)
-     ->where('ord_status',true)
-     ->where('ast_m_app','!=',null)
-     ->where('agm_app','!=',null)
-     ->where('gm_app','!=',null)
-     ->where('dgm_app_ssm','!=',null)
-     ->where('agm_app_ssm','!=',null)
-     ->where('am_app_ssm','!=',null);
-   })
-   ->where('vessel_id', auth()->user()->role->vessel->id)
-   ->orderBy('created_at','desc')
-   ->get();
- }else{
-  $orders=Order::
-  where('ord_status',true)
-  ->whereHas('orderApproval', function($q){
-    $q->where(function($query){
-      $query->where('master_app','!=',null)
-      ->orWhere('chief_eng_app','!=',null);
-    })
-    ->where('status','received')
-    ->where('cheif_ofcr_app','!=',null)
-    ->where('ord_status',true)
-    ->where('ast_m_app','!=',null)
-    ->where('agm_app','!=',null)
-    ->where('gm_app','!=',null)
-    ->where('dgm_app_ssm','!=',null)
-    ->where('agm_app_ssm','!=',null)
-    ->where('am_app_ssm','!=',null);
-  })
-  ->orderBy('created_at','desc')
-  ->get();
-}
-return view('layouts.order',compact('orders','items','categories','vessels'));
-}
-public function updateStatusByAM(Request $req){
-  $order=Order::findOrFail($req->id);
-  $order->status = $req->status;
-  $order->update();
-  $data ="Requested order status has been updated successfully!";
-  return array($data);
+    $orders = $this->paginateRequisitions(
+      $this->searchRequisitions(app(RoleController::class)->shipTrackingScope()->where('status', 'received'), $q)
+        ->with(['category', 'vessel', 'creator'])
+        ->orderBy('updated_at', 'desc'),
+      $perPageChoice
+    );
+    $listTitle = 'Delivered Requisitions';
+
+    // A stale ?page= past the end (a result set that shrank) lands on the last page, not an empty one.
+    if ($orders->isEmpty() && $orders->currentPage() > 1) {
+      return redirect($orders->url($orders->lastPage()));
+    }
+
+    return view('layouts.ship-home',compact('orders','drafts','listTitle','q','perPageChoice'));
+  }
+
+  // Shore side sees the whole fleet's closed requisitions.
+  $orders = $this->paginateRequisitions(
+    $this->searchRequisitions(Order::where('ord_status',true)->where('status','received'), $q)
+      ->with(['category', 'vessel', 'creator'])
+      ->orderBy('updated_at','desc'),
+    $perPageChoice
+  );
+
+  if ($orders->isEmpty() && $orders->currentPage() > 1) {
+    return redirect($orders->url($orders->lastPage()));
+  }
+
+  return view('layouts.order',compact('orders','items','categories','vessels','q','perPageChoice'));
 }
 public function searchSurvey(Request $r)
 {
-  $vessel_surveys=VesselSurvey::orderBy('created_at','desc')->where('status',true)->where('vessel_id',$r->ship_id)->get();
- $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
+  $this->authorizeFleetRecords();
+
+  // A vessel manager's own vessel_id always wins over whatever was posted -
+  // they only ever have one vessel to search within anyway.
+  $shipId = $this->isVesselRecordsManager() ? auth()->user()->role->vessel_id : $r->ship_id;
+
+  $vessel_surveys=VesselSurvey::orderBy('created_at','desc')->where('status',true)->where('vessel_id',$shipId)->get();
  $surveys=Survey::orderBy('created_at','desc')->where('status',true)->get();
- return view('layouts.survey',compact('vessel_surveys','vessels','surveys'))->with('ship_id',$r->ship_id);
+
+ if ($this->isVesselRecordsManager()) {
+   return view('layouts.survey', [
+     'vessel_surveys' => $vessel_surveys, 'surveys' => $surveys,
+     'vessels' => null, 'lockedVessel' => auth()->user()->role->vessel,
+   ]);
+ }
+
+ $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
+ return view('layouts.survey',compact('vessel_surveys','vessels','surveys'))->with('ship_id',$r->ship_id)->with('lockedVessel', null);
 }
 public function searchCertificate(Request $r)
 {
-  $vessel_certificates=VesselCertificate::orderBy('created_at','desc')->where('status',true)->where('vessel_id',$r->ship_id)->get();
+  $this->authorizeFleetRecords();
+
+  $shipId = $this->isVesselRecordsManager() ? auth()->user()->role->vessel_id : $r->ship_id;
+
+  $vessel_certificates=VesselCertificate::with('category')->orderBy('created_at','desc')->where('status',true)->where('vessel_id',$shipId)->get();
+ $categories=CertificateCategory::where('status',true)->orderBy('name')->get();
+ $categoriesManageable = $this->isFleetRecordsAdmin();
+
+ if ($this->isVesselRecordsManager()) {
+   return view('layouts.certificate', [
+     'vessel_certificates' => $vessel_certificates, 'categories' => $categories,
+     'vessels' => null, 'lockedVessel' => auth()->user()->role->vessel,
+     'categoriesManageable' => $categoriesManageable,
+   ]);
+ }
+
  $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
- $certificates=Certificate::orderBy('created_at','desc')->where('status',true)->get();
- return view('layouts.certificate',compact('vessel_certificates','vessels','certificates'))->with('ship_id',$r->ship_id);
+ return view('layouts.certificate',compact('vessel_certificates','vessels','categories','categoriesManageable'))->with('ship_id',$r->ship_id)->with('lockedVessel', null);
 }
 }

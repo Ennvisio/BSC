@@ -1,67 +1,685 @@
 @extends('layouts.admin-master')
 @section('main-content')
+{{-- IBM Plex Mono/Sans aren't loaded by admin-master.blade.php (which has no
+     head-yield to add them to), so they're pulled in here instead - a
+     stylesheet <link> works wherever it sits in the document, head or not. --}}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-.written-sign img{
-	max-height:80px;
-	max-width:300px;
+/* ---- Order detail page: design tokens ----
+   Palette and type scale for this page only - doesn't touch the sidebar/
+   topbar chrome (css/srd-theme.css), which every other page also uses. */
+.order-section{
+	--od-ink:        #15211F;
+	--od-ink-soft:   #24312F;
+	--od-muted:      #6B7877;
+	--od-muted-2:    #778483;
+	--od-faint:      #93A0A0;
+	--od-line:       #DFE5E4;
+	--od-line-soft:  #ECF0EF;
+	--od-surface:    #FFFFFF;
+	--od-ground:     #F7F9F9;
+	--od-accent:     #0E7C74;
+	--od-accent-dark:#0A5D57;
+	--od-accent-tint:#EAF6F4;
+	--od-warn:       #C2700C;
+	--od-warn-dark:  #8A4B08;
+	--od-warn-tint:  #FFF4E5;
+	--od-danger:     #B3261E;
+	--od-radius:     12px;
+	--od-radius-sm:  8px;
+	--od-sans:       'IBM Plex Sans', 'Helvetica Neue', Helvetica, sans-serif;
+	--od-mono:       'IBM Plex Mono', ui-monospace, monospace;
+	font-family: var(--od-sans);
+	color: var(--od-ink);
 }
+.order-section .card.order-card{
+	border: none;
+	background: transparent;
+	box-shadow: none;
+}
+.order-section .card-body{ padding: 0; }
+
+/* Full width of the content area rather than Bootstrap's centred .container,
+   matching the design's fluid main column - .srd-content already supplies
+   the page gutter. min-width:0 on the row/col so a wide table can't push
+   the whole page sideways instead of scrolling inside its own box. */
+.order-section.container{ max-width: 100%; width: 100%; padding-left: 0; padding-right: 0; }
+.order-section > .row{ margin-left: 0; margin-right: 0; }
+.order-section > .row > [class^="col"]{ padding-left: 0; padding-right: 0; min-width: 0; }
+
+/* Print-only duplicate of the four header fields. It has no .print-header
+   class, so it has always rendered on screen too - now redundant next to
+   .od-infobar above. The print popup writes its own
+   "#order-print-header2{display:flex}" rule, so hiding it here doesn't
+   affect what gets printed. */
+#order-print-header2{ display: none !important; }
+
+/* ---- Header: eyebrow + title + action buttons ---- */
+.od-header{
+	display: flex; align-items: flex-start; justify-content: space-between;
+	gap: 20px; flex-wrap: wrap; margin-bottom: 20px;
+}
+/* The requisition's own title (set in step 1 of the wizard) - was collected
+   but never actually shown anywhere on this page. Leads the header, in the
+   biggest type on the page - it's what the officer who raised this actually
+   called it, so it's what a reviewer should read first. The vessel name
+   follows underneath as a small "by <vessel>" line rather than its own big
+   heading, now that the title itself is the headline. */
+.od-req-title{
+	margin: 0 0 4px; font-size: 28px; font-weight: 700; letter-spacing: -.02em;
+	line-height: 1.2; color: var(--od-ink);
+}
+.od-req-vessel{
+	font-size: 13.5px; font-weight: 500; color: var(--od-muted); margin-bottom: 6px;
+}
+.od-eyebrow{
+	font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase;
+	color: var(--od-muted); font-weight: 600; margin-bottom: 6px;
+}
+.od-title{
+	margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.02em;
+	line-height: 1.15; color: var(--od-ink);
+}
+.od-priority{
+	display: inline-flex; align-items: center; gap: 6px; margin-top: 9px;
+	padding: 4px 11px; border-radius: 999px;
+	background: #fbeae8; color: var(--od-danger); border: 1px solid rgba(179,38,30,.22);
+	font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+}
+.od-actions{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.od-actions .btn{
+	display: inline-flex; align-items: center; gap: 8px;
+	padding: 10px 16px; border-radius: var(--od-radius-sm);
+	font-size: 13.5px; font-weight: 600; line-height: 1.2;
+	border: 1px solid transparent; white-space: nowrap;
+}
+.od-actions .btn-primary{ background: var(--od-accent); border-color: var(--od-accent); }
+.od-actions .btn-primary:hover, .od-actions .btn-primary:focus{ background: var(--od-accent-dark); border-color: var(--od-accent-dark); }
+.od-actions .btn-info{ background: var(--od-ink); border-color: var(--od-ink); color: #fff; }
+.od-actions .btn-info:hover, .od-actions .btn-info:focus{ background: #000; border-color: #000; color: #fff; }
+.od-actions .btn-outline-secondary, .od-actions .btn-secondary{
+	background: var(--od-surface); border-color: #D3DBDA; color: var(--od-ink-soft); font-weight: 500;
+}
+.od-actions .btn-outline-secondary:hover, .od-actions .btn-secondary:hover{ background: var(--od-ground); }
+.od-actions .form-control{
+	/* Bootstrap's own .form-control sets width:100% - inside this flex row
+	   that makes the element claim the whole line by itself (its "100%" is
+	   measured against the flex container, not the page), which is exactly
+	   what pushed Forward/Print/Reject onto their own row below it. Give it
+	   back an intrinsic width so it sits inline with the buttons. */
+	width: auto; height: auto; padding: 9px 12px; font-size: 13px; border: 1px solid #D3DBDA;
+	border-radius: var(--od-radius-sm); color: var(--od-ink);
+}
+.od-actions select.form-control{ min-width: 200px; max-width: 260px; }
+/* Pushed to the far right of the row, away from the workflow buttons
+   (Approve/Reject/Edit Part A) - it's a utility action, not a step in the
+   approval chain, so it reads as separate even when the row wraps. */
+.od-export{ margin-left: auto; position: relative; }
+.od-export .dropdown-menu{
+	min-width: 170px; border-radius: var(--od-radius-sm); border: 1px solid #D3DBDA;
+	box-shadow: 0 10px 28px rgba(14,42,38,.14); padding: 6px; margin-top: 6px;
+}
+.od-export .dropdown-item{
+	display: flex; align-items: center; gap: 9px;
+	padding: 9px 10px; border-radius: 7px; font-size: 13.5px; font-weight: 500;
+	color: var(--od-ink); cursor: pointer;
+}
+.od-export .dropdown-item:hover, .od-export .dropdown-item:focus{ background: var(--od-ground); color: var(--od-ink); }
+.od-export .dropdown-item i{ width: 16px; text-align: center; color: var(--od-ink-soft); }
+/* ---- Reject ----
+   Solid red in its resting state, darkening on hover - it reads as the
+   destructive action without needing to be hovered first.
+
+   Every colour here is a literal, NOT a var(--od-*): the reject modal is
+   rendered outside .order-section (down with the other modals), and custom
+   properties only inherit down the tree - so inside the modal those tokens
+   resolve to nothing and the button silently fell back to Bootstrap's
+   default dark-on-white. */
+.od-btn-reject{
+	background: #c0392b; border: 1px solid #c0392b;
+	color: #fff; font-weight: 600;
+}
+.od-btn-reject:hover, .od-btn-reject:focus, .od-btn-reject:active{
+	background: #9c2d21; border-color: #9c2d21; color: #fff;
+}
+.modal-footer .od-btn-reject{ padding: 8px 16px; border-radius: 8px; }
+.od-reject-warning{
+	font-size: 13px; line-height: 1.55; color: #c0392b;
+	background: #fbeae8; border: 1px solid rgba(192,57,43,.22);
+	border-radius: 8px; padding: 11px 13px; margin: 0 0 16px;
+}
+.od-reject-error{ font-size: 12.5px; color: #c0392b; margin-top: 8px; }
+.od-reject-error:empty{ display: none; }
+
+/* The banner on an already-rejected requisition. */
+.od-rejected{
+	background: #fbeae8; border: 1px solid color-mix(in srgb, var(--od-danger) 28%, transparent);
+	border-left: 4px solid var(--od-danger); border-radius: var(--od-radius);
+	padding: 16px 20px; margin-bottom: 20px;
+}
+.od-rejected-head{
+	display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+	color: var(--od-danger); font-weight: 700; font-size: 15px;
+}
+.od-rejected-reason{
+	font-size: 14.5px; line-height: 1.6; color: var(--od-ink); margin-top: 10px;
+	max-width: 70ch; white-space: pre-line;
+}
+.od-rejected-by{ font-size: 12.5px; color: var(--od-muted); margin-top: 10px; }
+.od-rejected-by .role{ font-family: var(--od-mono); text-transform: uppercase; font-size: 11px; }
+
+
+/* ---- Info bar: Req No / Date / Port / Stage ---- */
+.od-infobar{
+	display: flex; flex-wrap: wrap; background: var(--od-surface);
+	border: 1px solid var(--od-line); border-radius: var(--od-radius);
+	margin-bottom: 20px; overflow: hidden;
+}
+.od-infobar > div{
+	flex: 1 1 170px; min-width: 150px; padding: 15px 20px;
+	border-right: 1px solid var(--od-line-soft); border-bottom: 1px solid var(--od-line-soft);
+}
+.od-infobar > div:last-child{ border-right: none; }
+.od-infobar .k{
+	font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+	color: var(--od-muted-2); font-weight: 600; margin-bottom: 5px;
+}
+.od-infobar .v{ font-size: 13.5px; color: var(--od-ink); }
+.od-infobar .v.mono{ font-family: var(--od-mono); }
+.od-stage-pill{
+	display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px;
+	border-radius: 999px; background: var(--od-warn-tint); color: var(--od-warn-dark);
+	font-size: 11.5px; font-weight: 600;
+}
+.od-stage-pill.is-done{ background: var(--od-accent-tint); color: var(--od-accent-dark); }
+.od-stage-pill .dot{ width: 6px; height: 6px; border-radius: 50%; background: var(--od-warn); flex: 0 0 6px; }
+.od-stage-pill.is-done .dot{ background: var(--od-accent); }
+
+/* ---- Cards: item table / reason ---- */
+.od-card{
+	background: var(--od-surface); border: 1px solid var(--od-line);
+	border-radius: var(--od-radius); margin-bottom: 20px; overflow: hidden;
+}
+.od-card-head{ padding: 15px 20px; border-bottom: 1px solid var(--od-line-soft); }
+.od-card-head h2{ margin: 0; font-size: 15px; font-weight: 600; color: var(--od-ink); }
+.od-card-body{ padding: 20px; }
+.od-reason-label{
+	font-size: 12.5px; letter-spacing: .06em; text-transform: uppercase;
+	/* Fallback because this label is also used inside the reject modal,
+	   which renders outside .order-section where the token is defined.
+	   An accent bar + bold accent-dark text (was a plain muted-grey 11px
+	   line) so "Reason of Requisition", "Authorisation" etc. actually read
+	   as section headings at a glance instead of blending into the body text
+	   right under them. */
+	color: var(--od-accent-dark, #0A5D57); font-weight: 700; margin-bottom: 10px;
+	padding-left: 10px; border-left: 3px solid var(--od-accent, #0E7C74);
+	display: inline-block; line-height: 1.3;
+}
+.od-reason-text{ font-size: 14px; line-height: 1.6; color: var(--od-ink-soft); }
+.od-reason-text textarea{ font-family: var(--od-sans); }
+.od-reason-card{ margin-bottom: 20px; }
+
+/* ---- SRD Official Remarks ---- */
+.od-remarks-foot{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:10px; }
+.od-remarks-meta{ font-size:12px; color:var(--od-muted-2); margin-top:6px; }
+.od-remarks-foot .od-remarks-meta{ margin-top:0; }
+.od-remarks-save{ background:var(--od-accent); border-color:var(--od-accent); color:#fff; font-weight:500; }
+.od-remarks-save:hover, .od-remarks-save:focus{ background:var(--od-accent-dark); border-color:var(--od-accent-dark); color:#fff; }
+
+/* ---- Authorisation (signatures) ----
+   #order-print-footer1 is copied verbatim into the print popup by
+   print-pdf-custom.js, which writes its OWN <style> there targeting
+   .signs-master-chief/.master-chief - including a margin-top:-45px that
+   made sense for the old layout it was written against. Overridden
+   explicitly here for the on-screen card; !important on display because a
+   same-specificity .print-header{display:none} rule exists in css/style.css
+   and load order between the two isn't worth depending on. */
+/* Both selectors hit the SAME element (#order-print-footer1 carries both
+   classes), so this one has to set the grid too - an id+class selector
+   outranks the plain .signs-master-chief rule below and its display:block
+   would otherwise flatten the grid into a single stacked column. */
+#order-print-footer1.print-header,
+#order-print-footer1.print-header.signs-master-chief{
+	display: grid !important;
+	grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)) !important;
+	gap: 28px 24px !important; margin: 0 !important; padding: 0 !important;
+	background: transparent !important; text-align: left !important; border-bottom: none !important;
+}
+.signs-master-chief{
+	display: grid !important; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+	gap: 28px 24px !important; margin: 0 !important; padding: 0 !important; border-bottom: none !important;
+}
+/* Selector carries the parent class deliberately: css/style.css has
+   ".signs-master-chief > div{width:30%;text-align:center}" and
+   ".master-chief{align-items:center}", both of which outrank a bare
+   ".od-sign" and were squeezing each signature into a centred 30%-wide
+   column - which is what made the names wrap a word per line. */
+.signs-master-chief > .od-sign{
+	display: flex !important; flex-direction: column; gap: 8px;
+	width: auto !important; text-align: left !important;
+	align-items: stretch !important; justify-content: flex-start !important;
+	padding: 0 !important; height: auto !important; font-size: inherit !important;
+}
+.od-sign-line{
+	height: 52px; border-bottom: 1px solid #C2CCCB;
+	display: flex; align-items: flex-end; justify-content: flex-start; overflow: hidden;
+}
+/* Sits ON the line, like a signed form. Capped so an oversized scan can't
+   stretch the row. */
+.od-sign-line img.written-sign{
+	max-height: 50px; max-width: 100%; width: auto; object-fit: contain; display: block;
+}
+.od-sign-role{
+	font-family: var(--od-mono); font-size: 11px; color: var(--od-faint);
+	text-transform: uppercase; letter-spacing: .02em;
+}
+.od-sign-name.signer-name{
+	font-size: 13px !important; font-weight: 600 !important; letter-spacing: .01em !important;
+	text-transform: uppercase; margin: 0 !important; color: var(--od-ink);
+}
+
+/* ---- Item table ----
+   Bootstrap's .table-striped/.table-bordered classes are still on the table
+   (other code and the print popup key off them), so their zebra fill and
+   full grid are overridden here rather than removed from the markup. */
+.od-card .table-responsive{ margin: 0; max-width: 100%; }
+.od-card table.orderedItemTable{ font-size: 13px; margin: 0; border: none; }
+.od-card table.orderedItemTable td,
+.od-card table.orderedItemTable th{ border-left: none !important; border-right: none !important; }
+.od-card table.orderedItemTable tbody tr:nth-of-type(odd){ background: transparent; }
+.od-card table.orderedItemTable thead th{
+	background: var(--od-surface); border-bottom: 1px solid var(--od-line) !important;
+	border-top: none !important; font-size: 11.5px; font-weight: 600; letter-spacing: 0;
+	text-transform: none; color: #4C5958; padding: 10px 12px; white-space: nowrap;
+	vertical-align: bottom;
+}
+/* The grouping row above the real headers: Item / Stock & supply /
+   Quantities, as separated bands rather than another row of labels. */
+.od-card table.orderedItemTable thead tr.od-thead-group th{
+	background: var(--od-ground); color: var(--od-muted-2);
+	font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+	padding: 8px 12px; border-bottom: 1px solid #E7ECEB !important;
+}
+.od-card table.orderedItemTable thead tr.od-thead-group th + th{ border-left: 1px solid #E7ECEB !important; }
+.od-card table.orderedItemTable thead th.num{ text-align: right; }
+.od-card table.orderedItemTable tbody td{
+	padding: 13px 12px; border-bottom: 1px solid #F0F3F2 !important;
+	border-top: none !important; vertical-align: top; color: var(--od-ink-soft);
+	text-align: center;
+}
+.od-card table.orderedItemTable tbody tr:hover{ background: #FAFCFB; }
+.od-card table.orderedItemTable td.num{ font-family: var(--od-mono); font-size: 12.5px; }
+.od-card table.orderedItemTable td.muted{ color: var(--od-faint); }
+.od-card table.orderedItemTable .serial{ font-family: var(--od-mono); font-weight: 400; font-size: 12.5px; color: var(--od-muted); }
+.od-machinery{ display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px 20px; padding:16px 20px; border-bottom:1px solid var(--od-line-soft); }
+.od-machinery .k{ font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--od-muted-2); font-weight:600; margin-bottom:3px; }
+.od-machinery .v{ font-size:13.5px; color:var(--od-ink); overflow-wrap:anywhere; }
+.od-card table.orderedItemTable td.code-cell{ font-family: var(--od-mono); font-size: 12.5px; color: var(--od-muted); }
+.od-card table.orderedItemTable th.code-col{ text-align: center; }
+.od-card table.orderedItemTable td.item-name-td{ font-size: 13.5px; color: var(--od-ink); width: 200px; max-width: 200px; }
+.od-card table.orderedItemTable td.item-name-td .see-attachments-link{ font-size: 12px; padding: 0; }
+/* The IMPA header itself - the body cell below it is centred along with
+   the rest of tbody now (see td rule above), this just matches the header
+   to it since headers keep their own left-aligned default otherwise. */
+.od-card table.orderedItemTable th.impa-code{ text-align: center; }
+.od-card table.orderedItemTable td.item-unit span,
+.od-card table.orderedItemTable td.item-unit{
+	font-family: var(--od-mono); font-size: 12px;
+}
+/* Last Supply's date used to ride along at 11px in plain --od-faint text -
+   easy to miss next to the bold quantity above it. A small tinted chip
+   reads as "here's when", at a glance, instead of disappearing into the
+   surrounding grey. */
+.last-supply-date{
+	display: inline-block; margin-top: 4px; font-family: var(--od-mono);
+	font-size: 11px; font-weight: 600; letter-spacing: .01em;
+	color: var(--od-accent-dark); background: var(--od-accent-tint);
+	border-radius: 5px;
+}
+.od-card table.orderedItemTable td.req_qty, .od-card table.orderedItemTable td.deliver_qty,
+.od-card table.orderedItemTable td.rcv_qty, .od-card table.orderedItemTable td.invoice_qty,
+.od-card table.orderedItemTable td.unit_price, .od-card table.orderedItemTable td.line_total{
+	font-family: var(--od-mono); font-size: 12.5px;
+}
+.od-card table.orderedItemTable input.form-control{
+	font-family: var(--od-mono); text-align: center; font-size: 13px;
+	border: 1px solid #D3DBDA; border-radius: 7px; padding: 7px 9px;
+}
+.od-card table.orderedItemTable input.form-control:focus{
+	border-color: var(--od-accent); box-shadow: 0 0 0 3px rgba(14,124,116,.12); outline: none;
+}
+/* Quantity correction history (see OrderItem::quantityChangesFor) - the
+   original figure struck through, the current one next to it, same
+   convention Cloud Fleet Manager uses for an edited number. Sits below
+   whatever the cell already shows (the input, for whoever can currently
+   edit it; plain text otherwise), so the history is visible either way. */
+.qty-diff{ margin-top: 4px; font-size: 11.5px; line-height: 1.3; }
+.qty-diff del{ color: var(--od-muted); text-decoration-color: var(--od-danger); }
+.qty-diff .qty-diff-new{ font-weight: 700; color: var(--od-ink); }
+.qty-diff-by{
+	color: var(--od-muted); font-size: 10.5px; white-space: nowrap;
+	overflow: hidden; text-overflow: ellipsis; max-width: 140px;
+}
+.qty-diff-count{ color: var(--od-accent-dark); cursor: help; }
 </style>
 <div class="order-section container">
 	<div class="row">
 		<div class="col-xl-12">
 			<div class="card order-card">
-				<div class="card-header first">
-					<strong class="pptitle">Requested Order Details &nbsp; 
-						<span style="color:red;">{{!empty($order->vessel->name)?$order->vessel->name:''}}</span>
-					</strong>
-					@if(auth()->user()->role->role =='am-ssm' && $order->status!='Supplied to Ship')
-					<div class="center-button" style="display:flex">
-						<select class="form-control order_status" id="order_status" name="order_status" style="width: 215px;margin-right: 5px;">
-							@if($order->status!='')
-							<option selected value="{{$order->status}}">{{$order->status}}</option>
-							@else
-							<option selected value="">-- Choose Order Status --</option>
-							@endif
-							<option value="Requisition for Approval" >Requisition for Approval</option>
-							<option value="Call for Tender" >Call for Tender</option>
-							<option value="Placed Work Order" >Placed Work Order</option>
-							<option value="Supplied to Ship" >Supplied to Ship</option>
-						</select>
-						<button type="button" class="btn btn-primary" id="update_order_status" data-id="{{$order->id}}">
-							Update Status
-						</button>	
+				<div class="od-header">
+					<div>
+						{{-- The requisition's own title (from step 1 of the wizard) leads the
+							 header, with the vessel folded into a small "by <vessel>" line
+							 under it rather than its own big heading. Older, pre-wizard
+							 orders never had a title set, so they fall back to the vessel
+							 name as the heading instead - there has to be SOMETHING to lead
+							 with. --}}
+						@if(!empty($order->title))
+						<div class="od-req-title">{{ $order->title }}</div>
+						<div class="od-req-vessel">by {{ $order->vessel->name ?? '' }}</div>
+						@else
+						<div class="od-eyebrow">Requested Order Details</div>
+						<h1 class="od-title">{{!empty($order->vessel->name)?$order->vessel->name:''}}</h1>
+						@endif
+						{{-- Only rendered when it IS urgent: a "Normal priority" badge on
+							 every other requisition would be noise, and would dilute the one
+							 case this flag exists to call attention to. --}}
+						@if($order->high_priority)
+						<div class="od-priority"><i class="fas fa-exclamation-circle"></i> High priority</div>
+						@endif
 					</div>
-					@elseif(auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship')
-					<button type="button" class="btn btn-primary" id="approve_order" data-id="{{$order->id}}">
-						Deliver Confirmation 
-					</button>
-					@endif
-					<div class="right-button">
-						@if(auth()->user()->role->role != 'operator' && auth()->user()->role->role != 'am-ssm')
-						<button type="button" class="btn btn-primary" id="approve_order" data-id="{{$order->id}}">
-							<i class="fas fa-check-circle"></i>  Approve 
+					{{-- The "Call for Tender / Placed Work Order / Supplied to Ship"
+						 dropdown that used to sit here was the ancestor of the
+						 procurement workflow: it wrote unvalidated text straight
+						 over orders.status, which now also carries the approval
+						 chain's own state. Replaced by the stage panel further
+						 down (see App\ProcurementStage). --}}
+					@php
+						$currentRole = auth()->user()->role->role ?? null;
+						// Only offer an action to someone who actually still has
+						// one here - previously every role saw Approve on every
+						// order forever, including ones they'd already signed off.
+						$canAct = $order->hasPendingActionFor($currentRole, auth()->id());
+						// Once GM has delegated AND that reviewer has actually sent
+						// it back, there's nothing left to delegate - GM just
+						// approves it. Before that (no delegation yet, or one still
+						// out for review) the delegate option stays available
+						// alongside Approve, since GM can still choose either.
+						$srdDelegateReviewed = $currentRole == 'gm-srd' && (
+							!empty($order->orderApproval->dgm_srd_app)
+							|| !empty($order->orderApproval->agm_app)
+							|| !empty($order->orderApproval->ast_m_app)
+							|| !empty($order->orderApproval->superintendent_srd_app)
+						);
+
+						// --- SSM procurement workflow ---------------------
+						$procStage = $order->procurement_stage;
+						$inProcurement = $order->inProcurement();
+						// Delivery and Receipt & Verification are taken through
+						// the Approve button below; every other stage has its
+						// own panel further down the page.
+						$isApprovalStage = \App\ProcurementStage::isApprovalFlowStage($procStage);
+						$canWorkStage = $canAct && $inProcurement && ! $isApprovalStage
+							&& \App\ProcurementStage::owner($procStage) === \App\ProcurementStage::OWNER_SSM;
+						$atInvoiceStage = $canWorkStage && \App\ProcurementStage::capturesInvoice($procStage);
+
+						// Pricing is SSM-side only. Gated on user_type rather
+						// than listing the ship roles, so a new ship role can't
+						// accidentally inherit price visibility.
+						$userType = auth()->user()->role->user_type ?? null;
+						$showPrices = $userType !== 'ship';
+						$hasPricing = $order->orderItems->contains(fn($line) => $line->unit_price !== null);
+
+						// The procurement trail is the SSM department's own
+						// working record - who ran the tender, what the bids
+						// were, when finance cleared it. Only the SSM end sees
+						// it; the ship and SRD sides get the current stage from
+						// the Stage pill and the panel, without the internals.
+						// user_type 'ssm' covers DGM/AGM/AM (SSM), so a new SSM
+						// role picks this up without another edit here.
+						$showProcurementTrail = $userType === 'ssm';
+
+						// DGM (SSM) assigns rather than approves, and an SSM
+						// officer only approves at the Delivery stage.
+						$showApproveButton = $canAct
+							&& $currentRole != 'operator'
+							&& $currentRole != 'dgm-ssm'
+							&& ($inProcurement ? $isApprovalStage : $currentRole != 'am-ssm');
+
+						$approveLabel = 'Approve';
+						if ($procStage === \App\ProcurementStage::DELIVERY) {
+							$approveLabel = 'Confirm Delivery';
+						} elseif ($procStage === \App\ProcurementStage::RECEIPT_VERIFICATION
+							|| $order->canConfirmReceipt($currentRole)) {
+							$approveLabel = 'Confirm Receipt';
+						}
+
+						// Receipt & Verification (the procurement version of this
+						// stage, not the legacy pre-procurement path) needs remarks
+						// and the signed acknowledgement receipt alongside the
+						// quantities - rather than a reminder to go find that form
+						// further down the page, the button opens it as a modal and
+						// submits straight from there (see #confirm-receipt-modal).
+						$showReceiptConfirmModal = $showApproveButton
+							&& $inProcurement
+							&& $procStage === \App\ProcurementStage::RECEIPT_VERIFICATION
+							&& $order->canConfirmReceipt($currentRole);
+
+						// Rejection is open to whoever currently HOLDS the
+						// requisition, which is broader than who can approve
+						// it: DGM (SSM) assigns rather than approves, and GM
+						// (SRD) may be mid-delegation, but both hold it and
+						// can stop it. $canAct is already false once rejected
+						// (Order::hasPendingActionFor), so this button
+						// disappears along with all the others.
+						//
+						// From Invoice Verification onwards the goods are
+						// already on board - there's nothing left to turn
+						// away, so "reject" no longer means anything. Hidden
+						// rather than left for the SSM officer to puzzle over.
+						$showRejectButton = $canAct && $currentRole != 'operator'
+							&& ! \App\ProcurementStage::isPostReceipt($order->procurement_stage);
+
+						// SRD cross-verifies the ship's Part A before they act on the
+						// requisition. Until Part B is in, Approve and Forward are
+						// replaced by the button that opens it - Reject is deliberately
+						// NOT gated: stopping a requisition shouldn't require first
+						// filling in paperwork about it.
+						$partBOutstanding = $canAct && \App\Http\Controllers\OrderFormPartController::outstanding(
+							$order, $currentRole, \App\RequisitionForm::PART_B);
+						if ($partBOutstanding) {
+							$showApproveButton = false;
+						}
+
+						// The assigned SSM officer's review (the one DGM (SSM) assigned
+						// it to), taken before procurement starts - so it gates the
+						// first stage's panel the way Part B gates Approve/Forward.
+						$partCOutstanding = $canAct && \App\Http\Controllers\OrderFormPartController::outstanding(
+							$order, $currentRole, \App\RequisitionForm::PART_C);
+						if ($partCOutstanding) {
+							$canWorkStage = false;
+						}
+
+						// Master reviewing what Chief Officer sent, or Chief
+						// Engineer reviewing what Second Engineer sent, can fix a
+						// mistake in Part A before acting on it - unlike B/C this
+						// never gates Approve/Forward, it just offers a correction.
+						$canEditPartA = $canAct && $order->canEditPartA($currentRole);
+					@endphp
+					<div class="od-actions">
+						@if($partCOutstanding)
+						<button type="button" class="btn btn-primary" data-toggle="modal" data-target="#part-c-modal">
+							<i class="fas fa-clipboard"></i> DEMAND AND PROCUREMENT APPROVAL FORM-PART C
 						</button>
 						@endif
-						
-						@if(auth()->user()->role->role=='operator' && $order->status=='delivered')
-						<button type="button" class="btn btn-primary" id="approve_order" data-id="{{$order->id}}">
-							<i class="fas fa-check-circle"></i> Confirm Receive
+						@if($canEditPartA)
+						<button type="button" class="btn btn-outline-secondary" data-toggle="modal" data-target="#part-a-modal">
+							<i class="fas fa-edit"></i> Edit Part A
 						</button>
 						@endif
-						@if(auth()->user()->role->role == 'gm-srd' || auth()->user()->role->role == 'agm-srd')
-						<button type="button" class="btn btn-info" id="forward_toagm" data-id="{{$order->id}}">
-						<i class="fas fa-angle-double-right"></i>  Forward
+						@if($partBOutstanding)
+						{{-- fa-clipboard, not fa-clipboard-check: this app loads Font
+							 Awesome 5.0.6, and fa-clipboard-check only exists from 5.1
+							 onwards (it renders as nothing). Same trap as fa-tools and
+							 fa-boxes elsewhere in this codebase. --}}
+						<button type="button" class="btn btn-primary" data-toggle="modal" data-target="#part-b-modal">
+							<i class="fas fa-clipboard"></i> DEMAND AND PROCUREMENT APPROVAL FORM-PART B
 						</button>
 						@endif
-						<button class="btn btn-info btn-bvprint print-order-details"><i class="fa fa-print"></i> Print</button>
+						@if($showApproveButton)
+							@if($showReceiptConfirmModal)
+							<button type="button" class="btn btn-primary" data-toggle="modal" data-target="#confirm-receipt-modal">
+								<i class="fas fa-check-circle"></i> {{ $approveLabel }}
+							</button>
+							@else
+							<button type="button" class="btn btn-primary" id="approve_order" data-id="{{$order->id}}">
+								<i class="fas fa-check-circle"></i> {{ $approveLabel }}
+							</button>
+							@endif
+						@endif
+
+						{{-- DGM (SSM) doesn't approve - they assign it to one named
+						     SSM officer, who then takes the final action. --}}
+						@if($canAct && $currentRole == 'dgm-ssm')
+						<select class="form-control" id="ssm_assignee">
+							<option value="">Assign to…</option>
+							@foreach($ssmOfficers ?? [] as $roleName => $officers)
+							<optgroup label="{{ strtoupper(str_replace('-', ' ', $roleName)) }}">
+								@foreach($officers as $officer)
+								<option value="{{ $officer->user->id }}">{{ $officer->user->name }}</option>
+								@endforeach
+							</optgroup>
+							@endforeach
+						</select>
+						<button type="button" class="btn btn-primary" id="assign_ssm" data-id="{{$order->id}}"><i class="fas fa-user-plus"></i> Assign</button>
+						@endif
+
+						{{-- GM (SRD) delegates to one named reviewer - DGM/AGM/AM/
+						     Superintendent (SRD) can each be more than one real
+						     person, so picking the role alone isn't enough. Hidden
+						     once a delegate has already reviewed and sent it back -
+						     at that point GM just approves, above. --}}
+						@if($canAct && $currentRole == 'gm-srd' && !$srdDelegateReviewed && !$partBOutstanding)
+						<select class="form-control" id="srd_delegate_target">
+							<option value="">Delegate to…</option>
+							@foreach($srdOfficers ?? [] as $roleName => $officers)
+							<optgroup label="{{ strtoupper(str_replace('-', ' ', $roleName)) }}">
+								@foreach($officers as $officer)
+								<option value="{{ $officer->user->id }}">{{ $officer->user->name }}</option>
+								@endforeach
+							</optgroup>
+							@endforeach
+						</select>
+						<button type="button" class="btn btn-info" id="forward_toagm" data-id="{{$order->id}}"><i class="fas fa-angle-double-right"></i> Forward</button>
+						@endif
+						@if($showRejectButton)
+						<button type="button" class="btn od-btn-reject" id="reject_order" data-id="{{$order->id}}"
+							data-toggle="modal" data-target="#reject-order-modal">
+							<i class="fas fa-times-circle"></i> Reject
+						</button>
+						@endif
+
+						{{-- Pushed to the right of the row (see .od-export) and kept
+							 separate from the workflow buttons above - it's the one
+							 action here that doesn't move the requisition forward.
+							 All three open the category's own BSC form
+							 (App\RequisitionPrintForm) rather than running
+							 print-pdf-custom.js over this page, which could only ever
+							 print the one table shape the screen uses. --}}
+						<div class="dropdown od-export">
+							<button type="button" class="btn btn-info dropdown-toggle" id="export_order" data-toggle="dropdown"
+								aria-haspopup="true" aria-expanded="false">
+								<i class="fas fa-download"></i> Export
+							</button>
+							<div class="dropdown-menu dropdown-menu-right" aria-labelledby="export_order">
+								<a class="dropdown-item" href="{{ route('order.print', [$order->id, 'auto' => 1]) }}" target="_blank" rel="noopener">
+									<i class="fa fa-print"></i> Print
+								</a>
+								<a class="dropdown-item" href="{{ route('order.export.pdf', $order->id) }}">
+									<i class="fa fa-file-pdf"></i> PDF
+								</a>
+								<a class="dropdown-item" href="{{ route('order.export.excel', $order->id) }}">
+									<i class="fa fa-file-excel"></i> Excel
+								</a>
+							</div>
+						</div>
 					</div>
 				</div>
 				<div class="card-body">
-					@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered')|| (auth()->user()->role->role=='am-srd' && $order->ast_m_app==null))
+					{{-- Terminal state, so it leads the page: the reason is the
+						 only thing anyone opening a rejected requisition is
+						 here to read. --}}
+					@if($order->isRejected())
+					<div class="od-rejected">
+						<div class="od-rejected-head">
+							<i class="fas fa-times-circle"></i>
+							<span>Rejected</span>
+						</div>
+						<div class="od-rejected-reason">{{ $order->rejection_reason }}</div>
+						<div class="od-rejected-by">
+							{{ optional($order->rejectedBy)->name ?? 'Unknown user' }}
+							@if($order->rejected_by_role)
+							<span class="role">{{ str_replace('-', ' ', $order->rejected_by_role) }}</span>
+							@endif
+							@if($order->rejected_at)
+							&middot; {{ \Carbon\Carbon::parse($order->rejected_at)->format('d M Y, h:i A') }}
+							@endif
+						</div>
+					</div>
+					@endif
+					{{-- On-screen only - #order-print-header2 further down carries
+						 the same four fields into the print copy, in the shape
+						 print-pdf-custom.js expects. Kept separate rather than
+						 restyled in place, since that element's outerHTML is
+						 copied verbatim into the print popup. --}}
+					<div class="od-infobar">
+						<div>
+							<div class="k">Req. No.</div>
+							<div class="v mono">{{ $order->req_no ?: '—' }}</div>
+						</div>
+						<div>
+							<div class="k">Date</div>
+							<div class="v mono">{{ $order->req_date }}</div>
+						</div>
+						<div>
+							<div class="k">Port</div>
+							<div class="v">{{ $order->port_name }}</div>
+						</div>
+						<div>
+							<div class="k">Stage</div>
+							<div class="od-stage-pill {{ $order->procurementClosed() || $order->status === 'received' ? 'is-done' : '' }}">
+								<span class="dot"></span>{{ $order->currentStageLabel() }}
+							</div>
+						</div>
+					</div>
+					@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered'))
 					<form class="form mb-3" id="deliveredQtyForm">
 						@csrf
 						@endif
-						<table id="example" class="table table-striped table-bordered orderedItemTable OrderDetailsTable" style="width:100%">
+						{{-- This table now runs Item No./IMPA/Item Name/Unit/Opening Stock/
+							 Last Supply/In Stock/Total Supply/Req Qty/Attachments/Deliverd
+							 Qty/Rcv Qty(/Action) - forcing that to 100% width squeezes every
+							 header and pushes the whole page wider than the viewport. Scroll
+							 horizontally inside this box instead, never the page itself. --}}
+						<div class="od-card">
+						@php $invCurrency = optional($order->invoice)->currency_code ?? \App\Currency::DEFAULT_CODE; @endphp
+						<div class="od-card-head has-currency">
+							<h2>Requisition Items</h2>
+							@include('partials.invoice-currency', ['invoice' => $order->invoice])
+						</div>
+						@if(\App\RequisitionPrintForm::hasMachineryBlock($order->category->symbol ?? null))
+						{{-- Spares: the machinery these spares are for, as entered by
+							 the officer who raised it (same block the printed form opens with). --}}
+						<div class="od-machinery">
+							@foreach(\App\RequisitionPrintForm::MACHINERY_FIELDS as $column => $label)
+							<div><div class="k">{{ $label }}</div><div class="v">{{ $order->{$column} ?: '—' }}</div></div>
+							@endforeach
+						</div>
+						@endif
+						<div class="table-responsive">
+						<table id="example" class="table table-striped table-bordered orderedItemTable OrderDetailsTable" style="width:auto; min-width:100%;">
 							<div class="row mb-3 justify-content-between" id="order-print-header2">
 								<div class="col">
 									<strong>Vessel:</strong> {{$order->vessel->name}}
@@ -75,25 +693,56 @@
 								<div class="col">
 									<strong>Port:</strong> {{$order->port_name}}
 								</div>
+								<div class="col">
+									<strong>Stage:</strong> <span class="badge badge-info">{{ $order->currentStageLabel() }}</span>
+								</div>
 							</div>
+							@php
+								// Whether the invoice columns and the Action column are in
+								// play, so the grouping row's colspans add up to the real
+								// column count - a short grouping row throws the whole
+								// table's alignment out.
+								$showInvoiceCols = $showPrices && ($atInvoiceStage || $hasPricing);
+								// The item columns follow the category's own BSC form
+								// (App\RequisitionPrintForm): Spares shows drawing/part/item
+								// numbers, Stores the IMPA code, and so on.
+								$formSymbol = $order->category->symbol ?? null;
+								$headCols = \App\RequisitionPrintForm::headColumns($formSymbol);
+								$showActionCol = (auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship')
+									|| (auth()->user()->role->role=='operator' && $order->status=='delivered');
+							@endphp
 							<thead>
+								{{-- Grouping row. DataTables maps columns off the LAST
+									 thead row, so this one is presentation only. --}}
+								<tr class="od-thead-group">
+									<th colspan="{{ count($headCols) + 2 }}">Item</th>
+									<th colspan="4">Stock &amp; supply</th>
+									<th colspan="3">Quantities</th>
+									@if($showInvoiceCols)<th colspan="3">Invoice <span class="inv-cur">{{ $invCurrency }}</span></th>@endif
+									@if($showActionCol)<th></th>@endif
+								</tr>
 								<tr>
-									<th>Item No.</th>
-									<th>IMPA Code No</th>
-									<th>Item Name
-										<!-- <span class="item-name">Item Name</span> -->
-										<!-- <span class="item-name-print">Description <br> As per IMPA Code 6Th Edn</span> -->
-									</th>
+									<th>No.</th>
+									@foreach($headCols as $col)
+									<th class="{{ !empty($col['code']) ? 'code-col' : '' }}">{{ $col['label'] }}</th>
+									@endforeach
 									<th>Unit</th>
-									<th>Opening Stock</th>
-									<th>Last <br>Supply </th>
-									<th>In Stock</th>
-									<th>Total Supply</th>
-									<th>Req Qty</th>
-									<th>Deliverd <br> Qty </th>
-									<th>Rcv Qty</th>
+									<th class="num">Opening Stock</th>
+									<th class="num">Quantity of Last Supply</th>
+									<th class="num">Date of Last Supply</th>
+									<th class="num">In Stock</th>
+									<th class="num">Required Quantity</th>
+									<th class="num">Delivered</th>
+									<th class="num">Received</th>
+									{{-- Invoice columns are SSM-side only, and only once
+										 there is something to show (or something to enter). --}}
+									@if($showInvoiceCols)
+									<th class="num">Invoice Qty</th>
+									<th class="num">Unit Price <span class="inv-cur">{{ $invCurrency }}</span></th>
+									<th class="num">Line Total <span class="inv-cur">{{ $invCurrency }}</span></th>
+									@endif
 									<!-- <th class="item-cat">Category</th> -->
-									@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered')|| (auth()->user()->role->role=='am-srd' && $order->ast_m_app==null)) 
+									@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered'))
 									<th class="">Action</th>
 									@endif
 								</tr>
@@ -103,42 +752,120 @@
 								@foreach($order->orderItems as $orderItem)
 								<tr>
 									<td><b class="serial">{{$loop->iteration}}</b></td>
-									<td>{{$orderItem->item->impa_code}}</td>
-									<td class="item-name-td">{{$orderItem->item->name}}</td>
+									@foreach($headCols as $col)
+									@php $cellValue = \App\RequisitionPrintForm::valueFor($col['get'], $orderItem, $liveStock); @endphp
+									@if(in_array($col['get'], ['name', 'name_with_spec'], true))
+									<td class="item-name-td">
+										{!! nl2br(e($cellValue !== '' ? $cellValue : ($orderItem->item->name ?? ''))) !!}
+										@if($orderItem->attachments->isNotEmpty())
+										<br>
+										<button type="button" class="btn btn-link p-0 see-attachments-link" data-toggle="modal" data-target="#view-attachments-modal"
+											data-item-name="{{ $orderItem->item->name }}"
+											data-attachments="{{ $orderItem->attachments->map(fn($a) => ['title'=>$a->title,'kind'=>$a->kind,'uploaded_by'=>$a->uploader->name ?? '','uploaded_at'=>optional($a->pivot->created_at)->diffForHumans() ?? $a->created_at->diffForHumans(),'view_url'=>url('/attachments/'.$a->id.'/view')])->toJson() }}"
+											style="font-size:12px;">
+											<i class="fas fa-paperclip"></i> See attachments ({{ $orderItem->attachments->count() }})
+										</button>
+										@endif
+									</td>
+									@else
+									<td class="{{ !empty($col['code']) ? 'code-cell' : '' }}">{{ $cellValue !== '' ? $cellValue : '—' }}</td>
+									@endif
+									@endforeach
 									<td class="item-unit">{{$orderItem->item->unit}}</td>
-									<td>0</td>
-									<td>0</td>
-									<td>0</td>
-									<td>0</td>
+									{{-- Opening Stock and Last Supply are the figures captured when this
+										 requisition was raised, so an old form still prints what justified
+										 it. In Stock is live - what is on board right now. --}}
+									<td class="num">{{ $orderItem->opening_stock !== null ? $orderItem->opening_stock : '—' }}</td>
+									<td class="num">{{ $orderItem->last_supply_qty !== null ? $orderItem->last_supply_qty : '—' }}</td>
+									<td class="num">{{ $orderItem->last_supply_date ? \Carbon\Carbon::parse($orderItem->last_supply_date)->format('d M Y') : '—' }}</td>
+									<td class="num">{{ $liveStock[$orderItem->item_id]['stock_qty'] ?? 0 }}</td>
 									<td class='req_qty'>
-										@if(auth()->user()->role->role=='am-srd' && $order->ast_m_app==null)
+										{{-- Master/Chief Engineer can correct the deck/engine officer's
+											 requested quantity at their own review turn, before
+											 forwarding it ashore - excluding Master's receipt-confirmation
+											 turn (status 'delivered'), where the original ask is no longer
+											 what's being acted on. GM (SRD) and its four delegates (DGM/
+											 AGM/AM/Superintendent SRD) get the same edit while it's on
+											 their desk - including GM's own final approve turn once a
+											 delegate has already reviewed it, since that's the last stop
+											 before it moves on to DGM (SSM). --}}
+										@if($canAct && $currentRole=='chief-engineer')
+										<div class="form-group" style="margin: 0">
+											<input type="number" data-id="{{$orderItem->id}}" class="form-control req-qty" name="req_qty[{{$orderItem->id}}]" value="{{$orderItem->item_qty}}">
+										</div>
+										@elseif($canAct && $currentRole=='master' && $order->status != 'delivered')
+										<div class="form-group" style="margin: 0">
+											<input type="number" data-id="{{$orderItem->id}}" class="form-control req-qty" name="req_qty[{{$orderItem->id}}]" value="{{$orderItem->item_qty}}">
+										</div>
+										@elseif($canAct && in_array($currentRole, ['gm-srd', 'dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd']))
 										<div class="form-group" style="margin: 0">
 											<input type="number" data-id="{{$orderItem->id}}" class="form-control req-qty" name="req_qty[{{$orderItem->id}}]" value="{{$orderItem->item_qty}}">
 										</div>
 										@else
 										{{$orderItem->item_qty}}
 										@endif
+										@include('partials.quantity-change-note', [
+											'changes' => $orderItem->quantityChangesFor('item_qty'),
+											'current' => $orderItem->item_qty,
+										])
 									</td>
 									<td class='deliver_qty'>
-										@if(auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship')
+										{{-- Only at the Delivery stage itself. In procurement the SSM
+											 officer has an action at ten different stages, and Deliver
+											 Qty is only meaningful at one of them. --}}
+										@if($canAct && in_array($currentRole, ['agm-ssm', 'am-ssm', 'superintendent-ssm'])
+											&& (! $inProcurement || $procStage === \App\ProcurementStage::DELIVERY))
 										<div class="form-group" style="margin: 0">
-											<input type="number" data-id="{{$orderItem->id}}" class="form-control deliver-qty" name="deliver_qty[{{$orderItem->id}}]" value="{{$orderItem->del_item_qty}}">
+											<input type="number" data-id="{{$orderItem->id}}" class="form-control deliver-qty" name="deliver_qty[{{$orderItem->id}}]" value="{{ $orderItem->del_item_qty ?? $orderItem->item_qty }}">
 										</div>
 										@else
-										{{!empty($orderItem->del_item_qty)?$orderItem->del_item_qty:''}}
+										{{!empty($orderItem->del_item_qty)?$orderItem->del_item_qty:'—'}}
 										@endif
+										@include('partials.quantity-change-note', [
+											'changes' => $orderItem->quantityChangesFor('del_item_qty'),
+											'current' => $orderItem->del_item_qty,
+										])
 									</td>
 									<td class='rcv_qty'>
-										@if(auth()->user()->role->role=='operator' && $order->status=='delivered')
+										@if($canAct && $order->canConfirmReceipt($currentRole))
 										<div class="form-group" style="margin: 0">
-											<input type="number" data-id="{{$orderItem->id}}" class="form-control deliver-qty" name="rcv_qty[{{$orderItem->id}}]" value="{{$orderItem->rcv_item_qty}}">
+											<input type="number" data-id="{{$orderItem->id}}" class="form-control rcv-qty" name="rcv_qty[{{$orderItem->id}}]" value="{{ $orderItem->rcv_item_qty ?? $orderItem->del_item_qty }}">
 										</div>
 										@else
-										{{!empty($orderItem->rcv_item_qty)?$orderItem->rcv_item_qty:''}}
+										{{!empty($orderItem->rcv_item_qty)?$orderItem->rcv_item_qty:'—'}}
 										@endif
 									</td>
+									@if($showPrices && ($atInvoiceStage || $hasPricing))
+									<td class='invoice_qty'>
+										@if($atInvoiceStage)
+										<div class="form-group" style="margin: 0">
+											{{-- Defaults to what the raiser actually confirmed on board,
+												 so billing for more than arrived is a visible edit
+												 rather than the path of least resistance. --}}
+											<input type="number" min="0" data-id="{{$orderItem->id}}" class="form-control invoice-qty"
+												name="invoice_qty[{{$orderItem->id}}]"
+												value="{{ $orderItem->invoice_qty ?? $orderItem->rcv_item_qty ?? $orderItem->del_item_qty }}">
+										</div>
+										@else
+										{{ $orderItem->invoice_qty }}
+										@endif
+									</td>
+									<td class='unit_price'>
+										@if($atInvoiceStage)
+										<div class="form-group" style="margin: 0">
+											<input type="number" step="0.01" min="0" data-id="{{$orderItem->id}}" class="form-control unit-price"
+												name="unit_price[{{$orderItem->id}}]" value="{{ $orderItem->unit_price }}">
+										</div>
+										@else
+										{{ $orderItem->unit_price !== null ? number_format($orderItem->unit_price, 2) : '' }}
+										@endif
+									</td>
+									<td class='line_total' data-id="{{$orderItem->id}}">
+										{{ $orderItem->line_total !== null ? number_format($orderItem->line_total, 2) : '' }}
+									</td>
+									@endif
 
-									@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered')|| (auth()->user()->role->role=='am-srd' && $order->ast_m_app==null))
+									@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered'))
 									<td class="action">
 										<button class="btn btn-info" id="indSave" data-role="{{auth()->user()->role->role}}"> Save</button>
 									</td>
@@ -148,83 +875,343 @@
 								@endif
 							</tbody>
 						</table>
-						@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered')|| (auth()->user()->role->role=='am-srd' && $order->ast_m_app==null))
+						</div>
+						</div>
+						@if((auth()->user()->role->role=='am-ssm' && $order->status=='Supplied to Ship') || (auth()->user()->role->role=='operator' && $order->status=='delivered'))
 						<input type="hidden" class="form-control" value="{{$order->id}}" name="orderId">
 						<button class="btn btn-info float-right mt-2" type="submit"> Save All </button>
 					</form>
 					@endif
 
-					<br>
-					<hr>	
-					<br>
-					<div id="order-print-footer1" class="print-header" >	
-						<div class="footer-notes">
-							*This form is to be sent for every indent whenever any consumable store is required. <br>
-							Note:   
-							<ul>
-								<li>1. Separate forms to be used for paints, chemicals, welding,  refrigeration equipment, general consumable stores, wire ropes, cargo gears, LSA/FFA items and stationeries.</li>  
+					{{-- Reason is originally stated by whoever raises the requisition
+						 (the wizard requires it before this page is ever reached; for a
+						 pre-wizard order this manual textarea is where it gets set).
+						 Master/Chief Engineer can refine it at their own review turn
+						 once the officer has actually written one - correcting wording
+						 before it goes ashore, not writing it from scratch.
 
-								<li>2. Opening stock to be shown declared in the last indent plus all Supplies made from the date of last indent to the date of this indent. </li>                                                                			
-								<li>3. Forms to be made out in 5 readable copies of which white, green and pink copies to be sent to General Manager(SR) and vessel to retain yellow and blue copies.</li>	
-
-								<li>4. Blue copy to be returned to GM(SR) after receipt of goods with date  and port of receipt clearly mentioning the items/quantity not </li>	
-
-								<li>5. Regarding “As per Sample” please see our Circular No.SRD 14/84  <br>		
-								dated 22.10.1984.</li>
-							</ul>
+						 Its own card BELOW the items table. It used to sit literally
+						 inside <table>, before <thead>, which is invalid: browsers
+						 foster-parent stray table children out to just before the
+						 table, so it rendered jammed into the top of the items card. --}}
+					@php
+						$canEditReason = (auth()->user()->role->role == 'chief-officer' && empty($order->orderApproval->cheif_ofcr_app))
+							|| (auth()->user()->role->role == 'second-engineer' && empty($order->orderApproval->second_eng_app))
+							|| ($canAct && $currentRole == 'chief-engineer' && !empty($order->reason))
+							|| ($canAct && $currentRole == 'master' && $order->status != 'delivered' && !empty($order->reason));
+					@endphp
+					@if($canEditReason)
+					<div class="od-card od-reason-card">
+						<div class="od-card-body">
+							<label class="od-reason-label" for="requisition_reason">Reason of Requisition</label>
+							<textarea class="form-control" id="requisition_reason" rows="3" placeholder="Why is this requisition needed?">{{ $order->reason }}</textarea>
 						</div>
-						<div class="signs-master-chief">
-							
-						    @foreach(\App\Role::orderBy('user_type','asc')->get() as $role)
-								@if($role->user->id==$order->orderApproval->master_app 
-								|| $role->user->id==$order->orderApproval->chief_eng_app
-								|| $role->user->id==$order->orderApproval->cheif_ofcr_app
-								|| $role->user->id==$order->orderApproval->ast_m_app
-								|| $role->user->id==$order->orderApproval->agm_app
-								|| $role->user->id==$order->orderApproval->gm_app
-								|| $role->user->id==$order->orderApproval->dgm_app_ssm
-								|| $role->user->id==$order->orderApproval->agm_app_ssm
-								|| $role->user->id==$order->orderApproval->am_app_ssm
-									)
-									<div class="master-chief">
-								<span class="written-sign sign">
-									<img src="{{url('/'.$role->user->sign)}}" alt="">
-								</span>
-								
-								<span>_____________________</span>
-								<span>( Signature)</span>
-								<span>{{$role->role}}</span>
-								<span class="signer-name">
-									{{$role->user->name}}
-								</span>
+					</div>
+					@elseif(!empty($order->reason))
+					<div class="od-card od-reason-card">
+						<div class="od-card-body">
+							<div class="od-reason-label">Reason of Requisition</div>
+							<div class="od-reason-text">{{ $order->reason }}</div>
+						</div>
+					</div>
+					@endif
+
+					{{-- SRD's Official Remarks: added once by any SRD-level officer
+						 (GM and its delegates) once the requisition has reached SRD,
+						 on its own button so it never depends on approving. After
+						 that it's a record for everyone - the text, who added it and
+						 when - with no box to change it. --}}
+					@if($order->canEditOfficialRemarks($currentRole))
+					<div class="od-card od-reason-card od-official-remarks" id="official_remarks_card">
+						<div class="od-card-body">
+							<label class="od-reason-label" for="official_remarks">Official Remarks</label>
+							<textarea class="form-control" id="official_remarks" rows="4" maxlength="5000"
+								placeholder="SRD's official remarks on this requisition"></textarea>
+							<div class="od-remarks-foot">
+								<span class="od-remarks-meta">Can be added once &mdash; it can't be changed afterwards.</span>
+								<button type="button" class="btn btn-sm od-remarks-save" id="save_official_remarks" data-url="{{ route('order.official-remarks', $order) }}">
+									<i class="fas fa-save"></i> Add Remarks
+								</button>
+							</div>
+						</div>
+					</div>
+					@elseif(!empty($order->official_remarks))
+					<div class="od-card od-reason-card od-official-remarks">
+						<div class="od-card-body">
+							<div class="od-reason-label">Official Remarks</div>
+							<div class="od-reason-text">{{ $order->official_remarks }}</div>
+							<div class="od-remarks-meta">
+								<strong>{{ optional($order->officialRemarksBy)->name ?? '—' }}</strong>@if($order->official_remarks_at), {{ $order->official_remarks_at->format('d M Y') }}@endif
+							</div>
+						</div>
+					</div>
+					@endif
+
+					{{-- The approval form, read-only: Part A is the ship's
+						 justification, completed before submission; Part B is SRD's
+						 cross-check of it. Each renders only once it exists, so older
+						 requisitions (and ones SRD hasn't reached yet) simply show
+						 whichever parts are on file. --}}
+					@include('partials.requisition-form-part', ['order' => $order, 'part' => \App\RequisitionForm::PART_A])
+					@include('partials.requisition-form-part', ['order' => $order, 'part' => \App\RequisitionForm::PART_B])
+					@include('partials.requisition-form-part', ['order' => $order, 'part' => \App\RequisitionForm::PART_C])
+
+					{{-- SSM procurement workflow. The panel is the action for
+						 whichever stage is current; the timeline below it is
+						 everything already done.
+
+						 Sits ABOVE the rule below, not between it and the
+						 signatures: .signs-master-chief carries margin-top:-45px
+						 (css/style.css), so whatever directly precedes the
+						 signature block gets 45px of it painted over. That used
+						 to be the blank space here, which absorbed it harmlessly. --}}
+					@if($inProcurement)
+					@php
+						// Colour-codes the panel and the button by which of the
+						// four broad phases the current stage belongs to -
+						// Sourcing/Handover/Finance/Closed - so a glance at the
+						// header colour says roughly where in procurement this
+						// requisition sits, before reading a word of text.
+						$procCategory = \App\ProcurementStage::category($order->procurementClosed() ? \App\ProcurementStage::CLOSED : $procStage);
+
+						// The trail shows the WHOLE sequence, not just what's
+						// already happened - done stages, the one that's current
+						// (highlighted), and what's still ahead (hollow), so the
+						// viewer can see how much is left without reading the
+						// twelve-stage list from memory. Completed rows carry
+						// their real recorded data; current/pending rows are
+						// synthesized here since they have no step row yet.
+						$completedBySlug = $order->procurementSteps->keyBy('step');
+						$trail = [];
+						foreach (\App\ProcurementStage::SEQUENCE as $slug) {
+							if ($slug === \App\ProcurementStage::CLOSED) {
+								continue;
+							}
+							if ($step = $completedBySlug->get($slug)) {
+								$trail[] = ['step' => $step, 'slug' => $slug, 'state' => $step->wasSkipped() ? 'skipped' : 'done'];
+							} elseif ($slug === $procStage && ! $order->procurementClosed()) {
+								$trail[] = ['step' => null, 'slug' => $slug, 'state' => 'current'];
+							} else {
+								$trail[] = ['step' => null, 'slug' => $slug, 'state' => 'pending'];
+							}
+						}
+						$trailDone = collect($trail)->whereIn('state', ['done', 'skipped'])->count();
+					@endphp
+					<div class="procurement-block proc-cat-{{ $procCategory }}" id="procurement-panel">
+						<div class="proc-head">
+							<div>
+								<div class="proc-eyebrow">
+									Procurement
+									<span class="proc-phase-tag">{{ \App\ProcurementStage::CATEGORY_LABELS[$procCategory] }}</span>
+								</div>
+								<div class="proc-stage-name">
+									{{ $order->procurementClosed() ? 'Closed' : \App\ProcurementStage::label($procStage) }}
+								</div>
+							</div>
+						</div>
+
+						@if($canWorkStage)
+						<form id="procurement-step-form" class="proc-form">
+							<input type="hidden" id="proc-stage" value="{{ $procStage }}">
+
+							@if($atInvoiceStage)
+							<div class="proc-fields">
+								<div class="proc-field">
+									<label for="invoice_no">Invoice No.</label>
+									<input type="text" class="form-control" id="invoice_no">
+								</div>
+								<div class="proc-field">
+									<label for="invoice_date">Invoice Date</label>
+									<input type="date" class="form-control" id="invoice_date">
+								</div>
+								<div class="proc-field">
+									{{-- Pre-filled from the priced lines below as they're
+										 entered (see recalcInvoice()), but freely editable -
+										 an invoice that only gives one lump figure, with no
+										 line priced individually, still needs somewhere to
+										 enter it. Whatever's in this box at submit time is
+										 what gets saved, not a recalculation from the lines. --}}
+									<label for="invoice_subtotal">Subtotal (<span class="inv-cur-plain">{{ $invCurrency }}</span>)</label>
+									<input type="number" step="0.01" min="0" class="form-control" id="invoice_subtotal" value="0">
+								</div>
+								<div class="proc-field">
+									<label for="invoice_discount">Discount (<span class="inv-cur-plain">{{ $invCurrency }}</span>)</label>
+									<input type="number" step="0.01" min="0" class="form-control" id="invoice_discount" value="0">
+								</div>
+							</div>
+							<div class="proc-totals">
+								<div><span>Subtotal</span><strong><small class="amt-cur inv-cur-plain">{{ $invCurrency }}</small> <span id="inv-subtotal">0.00</span></strong></div>
+								<div><span>Discount</span><strong><small class="amt-cur inv-cur-plain">{{ $invCurrency }}</small> <span id="inv-discount">0.00</span></strong></div>
+								<div class="payable"><span>Payable</span><strong><small class="amt-cur inv-cur-plain">{{ $invCurrency }}</small> <span id="inv-payable">0.00</span></strong></div>
+							</div>
+							@endif
+
+							@if(\App\ProcurementStage::metaFields($procStage))
+							<div class="proc-fields">
+								@foreach(\App\ProcurementStage::metaFields($procStage) as $field)
+								@php
+									$metaType = str_contains($field, '_date') ? 'date'
+										: (str_contains($field, 'amount') || in_array($field, ['vendors_invited', 'bids_received']) ? 'number' : 'text');
+								@endphp
+								<div class="proc-field">
+									<label for="meta_{{ $field }}">{{ \App\ProcurementStage::metaLabel($field) }}</label>
+									<input type="{{ $metaType }}" @if($metaType === 'number') step="0.01" min="0" @endif
+										class="form-control proc-meta" id="meta_{{ $field }}" data-field="{{ $field }}">
+								</div>
+								@endforeach
+							</div>
+							@endif
+
+							<div class="proc-two-col">
+								<div class="proc-field">
+									<label for="proc_remarks">Remarks <span class="opt">optional</span></label>
+									<textarea class="form-control" id="proc_remarks" rows="4"></textarea>
+								</div>
+								@include('partials.procurement-attachments', ['stageLabel' => \App\ProcurementStage::label($procStage)])
+							</div>
+
+							<div class="proc-actions">
+								@if(\App\ProcurementStage::isSkippable($procStage))
+								<button type="button" class="btn btn-secondary" id="proc-skip" data-id="{{$order->id}}">
+									Not required
+								</button>
+								@endif
+								<button type="button" class="btn proc-btn-complete" id="proc-complete" data-id="{{$order->id}}">
+									<i class="fas fa-check-circle"></i>
+									Complete {{ \App\ProcurementStage::label($procStage) }}
+								</button>
+							</div>
+						</form>
+						@elseif($canAct && $procStage === \App\ProcurementStage::RECEIPT_VERIFICATION && $order->canConfirmReceipt($currentRole))
+						{{-- Remarks and the acknowledgement receipt are filled in
+							 inside #confirm-receipt-modal, opened by the Confirm
+							 Receipt button at the top of the page - not here, so
+							 checking the quantities and confirming are one motion
+							 instead of a scroll down to a separate form. --}}
+						<p class="proc-hint">
+							Check the quantities that actually arrived against Rcv Qty in the table above,
+							then use <strong>Confirm Receipt</strong> to add the acknowledgement receipt and confirm.
+						</p>
+						@elseif($partCOutstanding)
+						<p class="proc-hint">
+							Complete the <strong>Approval Form &mdash; Part C</strong> (button above) to start procurement.
+						</p>
+						@elseif(! $order->procurementClosed())
+						<p class="proc-waiting">
+							@if(\App\ProcurementStage::owner($procStage) === \App\ProcurementStage::OWNER_SHIP)
+							Waiting on the {{ $order->receiptConfirmerLabel() }} to confirm receipt of the delivery.
+							@else
+							Waiting on {{ optional(\App\User::find($order->orderApproval->assigned_to_ssm))->name ?? 'the assigned SSM officer' }}.
+							@endif
+						</p>
+						@endif
+
+						@if($showPrices && $order->invoice)
+						<div class="proc-invoice-summary">
+							<div><span>Invoice</span><strong>{{ $order->invoice->invoice_no ?: '—' }}</strong></div>
+							<div><span>Subtotal</span><strong><small class="amt-cur">{{ $order->invoice->currency_code }}</small> {{ number_format($order->invoice->subtotal, 2) }}</strong></div>
+							<div><span>Discount</span><strong><small class="amt-cur">{{ $order->invoice->currency_code }}</small> {{ number_format($order->invoice->discount, 2) }}</strong></div>
+							<div class="payable"><span>Payable</span><strong><small class="amt-cur">{{ $order->invoice->currency_code }}</small> {{ number_format($order->invoice->payable, 2) }}</strong></div>
+						</div>
+						@endif
+					</div>
+					@endif
+
+					{{-- The trail is its own card, below the stage panel: one is
+						 the action you take now, the other is the record of what
+						 has happened - different things to look at. SSM-side only
+						 (see $showProcurementTrail). --}}
+					@if($showProcurementTrail && $inProcurement && !empty($trail))
+					<div class="od-card od-trail-card">
+						<div class="od-card-body">
+						<div class="proc-trail-head">
+							<h2>Procurement trail</h2>
+							<span class="proc-trail-progress">{{ $trailDone }} of {{ count($trail) }} complete</span>
+						</div>
+						<ol class="proc-timeline">
+							@foreach($trail as $row)
+							@php $step = $row['step']; @endphp
+							<li class="state-{{ $row['state'] }}">
+								<div class="t-rail"><span class="t-dot"></span><span class="t-line"></span></div>
+								<div class="t-body">
+									<div class="t-head">
+										<span class="t-name">{{ \App\ProcurementStage::label($row['slug']) }}</span>
+										@if($row['state'] === 'skipped')<span class="t-badge">not required</span>@endif
+										@if($step)<span class="t-when">{{ optional($step->completed_at)->format('d M Y') }}</span>@endif
+									</div>
+									@if($step)
+									<div class="t-who">{{ optional($step->completedBy)->name }}</div>
+									@if($step->remarks)
+									<div class="t-remarks">{{ $step->remarks }}</div>
+									@endif
+									@if($step->meta)
+									<div class="t-meta">
+										@foreach($step->meta as $key => $value)
+										@if($key !== 'required')
+										<span><em>{{ \App\ProcurementStage::metaLabel($key) }}:</em> {{ $value }}</span>
+										@endif
+										@endforeach
 									</div>
 									@endif
-						
-						
+									@if($step->attachments->isNotEmpty())
+									<div class="t-docs">
+										@foreach($step->attachments as $doc)
+										<a href="{{ url('/attachments/'.$doc->id.'/view') }}" target="_blank" rel="noopener" class="t-doc">
+											<i class="fas fa-paperclip"></i> {{ $doc->title }}
+										</a>
+										@endforeach
+									</div>
+									@endif
+									@elseif($row['state'] === 'current')
+									<div class="t-who">In progress</div>
+									@endif
+								</div>
+							</li>
 							@endforeach
+						</ol>
+						</div>
+					</div>
+					@endif
 
-
-
-			<!-- 				<div class="chief-officer">
-								<span class="written-sign sign">
-									@if((!empty($order->cheif_ofcr_app) && $order->cheif_ofcr_app==true))
-									<img src="{{asset('/images/chief-sign.jpg')}}" alt="">
+					{{-- Signatures, redesigned as a clean line + role + name grid
+						 (no signature image) rather than the old cursive-image
+						 layout. The wrapping classes (print-header,
+						 signs-master-chief, master-chief, signer-name) stay
+						 exactly as they were: print-pdf-custom.js copies this
+						 element's outerHTML verbatim into a popup window that
+						 carries its OWN stylesheet targeting those same class
+						 names, so removing them would leave the printed copy
+						 unstyled even though nothing here would show it. --}}
+					<div class="od-card od-auth-card">
+						<div class="od-card-body">
+							<div class="od-reason-label">Authorisation</div>
+							<div id="order-print-footer1" class="print-header signs-master-chief">
+							    {{-- Chain order, not user-table order: the officer who
+									 raised it first, then Master / Chief Engineer, then
+									 ashore - the same list the printed form uses. --}}
+							    @foreach($order->signatories() as $signatory)
+									@php
+										// Only render the signature when the file is really
+										// on disk - a signer with no signature on file, or one
+										// whose file has gone missing, gets a blank signing
+										// line rather than a broken-image icon.
+										$signer = $signatory['user'];
+										$signPath = optional($signer)->sign;
+										$hasSign = !empty($signPath) && file_exists(base_path($signPath));
+									@endphp
+									@if($signer)
+									<div class="master-chief od-sign">
+										<div class="od-sign-line">
+											@if($hasSign)
+											<img class="written-sign sign" src="{{ url('/'.$signPath) }}" alt="Signature of {{ $signer->name }}">
+											@endif
+										</div>
+										<div class="od-sign-role">{{ $signatory['role'] }}</div>
+										<div class="signer-name od-sign-name">{{ $signer->name }}</div>
+									</div>
 									@endif
-								</span>
-								<span>_____________________</span>
-								<span>( Signature)</span>
-								<span>Chief Officer</span>
-								<span class="signer-name">
-									@if((!empty($order->cheif_ofcr_app) && $order->cheif_ofcr_app==true))
-									{{!empty($order->vessel->manager_name)?$order->vessel->manager_name:''}} 
-									@endif
-								</span>
-								<span class="seal-chief-officer seal">
-									@if((!empty($order->cheif_ofcr_app) && $order->cheif_ofcr_app==true))
-									<img src="{{asset('/images/chief-officer-seal.jpg')}}" alt="">
-									@endif
-								</span>
-							</div> -->
+								@endforeach
+							</div>
 						</div>
 					</div>
 
@@ -296,5 +1283,695 @@
 	</table>
 </div>
 <!-- ./print header -->
+
+{{-- The approval form's post-submission parts, each rendered only for the
+	 officer it is currently blocking. See partials/requisition-form-modal. --}}
+@if($canEditPartA)
+@include('partials.requisition-form-modal', ['order' => $order, 'part' => \App\RequisitionForm::PART_A])
+@endif
+@if($partBOutstanding)
+@include('partials.requisition-form-modal', ['order' => $order, 'part' => \App\RequisitionForm::PART_B])
+@endif
+@if($partCOutstanding)
+@include('partials.requisition-form-modal', ['order' => $order, 'part' => \App\RequisitionForm::PART_C])
+@endif
+
+{{-- Receipt & Verification's own modal: Rcv Qty stays in the item table
+	 above (that's what's being checked against), but remarks and the
+	 signed acknowledgement receipt are filled in here, and Confirm Receipt
+	 submits straight from this dialog - see #confirm_receipt_submit below. --}}
+@if($showReceiptConfirmModal)
+<div class="modal fade" id="confirm-receipt-modal" tabindex="-1" role="dialog">
+	<div class="modal-dialog" role="document">
+		<div class="modal-content">
+			<div class="modal-header">
+				<div>
+					<div style="font-size:11.5px;color:#6b7a82;font-weight:600;margin-bottom:2px;">
+						{{ $order->req_no ?: 'This requisition' }}
+					</div>
+					<h5 class="modal-title">Confirm Receipt</h5>
+				</div>
+				<button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+			</div>
+			<div class="modal-body">
+				<p class="proc-hint" style="margin-top:0;">
+					Check the quantities that actually arrived against Rcv Qty in the table above, then confirm below.
+				</p>
+				<div class="proc-field">
+					<label for="rcv_remarks">Remarks <span class="opt">optional</span></label>
+					<textarea class="form-control" id="rcv_remarks" rows="4" placeholder="e.g. 2 units short"></textarea>
+				</div>
+				@include('partials.procurement-attachments', ['stageLabel' => 'Acknowledgement receipt'])
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+				<button type="button" class="btn btn-primary" id="confirm_receipt_submit" data-id="{{ $order->id }}">
+					<i class="fas fa-check-circle"></i> Confirm Receipt
+				</button>
+			</div>
+		</div>
+	</div>
+</div>
+@endif
+
+<!-- Reject modal. A Bootstrap modal rather than a SweetAlert input so the
+	 reason field behaves like every other textarea on this page, and so the
+	 warning about rejection being final has room to be read. Only rendered
+	 for whoever currently holds the requisition. -->
+@if($showRejectButton)
+<div class="modal fade" id="reject-order-modal" tabindex="-1" role="dialog">
+	<div class="modal-dialog" role="document" style="max-width:520px;">
+		<div class="modal-content">
+			<div class="modal-header">
+				<div>
+					<div style="font-size:11.5px;color:#6b7a82;font-weight:600;margin-bottom:2px;">
+						{{ $order->req_no ?: 'This requisition' }}
+					</div>
+					<h5 class="modal-title">Reject requisition</h5>
+				</div>
+				<button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+			</div>
+			<div class="modal-body">
+				<p class="od-reject-warning">
+					Rejecting is final. The requisition stops here and leaves every queue &mdash;
+					it cannot be reopened, and a new one has to be raised in its place.
+				</p>
+				<label class="od-reason-label" for="reject_reason">Reason for rejection</label>
+				<textarea class="form-control" id="reject_reason" rows="4"
+					placeholder="Why is this requisition being rejected?"></textarea>
+				<div class="od-reject-error" id="reject_error"></div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+				<button type="button" class="btn od-btn-reject" id="confirm_reject" data-id="{{$order->id}}">
+					<i class="fas fa-times-circle"></i> Reject requisition
+				</button>
+			</div>
+		</div>
+	</div>
+</div>
+@endif
+
+<!-- See Attachments modal: view-only list for whoever is reviewing this
+	 requisition. Populated straight from the clicked link's data-attachments
+	 attribute (rendered server-side above) - no round trip needed just to
+	 look at what's already on the page. -->
+<div class="modal fade" id="view-attachments-modal" tabindex="-1" role="dialog">
+	<div class="modal-dialog" role="document" style="max-width:460px;">
+		<div class="modal-content">
+			<div class="modal-header">
+				<div>
+					<div style="font-size:11.5px;color:#6b7a82;font-weight:600;margin-bottom:2px;">Attachments for</div>
+					<h5 class="modal-title" id="view-attachments-item-name">&nbsp;</h5>
+				</div>
+				<button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+			</div>
+			<div class="modal-body" id="view-attachments-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+		</div>
+	</div>
+</div>
+<style>
+	/* --- SSM procurement workflow panel + timeline ---
+	   Colour-coded by broad phase (App\ProcurementStage::category()) rather
+	   than one flat colour for all twelve stages or a different one for
+	   each - Sourcing/Handover/Finance/Closed each get a hue, carried by
+	   these four custom-property sets and picked up by the eyebrow tag,
+	   the stage-count pill, the accent bar and the Complete button. */
+	.procurement-block.proc-cat-sourcing{ --proc-c:#0E7C74; --proc-bg:#EAF6F4; --proc-c-dark:#0A5D57; }
+	.procurement-block.proc-cat-handoff{ --proc-c:#C2700C; --proc-bg:#FFF4E5; --proc-c-dark:#8A4B08; }
+	.procurement-block.proc-cat-finance{ --proc-c:#6a3fb0; --proc-bg:#efe6fa; --proc-c-dark:#54318c; }
+	.procurement-block.proc-cat-closed{ --proc-c:#0E7C74; --proc-bg:#EAF6F4; --proc-c-dark:#0A5D57; }
+
+	.procurement-block{
+		border:1px solid var(--od-line, #DFE5E4); border-radius:var(--od-radius, 12px);
+		background:var(--od-surface, #fff); padding:20px; margin:0 0 20px;
+		display:flex; flex-direction:column; gap:18px;
+		/* The signature block below pulls itself up 45px and paints an opaque
+		   white background over whatever it lands on, so keep clear of it. */
+		position:relative; z-index:1;
+	}
+	.proc-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+	.proc-eyebrow{ font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--od-muted-2, #778483); font-weight:600; display:flex; align-items:center; gap:10px; }
+	.proc-phase-tag{
+		font-size:10.5px; letter-spacing:.06em; font-weight:600; text-transform:uppercase;
+		color:var(--proc-c-dark, #4a5c63); background:var(--proc-bg, #eef2f2); padding:3px 8px; border-radius:5px;
+	}
+	.proc-stage-name{ font-size:17px; font-weight:600; color:var(--od-ink, #17242b); margin-top:6px; }
+	.proc-hint{ font-size:13.5px; line-height:1.6; color:var(--od-muted, #4C5958); margin:0; max-width:62ch; }
+	.proc-waiting{ font-size:13.5px; color:var(--od-muted, #6b7a82); margin:0; font-style:italic; }
+	.proc-form{ display:flex; flex-direction:column; gap:18px; }
+	.proc-fields{ display:flex; flex-wrap:wrap; gap:14px; }
+	.proc-field{ flex:1 1 200px; min-width:0; }
+	.proc-field.full{ flex-basis:100%; }
+	.proc-field label{ display:block; font-size:12px; font-weight:600; color:var(--od-ink-soft, #24312F); margin-bottom:6px; }
+	.proc-field label .opt{ font-weight:400; color:var(--od-faint, #93A0A0); }
+	.proc-field input.form-control, .proc-field textarea.form-control{
+		border:1px solid #D3DBDA; border-radius:8px; font-size:13.5px; padding:10px 12px; color:var(--od-ink, #15211F);
+	}
+	.proc-field input.form-control:focus, .proc-field textarea.form-control:focus{
+		border-color:var(--od-accent, #0E7C74); box-shadow:0 0 0 3px rgba(14,124,116,.12); outline:none;
+	}
+	/* Remarks beside the documents list rather than stacked, so the panel
+	   doesn't run to twice the height it needs. */
+	.proc-two-col{ display:flex; gap:20px; flex-wrap:wrap; }
+	.proc-two-col > *{ flex:1 1 300px; min-width:260px; }
+	.proc-two-col .proc-docs{ margin-top:0; }
+	.proc-actions{ display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; }
+	.proc-btn-complete{
+		background:var(--proc-c, #0E7C74); border-color:var(--proc-c, #0E7C74); color:#fff;
+		font-weight:600; padding:10px 18px; border-radius:8px;
+	}
+	.proc-btn-complete:hover, .proc-btn-complete:focus{
+		background:var(--proc-c-dark, #0A5D57); border-color:var(--proc-c-dark, #0A5D57); color:#fff;
+	}
+	.proc-totals, .proc-invoice-summary{
+		display:flex; flex-wrap:wrap; gap:10px 26px;
+		padding:14px 16px; background:var(--od-ground, #F7F9F9); border:1px solid var(--od-line, #e3e8e7); border-radius:8px;
+	}
+	.proc-totals div, .proc-invoice-summary div{ display:flex; flex-direction:column; }
+	.proc-totals span, .proc-invoice-summary span{ font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--od-muted-2, #6b7a82); font-weight:600; }
+	.proc-totals strong, .proc-invoice-summary strong{ font-size:15px; color:var(--od-ink, #17242b); font-variant-numeric:tabular-nums; font-family:var(--od-mono, monospace); }
+	.proc-totals .payable strong, .proc-invoice-summary .payable strong{ color:#6a3fb0; }
+
+	/* ---- Procurement trail: a connected line down the left, with the
+	       state - done/current/skipped/pending - carrying the colour, not
+	       the phase. Shows every stage, not just what's finished, so the
+	       viewer sees at a glance how much of the twelve is left. ---- */
+	.proc-trail-head{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+	.proc-trail-head h2{ margin:0; font-size:15px; font-weight:600; color:var(--od-ink, #17242b); }
+	.proc-trail-progress{ font-size:12px; color:var(--od-muted, #778483); font-family:var(--od-mono, monospace); }
+	.proc-timeline{ list-style:none; margin:0; padding:0; }
+	.proc-timeline li{ display:flex; gap:14px; }
+	.proc-timeline .t-rail{ display:flex; flex-direction:column; align-items:center; width:12px; flex:0 0 12px; }
+	.proc-timeline .t-dot{ width:10px; height:10px; border-radius:50%; margin-top:4px; background:#C2CCCB; box-shadow:0 0 0 3px rgba(194,204,203,.28); flex:0 0 10px; }
+	.proc-timeline .t-line{ flex:1; width:1px; background:var(--od-line, #E4EAE9); min-height:14px; }
+	.proc-timeline li:last-child .t-line{ display:none; }
+	.proc-timeline .t-body{ flex:1; min-width:0; padding-bottom:20px; }
+	.proc-timeline li:last-child .t-body{ padding-bottom:0; }
+	.proc-timeline .t-head{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+	.proc-timeline .t-name{ font-size:13.5px; font-weight:600; color:var(--od-faint, #778483); }
+	.proc-timeline .t-badge{ padding:2px 6px; border-radius:4px; background:var(--od-line-soft, #F1F4F4); color:var(--od-muted, #778483); font-size:10px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; }
+	.proc-timeline .t-when{ margin-left:auto; font-size:11px; color:var(--od-faint, #A3AEAD); font-family:var(--od-mono, monospace); }
+	.proc-timeline .t-who{ font-size:12px; color:var(--od-muted-2, #778483); margin-top:2px; }
+	.proc-timeline .t-remarks{ font-size:13px; color:var(--od-ink-soft, #24312F); margin-top:6px; }
+	.proc-timeline .t-meta{ margin-top:8px; display:flex; flex-direction:column; gap:4px; }
+	.proc-timeline .t-meta span{ display:flex; gap:6px; font-size:12px; color:var(--od-ink-soft, #24312F); font-family:var(--od-mono, monospace); }
+	.proc-timeline .t-meta em{ color:#8B9797; font-style:normal; font-family:var(--od-sans, sans-serif); }
+	.proc-timeline .t-docs{ display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:8px; }
+	.proc-timeline .t-doc{ font-size:12px; color:var(--od-accent, #0E7C74); font-weight:600; text-decoration:none; }
+
+	/* Done: solid teal. Current: solid amber, highlighted name. Skipped:
+	   grey, same ring treatment as done. Pending: hollow - a stage that
+	   hasn't happened yet has nothing to show but its place in line. */
+	.proc-timeline li.state-done .t-dot{ background:#0E7C74; box-shadow:0 0 0 3px rgba(14,124,116,.14); }
+	.proc-timeline li.state-done .t-name{ color:var(--od-ink, #15211F); }
+	.proc-timeline li.state-current .t-dot{ background:#C2700C; box-shadow:0 0 0 3px rgba(194,112,12,.16); }
+	.proc-timeline li.state-current .t-name{ color:var(--od-ink, #15211F); }
+	.proc-timeline li.state-skipped .t-dot{ background:#C2CCCB; box-shadow:0 0 0 3px rgba(194,204,203,.28); }
+	.proc-timeline li.state-skipped .t-name{ color:var(--od-muted, #778483); }
+	.proc-timeline li.state-pending .t-dot{ background:#FFFFFF; border:1px solid #C2CCCB; box-shadow:0 0 0 3px rgba(194,204,203,.5); }
+	.proc-timeline li.state-pending .t-name{ color:var(--od-faint, #A3AEAD); font-weight:500; }
+	.proc-timeline .t-doc{ font-size:12.5px; color:#005866; font-weight:600; text-decoration:none; }
+	.proc-timeline .t-doc:hover{ text-decoration:underline; }
+
+	.proc-docs{ margin-top:16px; }
+	.proc-doc-list{ display:flex; flex-wrap:wrap; gap:8px; }
+	.proc-doc-list:empty{ display:none; }
+	.proc-doc-chip{
+		display:inline-flex; align-items:center; gap:8px; background:#fff; border:1px solid #d6e0e0;
+		border-radius:20px; padding:5px 6px 5px 12px; font-size:12.5px; color:#17242b; max-width:100%;
+	}
+	.proc-doc-chip span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+	.proc-doc-chip button{
+		border:none; background:#eef2f2; color:#6b7a82; border-radius:50%; width:20px; height:20px;
+		line-height:1; font-size:13px; cursor:pointer; flex-shrink:0;
+	}
+	.proc-doc-chip button:hover{ background:#f6d9d3; color:#9e3412; }
+	.proc-doc-add{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
+	.proc-doc-add .form-control{ flex:1 1 200px; min-width:0; }
+	.proc-doc-chosen{ font-size:12.5px; color:#6b7a82; }
+	.proc-doc-error{ font-size:12.5px; color:#9e3412; margin-top:6px; }
+	.proc-doc-error:empty{ display:none; }
+	@media print{ .procurement-block{ display:none; } }
+
+	.att-list-row{
+		display:flex; align-items:center; gap:12px; border:1px solid #e3e8e7; border-radius:10px;
+		padding:10px 12px; background:#fff; text-decoration:none; width:100%; text-align:left;
+	}
+	.att-list-row:hover{ border-color:#7fb8c2; background:#f4f6f6; text-decoration:none; }
+	.att-list-thumb{
+		width:38px; height:38px; border-radius:8px; display:flex; align-items:center; justify-content:center;
+		color:#fff; font-size:9px; font-weight:800; flex-shrink:0;
+	}
+	.att-list-row .info{ flex:1; min-width:0; }
+	.att-list-row .t{ font-size:13.5px; font-weight:600; color:#17242b; }
+	.att-list-row .m{ font-size:11.5px; color:#6b7a82; margin-top:1px; }
+	.att-list-row .view{ font-size:12px; font-weight:700; color:#005866; flex-shrink:0; }
+</style>
+@endsection
+
+@section('home-js')
+<script>
+$(function () {
+	// admin-master.blade.php also does a bare $('#example').DataTable() -
+	// runs after this section, but on an already-initialized table that's a
+	// no-op, so this is what actually takes effect: a plain item list here
+	// doesn't need paging/search/the "Show N entries" picker.
+	$('#example').DataTable({
+		destroy: true,
+		paging: false,
+		searching: false,
+		info: false,
+		// This is a requisition's fixed line items, not a sortable list -
+		// and with as many columns as this table has, a sort-icon glyph in
+		// every header was the other half of why they wrapped so badly.
+		ordering: false,
+	});
+
+	function esc(value) {
+		return $('<div>').text(value === null || value === undefined ? '' : value).html();
+	}
+
+	var thumbColor = { image: '#2f6fed', pdf: '#e5486b', doc: '#5b4fd6' };
+
+	$(document).on('click', '.see-attachments-link', function () {
+		$('#view-attachments-item-name').text($(this).data('item-name'));
+		var attachments = $(this).data('attachments') || [];
+		$('#view-attachments-list').html(attachments.map(function (a) {
+			var label = a.kind === 'image' ? 'IMG' : a.kind.toUpperCase();
+			return '<a class="att-list-row" href="' + a.view_url + '" target="_blank" rel="noopener">'
+				+ '<div class="att-list-thumb" style="background:' + thumbColor[a.kind] + ';">' + label + '</div>'
+				+ '<div class="info"><div class="t">' + esc(a.title) + '</div>'
+				+ '<div class="m">Attached by ' + esc(a.uploaded_by) + ' &middot; ' + esc(a.uploaded_at) + '</div></div>'
+				+ '<span class="view">View</span>'
+				+ '</a>';
+		}).join(''));
+	});
+
+	// --- SSM procurement workflow -------------------------------------
+	// Read straight off the meta tag, the same way the requisition wizard
+	// does: dataForm.js's CSRF_TOKEN is a var inside its own
+	// $(document).ready() closure, so it isn't visible from this script.
+	function csrfToken() {
+		return $('meta[name="csrf-token"]').attr('content');
+	}
+
+	// --- SRD Official Remarks ---------------------------------------------
+	$('#save_official_remarks').on('click', function () {
+		var $btn = $(this), text = $.trim($('#official_remarks').val());
+		if (!text) {
+			swal('Nothing to add', 'Write the Official Remarks first.', 'warning');
+			return;
+		}
+		swal({
+			title: 'Add Official Remarks?',
+			text: 'They can only be added once and cannot be changed afterwards.',
+			type: 'question',
+			showCancelButton: true,
+			confirmButtonColor: '#005866',
+			cancelButtonColor: '#6c757d',
+			confirmButtonText: 'Add',
+			showLoaderOnConfirm: true,
+			allowOutsideClick: false,
+			preConfirm: function () {
+				return new Promise(function (resolve) {
+					$.ajax({
+						url: $btn.data('url'),
+						type: 'POST',
+						dataType: 'json',
+						data: { _token: csrfToken(), official_remarks: text }
+					}).done(function (res) {
+						// Swap the box for the read-only record, same as a reload would show.
+						var $body = $('#official_remarks_card .od-card-body').empty();
+						$body.append($('<div class="od-reason-label">').text('Official Remarks'));
+						$body.append($('<div class="od-reason-text">').text(text));
+						$body.append($('<div class="od-remarks-meta">').append($('<strong>').text(res.by), ', ' + res.at));
+						swal('Added', res.message, 'success');
+					}).fail(function (xhr) {
+						var msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Could not add the remarks.';
+						swal('Not added', msg, 'error');
+					});
+				});
+			}
+		});
+	});
+
+	// --- Approval form parts (A, B and C) ---------------------------------
+	// Bound by class, not id, so one handler drives whichever part's modal is
+	// on the page. Every REQUIRED question is checked here so the officer
+	// sees which ones are missing without a round trip - the server enforces
+	// it too (OrderFormPartController::store / RequisitionForm::clean), since
+	// this check can be skipped. Part A has no required questions at all (see
+	// RequisitionForm::partA()), so this loop simply finds nothing to flag
+	// there and the form submits with whatever was answered.
+	$(document).on('click', '.part-form-submit', function () {
+		var $btn = $(this);
+		var part = $btn.data('part');
+		var $form = $('.part-form[data-part="' + part + '"]');
+		var $errors = $form.closest('.modal-body').find('.part-form-errors');
+		var missing = [];
+
+		$form.find('.rf-q[data-required="1"]').each(function () {
+			var $q = $(this).removeClass('has-error');
+			// Questions with no options are records, not answers - nothing to
+			// require, so they can't be "missing".
+			if (!$q.find('input[type=radio][name$="[choice]"]').length) { return; }
+			if (!$q.find('input[type=radio][name$="[choice]"]:checked').length) {
+				missing.push($q.find('.rf-q-no').text().replace('.', ''));
+				$q.addClass('has-error');
+			}
+		});
+
+		if (missing.length) {
+			$errors.text('Answer question ' + missing.join(', ') + ' before submitting.').show();
+			$form.closest('.modal-body').animate(
+				{ scrollTop: $form.find('.rf-q.has-error').first().position().top }, 250);
+			return;
+		}
+
+		var originalLabel = $btn.html();
+		$errors.hide();
+		$btn.prop('disabled', true).text('Submitting…');
+
+		$.post('/order/' + $btn.data('id') + '/form-part/' + part,
+			$form.serialize() + '&_token=' + encodeURIComponent(csrfToken()))
+			.done(function (res) {
+				swal('Done!', res.message, 'success').then(function () {
+					window.location.href = res.redirect || window.location.href;
+				});
+			})
+			.fail(function (xhr) {
+				$btn.prop('disabled', false).html(originalLabel);
+				$errors.text((xhr.responseJSON && xhr.responseJSON.message) || 'Something went wrong.').show();
+			});
+	});
+
+	// --- Reject ---------------------------------------------------------
+	// The reason is required, and checked here before the round trip purely
+	// so the message lands next to the field - the server enforces it too
+	// (RoleController::rejectRequisition), since this check is only a
+	// convenience and can be skipped entirely.
+	$(document).on('click', '#confirm_reject', function () {
+		var $btn = $(this);
+		var reason = $.trim($('#reject_reason').val());
+
+		if (!reason) {
+			$('#reject_error').text('Please give a reason for rejecting this requisition.');
+			$('#reject_reason').focus();
+			return;
+		}
+
+		$('#reject_error').text('');
+		$btn.prop('disabled', true).text('Rejecting…');
+
+		$.ajax({
+			url: '/order/reject',
+			type: 'post',
+			data: { _token: csrfToken(), id: $btn.data('id'), reason: reason },
+			dataType: 'json'
+		})
+		.done(function (response) {
+			$('#reject-order-modal').modal('hide');
+			swal('Rejected', response[0], 'success').then(function () {
+				window.location.href = response.redirect || '/pending/requisition';
+			});
+		})
+		.fail(function (response) {
+			var message = (response.responseJSON && response.responseJSON.message) || 'Something went wrong!';
+			$('#reject_error').text(message);
+		})
+		.always(function () {
+			$btn.prop('disabled', false).html('<i class="fas fa-times-circle"></i> Reject requisition');
+		});
+	});
+
+	// Clear anything left from a previous open, so a reason typed and then
+	// cancelled isn't silently resubmitted next time.
+	$('#reject-order-modal').on('hidden.bs.modal', function () {
+		$('#reject_reason').val('');
+		$('#reject_error').text('');
+	});
+
+	function money(value) {
+		return (isFinite(value) ? value : 0).toLocaleString('en-US', {
+			minimumFractionDigits: 2, maximumFractionDigits: 2
+		});
+	}
+
+	// Live line totals and invoice totals as the officer types, so the
+	// payable figure they're committing to is visible before they submit
+	// rather than only after. Subtotal is freely editable (not every
+	// invoice prices every line) - this only ever SUGGESTS a value for it,
+	// from whatever lines are priced, and stops suggesting the moment the
+	// officer has typed into it themselves.
+	function recalcInvoice() {
+		var linePricedSum = 0;
+
+		$('input.unit-price').each(function () {
+			var id = $(this).data('id');
+			var price = parseFloat($(this).val());
+			var qty = parseInt($('input.invoice-qty[data-id="' + id + '"]').val(), 10);
+			var lineTotal = (isFinite(price) && isFinite(qty)) ? Math.round(price * qty * 100) / 100 : 0;
+
+			linePricedSum += lineTotal;
+			$('td.line_total[data-id="' + id + '"]').text(lineTotal ? money(lineTotal) : '');
+		});
+
+		var $subtotalInput = $('#invoice_subtotal');
+		if (!$subtotalInput.data('touched')) {
+			$subtotalInput.val(linePricedSum ? linePricedSum.toFixed(2) : '0.00');
+		}
+
+		var subtotal = parseFloat($subtotalInput.val());
+		subtotal = isFinite(subtotal) ? subtotal : 0;
+
+		var discount = parseFloat($('#invoice_discount').val());
+		discount = isFinite(discount) ? discount : 0;
+
+		$('#inv-subtotal').text(money(subtotal));
+		$('#inv-discount').text(money(discount));
+		$('#inv-payable').text(money(subtotal - discount));
+	}
+
+	$(document).on('input', '#invoice_subtotal', function () {
+		$(this).data('touched', true);
+	});
+	$(document).on('input', 'input.unit-price, input.invoice-qty, #invoice_subtotal, #invoice_discount', recalcInvoice);
+
+	// The currency only relabels - amounts are entered as billed, never
+	// converted - so every price heading and total just follows the picker.
+	$(document).on('change', '#invoice_currency', function () {
+		$('.inv-cur, .inv-cur-plain').text($(this).val());
+	});
+	if ($('#invoice_discount').length) {
+		recalcInvoice();
+	}
+
+	function submitProcurementStep(orderId, proceed, confirmText) {
+		var payload = {
+			_token: csrfToken(),
+			stage: $('#proc-stage').val(),
+			remarks: $('#proc_remarks').val(),
+			proceed: proceed ? 1 : 0
+		};
+
+		$('.proc-meta').each(function () {
+			payload[$(this).data('field')] = $(this).val();
+		});
+
+		payload.attachment_ids = window.procurementDocumentIds();
+
+		if (proceed && $('#invoice_discount').length) {
+			payload.invoice_no = $('#invoice_no').val();
+			payload.invoice_date = $('#invoice_date').val();
+			payload.subtotal = $('#invoice_subtotal').val();
+			payload.discount = $('#invoice_discount').val();
+			payload.currency_code = $('#invoice_currency').val();
+			payload.unit_price = {};
+			payload.invoice_qty = {};
+			$('input.unit-price').each(function () {
+				payload.unit_price[$(this).data('id')] = $(this).val();
+			});
+			$('input.invoice-qty').each(function () {
+				payload.invoice_qty[$(this).data('id')] = $(this).val();
+			});
+		}
+
+		swal({
+			title: 'Are you sure?',
+			text: confirmText,
+			type: 'question',
+			showCancelButton: true,
+			confirmButtonColor: '#005866',
+			cancelButtonColor: '#6c757d',
+			confirmButtonText: 'Yes, continue',
+			showLoaderOnConfirm: true,
+			preConfirm: function () {
+				return new Promise(function (resolve) {
+					$.ajax({
+						url: '/procurement/' + orderId + '/complete',
+						type: 'post',
+						data: payload,
+						dataType: 'json'
+					})
+					.done(function (response) {
+						swal('Done!', response[0], 'success').then(function () {
+							// Falls back to reloading this same page rather than
+							// My Approvals - completing a stage should keep the
+							// officer right where they are, ready for the next one.
+							window.location.href = response.redirect || window.location.href;
+						});
+					})
+					.fail(function (response) {
+						var message = (response.responseJSON && response.responseJSON.message) || 'Something went wrong!';
+						swal('Oops...', message, 'error');
+					});
+				});
+			},
+			allowOutsideClick: false
+		});
+	}
+
+	// --- stage documents ----------------------------------------------
+	// Files go straight into the uploader's own library; their ids are held
+	// in the chip list until the stage completes, which is when the step row
+	// they attach to actually comes into existence.
+	var procDocs = [];
+
+	function renderProcDocs() {
+		$('#proc-doc-list').html(procDocs.map(function (d) {
+			return '<span class="proc-doc-chip"><span>' + esc(d.title) + '</span>'
+				+ '<button type="button" class="proc-doc-remove" data-id="' + d.id + '" title="Remove">&times;</button></span>';
+		}).join(''));
+	}
+
+	// jQuery's .trigger('click') runs its own synthetic event first, which
+	// doesn't count as a user gesture for opening a file picker - the native
+	// method does.
+	$(document).on('click', '#proc-doc-browse', function () {
+		$('#proc-doc-file')[0].click();
+	});
+
+	$(document).on('change', '#proc-doc-file', function () {
+		var file = this.files && this.files[0];
+		$('#proc-doc-chosen').text(file ? file.name : '');
+		$('#proc-doc-upload').prop('disabled', !file);
+
+		// Seed the title from the filename, but never overwrite something the
+		// user typed themselves.
+		if (file && !$('#proc-doc-title').data('touched')) {
+			$('#proc-doc-title').val(file.name.replace(/\.[^.]+$/, ''));
+		}
+	});
+
+	$(document).on('input', '#proc-doc-title', function () {
+		$(this).data('touched', true);
+	});
+
+	$(document).on('click', '#proc-doc-upload', function () {
+		var file = $('#proc-doc-file')[0].files[0];
+		var title = $.trim($('#proc-doc-title').val());
+
+		$('#proc-doc-error').text('');
+
+		if (!file) { return; }
+		if (!title) { $('#proc-doc-error').text('Give the document a title.'); return; }
+
+		var data = new FormData();
+		data.append('_token', csrfToken());
+		data.append('title', title);
+		data.append('file', file);
+
+		var $btn = $(this).prop('disabled', true).text('Uploading…');
+
+		$.ajax({
+			url: '/attachments/upload',
+			type: 'post',
+			data: data,
+			processData: false,
+			contentType: false,
+			dataType: 'json'
+		})
+		.done(function (attachment) {
+			procDocs.push({ id: attachment.id, title: attachment.title });
+			renderProcDocs();
+			$('#proc-doc-title').val('').data('touched', false);
+			$('#proc-doc-file').val('');
+			$('#proc-doc-chosen').text('');
+		})
+		.fail(function (response) {
+			var errors = response.responseJSON && response.responseJSON.errors;
+			var message = errors ? Object.keys(errors).map(function (k) { return errors[k][0]; }).join(' ')
+				: ((response.responseJSON && response.responseJSON.message) || 'Upload failed.');
+			$('#proc-doc-error').text(message);
+		})
+		.always(function () {
+			$btn.prop('disabled', false).text('Add');
+		});
+	});
+
+	$(document).on('click', '.proc-doc-remove', function () {
+		var id = $(this).data('id');
+		procDocs = procDocs.filter(function (d) { return d.id !== id; });
+		renderProcDocs();
+	});
+
+	// Read by the Approve handler too, for the Master's acknowledgement
+	// receipt at the Receipt & Verification stage.
+	window.procurementDocumentIds = function () {
+		return procDocs.map(function (d) { return d.id; });
+	};
+
+	// --- Confirm Receipt (its own modal, not the generic Approve click) --
+	// Opening the modal and filling in remarks/the acknowledgement receipt
+	// already IS the "are you sure" step, so this posts straight away
+	// rather than stacking a SweetAlert confirmation on top of it - same
+	// endpoint and payload shape as #approve_order's handler in
+	// js/dataForm.js, just without req_qty/deliver_qty/reason, which don't
+	// apply at this stage.
+	$(document).on('click', '#confirm_receipt_submit', function () {
+		var $btn = $(this);
+		var rcvQty = {};
+		$('input.rcv-qty').each(function () {
+			rcvQty[$(this).data('id')] = $(this).val();
+		});
+
+		var originalLabel = $btn.html();
+		$btn.prop('disabled', true).html('<i class="fas fa-check-circle"></i> Confirming…');
+
+		$.ajax({
+			url: '/order/approve',
+			type: 'post',
+			data: {
+				_token: csrfToken(),
+				id: $btn.data('id'),
+				rcv_qty: rcvQty,
+				rcv_remarks: $('#rcv_remarks').val(),
+				attachment_ids: window.procurementDocumentIds(),
+			},
+			dataType: 'json'
+		})
+		.done(function (response) {
+			$('#confirm-receipt-modal').modal('hide');
+			swal('Congratulation!', response[0], 'success').then(function () {
+				window.location.href = response.redirect || '/approved/requisition';
+			});
+		})
+		.fail(function (xhr) {
+			$btn.prop('disabled', false).html(originalLabel);
+			var message = (xhr.responseJSON && xhr.responseJSON.message) || 'Something went wrong!';
+			swal('Oops...', message, 'error');
+		});
+	});
+
+	$(document).on('click', '#proc-complete', function () {
+		submitProcurementStep($(this).data('id'), true, 'This stage will be recorded and the requisition moves to the next one.');
+	});
+
+	$(document).on('click', '#proc-skip', function () {
+		submitProcurementStep($(this).data('id'), false, 'This stage will be recorded as not required.');
+	});
+});
+</script>
 @endsection
 

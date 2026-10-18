@@ -33,7 +33,7 @@ $(document).ready(function() {
     })
   });
 
-  var table = $('#example').DataTable();
+  var table = $('#example').not('[data-server-paginated]').DataTable();
   var orderTable = $('#example1').DataTable();
   var id=null; var tr_id=null;  var tr_sl=null;
 
@@ -55,21 +55,13 @@ $(document).ready(function() {
       success:function(response)
       {
         toastr.success( 'New Survey Created Successfully!','Well Done!')
-        var  idx= table.rows().count();
-        idx++;
-        var rowNode = table
-        .row.add( ['<b class="serial">'+idx+'</b>', response[1]['survey']['name'],response[1]['society_name'],response[1]['survey_date'],response[1]['survey_exp_date'],response[1]['vessel']['name'], 
-          '<div class="action"><button class="btn btn-info mr-1 edit-survey" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>'+
-          '<button class="btn btn-danger delete-survey" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button></div>'] )
-        .order([0, 'dsc']).draw()
-        .node().id = 'survey-'+response[1]['id'];
-        $( rowNode )
-        .css( 'color', 'green' )
-        .animate( { color: 'red' } );
+        // Reload rather than rebuild the row by hand - the table's column
+        // layout now depends on whether Vessel Name is shown at all (hidden
+        // for a vessel-scoped Master/Chief Engineer view), so a hand-built
+        // array here would silently misalign the moment that differs from
+        // what the page originally rendered.
         swal('Congratulation!',response[0],'success').then(function() {
-          $('#survey_add_form')[0].reset();
-          $("[data-dismiss=modal]").trigger({ type: "click" });
-          $("#survey_add_form .form_error").css('display','none');
+          window.location.reload();
         });
       },
       error: function(errors)
@@ -142,23 +134,10 @@ $(document).ready(function() {
       success:function(response)
       {
         toastr.success( 'Survey Info Updated Successfully!','Well Done!')
-        $('#survey_edit_form')[0].reset();
-        var rData = [
-        '<b class="serial">'+tr_sl+'</b>',
-        response[1]['survey']['name'],
-        response[1]['society_name'],
-        response[1]['survey_date'],
-        response[1]['survey_exp_date'], 
-        response[1]['vessel']['name'],
-        '<button class="btn btn-info edit-survey mr-1" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button><button class="btn btn-danger delete-survey" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>'
-        ];
-        table
-        .row( 'tr#'+tr_id )
-        .data(rData)
-        .draw();
+        // Reload rather than rebuild the row by hand - see the same note on
+        // survey_add_form's success handler above.
         swal('Excellent!',response[0],'success').then(function() {
-          $("[data-dismiss=modal]").trigger({ type: "click" });
-          $('#survey_edit_form')[0].reset();
+          window.location.reload();
         });
       },
       error: function(errors)
@@ -277,22 +256,13 @@ $(document).on('submit','#certificate_add_form',function(event){
     success:function(response)
     {
       toastr.success( 'New Certificate Added Successfully!','Well Done!')
-      var  idx= table.rows().count();
-      idx++;
-      var rowNode = table
-      .row.add( ['<b class="serial">'+idx+'</b>', response[1]['certificate']['name'],response[1]['issue_auth'],response[1]['issue_date'],response[1]['exp_date'],response[1]['vessel']['name'],
-        '<button type="button" class="cert_file btn btn-info" data-toggle="modal" data-target="#fileShowModal" data-file="'+response[2]+ '/' +response[1]['cert_copy']+'" data-name="'+response[1]['name']+'"><i class="fas fa-eye"></i> Show File</button>',
-        '<div class="action"><button class="btn btn-info mr-1 edit-certificate" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>'+
-        '<button class="btn btn-danger delete-certificate" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button></div>'])
-      .order([0, 'dsc']).draw()
-      .node().id = 'certificate-'+response[1]['id'];
-      $( rowNode )
-      .css( 'color', 'green' )
-      .animate( { color: 'red' } );
+      // Reload rather than rebuild the row by hand - the table's column
+      // layout now depends on Category (always shown) and Vessel Name
+      // (hidden for a vessel-scoped Master/Chief Engineer view), so a
+      // hand-built array here would silently misalign the moment that
+      // differs from what the page originally rendered.
       swal('Congratulation!',response[0],'success').then(function() {
-        $('#certificate_add_form')[0].reset();
-        $("[data-dismiss=modal]").trigger({ type: "click" });
-        $("#certificate_add_form .form_error").css('display','none');
+        window.location.reload();
       });
     },
     error: function(errors)
@@ -331,22 +301,25 @@ $(document).on('click','.edit-certificate',function(e){
     contentType:false,
     success:function(res)
     {
-      console.log(res[0]['certificate']['id'])
-
+      // Only rendered for the fleet-wide admin view - a vessel's own
+      // Master/Chief Engineer gets a fixed hidden Vessel_Name instead.
       $("option.vessel_opt" ).each(function(i,v) {
         if($(this).val() == res[0]['vessel']['id']){
           $(this).attr('selected',true);
         };
       });
-      $("select.Certificate_Name option.cert_opt" ).each(function(i1,v1) {
-        if($(this).val() == res[0]['certificate']['id']){
-          $(this).attr('selected',true);
-        };
-      });
-      // $('#certificate_edit_form .Certificate_Name').val(res[0]['name'])
+      $('#certificate_edit_form .category_id').val(res[0]['category_id'])
+      $('#certificate_edit_form .cert-title').val(res[0]['title'])
       $('#certificate_edit_form .Issuing_Authority').val(res[0]['issue_auth'])
       $('#certificate_edit_form .Issue_Date').val(res[0]['issue_date'])
       $('#certificate_edit_form .Certificate_Expire_Date').val(res[0]['exp_date'])
+      $('#certificate_edit_form input[name=validity_years]').val(res[0]['validity_years'])
+      $('#certificate_edit_form .cert-permanent').prop('checked', res[0]['is_permanent'] == 1)
+      // Setting the checkbox above doesn't fire 'change' on its own -
+      // triggering it here is what runs certificate.blade.php's Expire
+      // Date/validity show-hide for the record actually being edited,
+      // not just whatever the form happened to load with.
+      $('#certificate_edit_form .cert-permanent').trigger('change');
       $('#certificate_edit_form iframe#prev_image1exist').attr('src',res[1]+'/'+res[0]['cert_copy']);
       $('#certificate_edit_form .Cert_Id').val(res[0]['id'])
     },
@@ -374,24 +347,10 @@ $(document).on('submit','#certificate_edit_form',function(event){
     success:function(response)
     {
       toastr.success( 'Certificate Info Updated Successfully!','Well Done!')
-      $('#certificate_edit_form')[0].reset();
-      var rData = [
-      '<b class="serial">'+tr_sl+'</b>',
-      response[1]['certificate']['name'],
-      response[1]['issue_auth'],
-      response[1]['issue_date'],
-      response[1]['exp_date'],
-      response[1]['vessel']['name'], 
-      '<button type="button" class="cert_file btn btn-info" data-toggle="modal" data-target="#fileShowModal" data-file="'+response[2]+ '/' +response[1]['cert_copy']+'"><i class="fas fa-eye"></i> Show File</button>',
-      '<button class="btn btn-info edit-certificate mr-1" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button><button class="btn btn-danger delete-certificate" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>'
-      ];
-      table
-      .row( 'tr#'+tr_id )
-      .data(rData)
-      .draw();
+      // Reload rather than rebuild the row by hand - see the same note on
+      // certificate_add_form's success handler above.
       swal('Excellent!',response[0],'success').then(function() {
-        $("[data-dismiss=modal]").trigger({ type: "click" });
-        $('#certificate_edit_form')[0].reset();
+        window.location.reload();
       });
     },
     error: function(errors)
@@ -602,6 +561,156 @@ $(document).on('click', '.delete-category', function(){
           allowOutsideClick: false
         });
       });
+
+$(document).on('submit','#budget_group_add_form',function(event){
+  event.preventDefault();
+  $("#budget_group_add_form .form_error").css('display','none');
+  $("#budget_group_add_form .form_error p").remove();
+  $('body').addClass("loading");
+  $.ajax({
+    type:'post',
+    url:'/budget-group/store',
+    data:new FormData($("#budget_group_add_form")[0]),
+    processData:false,
+    contentType:false,
+    success:function(response)
+    {
+      toastr.success( 'New Budget Group Added Successfully!','Well Done!')
+      var  idx= table.rows().count();
+      idx++;
+      var rowNode = table
+      .row.add( ['<b class="serial">'+idx+'</b>', response[1]['name'], budgetGroupKindCell(response[1]['kind']), response[1]['created_by'], response[1]['updated_by'],
+        '<div class="action"><button class="btn btn-info mr-1 edit-budget-group" data-id="'+response[1]['id']+'"  data-name="'+response[1]['name']+'" data-kind="'+response[1]['kind']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>'+
+        '<button class="btn btn-danger delete-budget-group" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button></div>'])
+      .order([0, 'dsc']).draw()
+      .node().id = 'budget-group-'+response[1]['id'];
+      $( rowNode )
+      .css( 'color', 'green' )
+      .animate( { color: 'red' } );
+      swal('Excellent!',response[0],'success').then(function() {
+        $('#budget_group_add_form')[0].reset();
+        $("[data-dismiss=modal]").trigger({ type: "click" });
+        $("#budget_group_add_form .form_error").css('display','none');
+      });
+    },
+    error: function(errors)
+    {
+      console.log(errors.responseJSON.errors);
+      toastr.warning("Error! Check Your Form Information Please.");
+      $.each(errors.responseJSON.errors, function(key, value){
+        $('#budget_group_add_form .form_error').show();
+        $('#budget_group_add_form .form_error').append('<p style="margin-bottom:5px;">'+value+'</p>');
+        $('html, body').stop().animate({
+          scrollTop: $('.alert-danger').offset().top - 150
+        }, 500);
+      });
+    }
+  });
+});
+
+// The "Used For" cell - item groups and service groups share this table and
+// are told apart by kind (see App\BudgetGroup).
+function budgetGroupKindCell(kind){
+  var isService = kind === 'service';
+  return '<span class="badge '+(isService ? 'badge-info' : 'badge-secondary')+'">'
+    + (isService ? 'Service requisition' : 'Item requisition') + '</span>';
+}
+
+$(document).on('click','.edit-budget-group',function(e){
+  e.preventDefault();
+  $('#budget_group_edit_form .BudgetGroup_Id').val($(this).data('id'));
+  $('#budget_group_edit_form .BudgetGroup_Name').val($(this).data('name'));
+  $('#budget_group_edit_form .BudgetGroup_Kind').val($(this).data('kind') || 'item');
+  tr = $(this).parent().parent();
+  tr_id=tr.attr('id');
+  tr_sl = $('#'+tr_id +" .serial").text();
+})
+$(document).on('submit','#budget_group_edit_form',function(event){
+  event.preventDefault();
+  $("#budget_group_edit_form .form_error").css('display','none');
+  $("#budget_group_edit_form .form_error p").remove();
+  $('body').addClass("loading");
+  $.ajax({
+    type:'post',
+    url:'/budget-group/update',
+    data:new FormData($("#budget_group_edit_form")[0]),
+    processData:false,
+    contentType:false,
+    success:function(response)
+    {
+      toastr.success( 'Budget Group Info Updated Successfully!','Well Done!')
+      $('#budget_group_edit_form')[0].reset();
+      var rData = [
+      '<b class="serial">'+tr_sl+'</b>',
+      response[1]['name'],
+      budgetGroupKindCell(response[1]['kind']),
+      response[1]['created_by'],
+      response[1]['updated_by'],
+      '<button class="btn btn-info edit-budget-group mr-1" data-id="'+response[1]['id']+'" data-name="'+response[1]['name']+'" data-kind="'+response[1]['kind']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button><button class="btn btn-danger delete-budget-group" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>'
+      ];
+      table
+      .row( 'tr#'+tr_id )
+      .data(rData)
+      .draw();
+      swal('Excellent!',response[0],'success').then(function() {
+        $("[data-dismiss=modal]").trigger({ type: "click" });
+        $('#budget_group_edit_form')[0].reset();
+      });
+    },
+    error: function(errors)
+    {
+      console.log(errors.responseJSON.errors);
+      toastr.warning("Error! Check Your Form Information Please.");
+      $.each(errors.responseJSON.errors, function(key, value){
+        $('#budget_group_edit_form .form_error').show();
+        $('#budget_group_edit_form .form_error').append('<p style="margin-bottom:5px;">'+value+'</p>');
+        $('html, body').stop().animate({
+          scrollTop: $('.alert-danger').offset().top - 150
+        }, 500);
+      });
+    }
+  });
+});
+$(document).on('click', '.delete-budget-group', function(){
+  var tr = $(this).parents('tr');
+  var tr_id=tr.attr('id');
+  var id = $(this).data('id');
+  swal({
+    title: 'Are you sure?',
+    text: "You want to delete this Budget Group!",
+    type: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    confirmButtonText: 'Yes, delete it!',
+    showLoaderOnConfirm: true,
+    preConfirm: function() {
+      return new Promise(function(resolve) {
+        $.ajax({
+          url: '/budget-group/delete',
+          type: 'post',
+          data: {
+            _token: CSRF_TOKEN,
+            'id':id,
+          },
+          dataType: 'json'
+        })
+        .done(function(response){
+          swal('Congratulation!',response[0],'success').then(function(){
+            table
+            .row("tr#"+tr_id)
+            .remove()
+            .draw();
+          });
+        })
+        .fail(function(response){
+          swal('Oops...', 'Something went wrong!' , 'error');
+        });
+      });
+    },
+    allowOutsideClick: false
+  });
+});
 
 $(document).on('click','.close_error_alert',function(){
   $(this).parent().hide();
@@ -1101,9 +1210,21 @@ $(document).on('click', '.delete-item', function(){
         });
       });
 $(document).on('change','#cate_name',function(){
+  // Pages without an item dropdown (the requisition list's search filter has
+  // none any more) have nothing to fill - and without this guard picking a
+  // category still fetched every item in it, tens of thousands for Stores.
+  if(!$('option.item_opt_default').length){
+    return;
+  }
+  $('option.item_opt').remove();
+  // Catalog-backed categories (tagged via data-catalog on the option) can
+  // hold tens of thousands of items - those are browsed through the tree
+  // picker instead of loaded into this flat dropdown. See create-order.js.
+  if($(this).children("option:selected").data('catalog') == 1){
+    return;
+  }
   $('img.field-loader').css({'display':'block'});
   var cat_id=$(this).children("option:selected").val();
-  $('option.item_opt').remove();
   url='/get-items/'+cat_id;
   $.ajax({
     type:'get',
@@ -1136,6 +1257,9 @@ $(document).on('click','#add_item_button',function(e){
   cat_id
   ];
   $('option.item_opt').remove();
+  if($('select#cate_name').children("option:selected").data('catalog') == 1){
+    return;
+  }
   url='/get-items/'+cat_id;
   $.ajax({
     type:'get',
@@ -1171,8 +1295,14 @@ $(document).on('click','#order_add',function(e){
     if(exist_item_count == 0){
       var  idx= orderTable.rows().count();
       idx++;
+      // Column order matches the paper-form layout (SL NO / Item Name /
+      // IMPA Code / Unit / Opening Stock / Qty of Last Supply / Date of
+      // Last Supply / In Stock / Required / Office Use / Action) - the
+      // stock-history columns have no data source yet, so they render
+      // blank for now.
       var rowNode = orderTable
-      .row.add( ['<b class="serial">'+idx+'</b>', item_impa, item_name +'<input type="hidden" name="item_id[]" value="'+item_id+'">' , '<span class="added_qty">'+qty+'</span>' + '<input type="hidden" class="form-control qty-edit" name="item_qty[]" value="'+qty+'">', unit, cat_name, 
+      .row.add( ['<b class="serial">'+idx+'</b>', item_name +'<input type="hidden" name="item_id[]" value="'+item_id+'">', item_impa, unit, '', '', '', '',
+        '<span class="added_qty">'+qty+'</span>' + '<input type="hidden" class="form-control qty-edit" name="item_qty[]" value="'+qty+'">', '',
         '<button class="btn btn-info mr-1 edit-order-item" data-id="'+item_id+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>'+
         '<button class="btn btn-danger delete-order-item" data-id="'+item_id+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>'])
       .order([0, 'dsc']).draw()
@@ -1333,6 +1463,40 @@ $(document).on('submit','#add_order_form',function(event){
 // approve order 
 $(document).on('click', '#approve_order', function(){
   var id = $(this).data('id');
+  // Chief Officer/Second Engineer's "Reason of Requisition" textarea is only
+  // rendered for them, at their own origin-approval stage - required before
+  // it goes through (see RoleController@approveRequisition). Only matters for
+  // a pre-wizard order; the wizard itself already requires this up front.
+  var reasonField = $('#requisition_reason');
+  var reason = reasonField.length ? reasonField.val().trim() : null;
+  if (reasonField.length && reason === '') {
+    swal('Reason required', 'Please fill in the Reason of Requisition before approving.', 'warning');
+    return;
+  }
+  // Master/Chief Engineer can correct the deck/engine officer's requested
+  // quantities before forwarding; the assigned SSM officer (AGM/AM/
+  // Superintendent SSM) can adjust each line's Deliver Qty (defaults to Req
+  // Qty); Master can adjust Rcv Qty (defaults to Deliver Qty) when confirming
+  // receipt - all three right on this same Approve click. See td.req_qty /
+  // td.deliver_qty / td.rcv_qty in view-order-detail.blade.php.
+  var reqQty = {};
+  $('input.req-qty').each(function () {
+    reqQty[$(this).data('id')] = $(this).val();
+  });
+  var deliverQty = {};
+  $('input.deliver-qty').each(function () {
+    deliverQty[$(this).data('id')] = $(this).val();
+  });
+  var rcvQty = {};
+  $('input.rcv-qty').each(function () {
+    rcvQty[$(this).data('id')] = $(this).val();
+  });
+  // Receipt & Verification is a procurement stage taken through this same
+  // button, so the Master's remarks and acknowledgement receipt ride along
+  // with it (see the procurement panel in view-order-detail).
+  var rcvRemarks = $('#rcv_remarks').length ? $('#rcv_remarks').val() : null;
+  var attachmentIds = (typeof window.procurementDocumentIds === 'function')
+    ? window.procurementDocumentIds() : [];
   swal({
     title: 'Are you sure?',
     text: "You want to approve this Requisition!",
@@ -1350,16 +1514,26 @@ $(document).on('click', '#approve_order', function(){
           data: {
             _token: CSRF_TOKEN,
             'id':id,
+            'reason':reason,
+            'req_qty':reqQty,
+            'deliver_qty':deliverQty,
+            'rcv_qty':rcvQty,
+            'rcv_remarks':rcvRemarks,
+            'attachment_ids':attachmentIds,
           },
           dataType: 'json'
         })
         .done(function(response){
           swal('Congratulation!',response[0],'success').then(function(){
-            window.location.href='/approved/requisition'
+            // Master/Chief Engineer get their own approval history back in
+            // `redirect` (see RoleController@approveRequisition) - everyone
+            // else keeps going to the shared Approved Requisition page.
+            window.location.href = response.redirect || '/approved/requisition'
           });
         })
         .fail(function(response){
-          swal('Oops...', 'Something went wrong!' , 'error');
+          var message = (response.responseJSON && response.responseJSON.message) || 'Something went wrong!';
+          swal('Oops...', message, 'error');
         });
       });
     },
@@ -1367,17 +1541,71 @@ $(document).on('click', '#approve_order', function(){
   });
 });
 
-// approve order 
+// DGM (SSM) assigns the requisition to one named SSM officer, who then
+// takes the final action on it.
+$(document).on('click', '#assign_ssm', function(){
+  var id = $(this).data('id');
+  var assignedTo = $('#ssm_assignee').val();
+  if (!assignedTo) {
+    swal('Choose an officer', 'Please select which SSM officer to assign this requisition to.', 'warning');
+    return;
+  }
+  var assigneeName = $('#ssm_assignee option:selected').text();
+  swal({
+    title: 'Assign this requisition?',
+    text: 'It will go to ' + assigneeName + ' for the final action.',
+    type: 'info',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    confirmButtonText: 'Yes, assign it!',
+    showLoaderOnConfirm: true,
+    preConfirm: function() {
+      return new Promise(function(resolve) {
+        $.ajax({
+          url: '/order/assign',
+          type: 'post',
+          data: {
+            _token: CSRF_TOKEN,
+            'id': id,
+            'assigned_to': assignedTo,
+          },
+          dataType: 'json'
+        })
+        .done(function(response){
+          swal('Assigned!', response[0], 'success').then(function(){
+            window.location.href = response.redirect || '/approved/requisition'
+          });
+        })
+        .fail(function(response){
+          var message = (response.responseJSON && response.responseJSON.message) || 'Something went wrong!';
+          swal('Oops...', message, 'error');
+        });
+      });
+    },
+    allowOutsideClick: false
+  });
+});
+
+// GM (SRD) delegates the requisition to one named reviewer within
+// DGM/AGM/AM/Superintendent (SRD) - each of those roles can be more than one
+// real person, so a role alone isn't enough to say who it goes to.
 $(document).on('click', '#forward_toagm', function(){
   var id = $(this).data('id');
+  var assignedTo = $('#srd_delegate_target').val();
+  if (!assignedTo) {
+    swal('Choose a reviewer', 'Please select who to delegate this requisition to.', 'warning');
+    return;
+  }
+  var assigneeName = $('#srd_delegate_target option:selected').text();
   swal({
-    title: 'Are you sure?',
-    text: "You want to forward down this Requisition!",
+    title: 'Delegate this requisition?',
+    text: 'It will go to ' + assigneeName + ' for review.',
     type: 'info',
     showCancelButton: true,
     confirmButtonColor: '#5DADE2',
     cancelButtonColor: '#CD6155',
-    confirmButtonText: 'Yes, Forward it!',
+    confirmButtonText: 'Yes, delegate it!',
     showLoaderOnConfirm: true,
     preConfirm: function() {
       return new Promise(function(resolve) {
@@ -1387,16 +1615,18 @@ $(document).on('click', '#forward_toagm', function(){
           data: {
             _token: CSRF_TOKEN,
             'id':id,
+            'assigned_to':assignedTo,
           },
           dataType: 'json'
         })
         .done(function(response){
           swal('Congratulation!',response[0],'success').then(function(){
-            window.location.href='/approved/requisition'
+            window.location.href = response.redirect || '/approved/requisition'
           });
         })
         .fail(function(response){
-          swal('Oops...', 'Something went wrong!' , 'error');
+          var message = (response.responseJSON && response.responseJSON.message) || 'Something went wrong!';
+          swal('Oops...', message, 'error');
         });
       });
     },
@@ -1408,6 +1638,7 @@ $(document).on('click','input#ship_user, input#ship_user_edit',function () {
   if (this.checked){
     $('div.for_ship_user').attr('hidden',false);
     $('div.all_user').attr('hidden',false);
+    $('#add_user_submit').attr('hidden',false);
     $('option.admin_role').attr('hidden',true);
     $('option.ship_role').attr('hidden',false);
     $('input.vessel_not_for_admin').attr('disabled',true);
@@ -1430,6 +1661,7 @@ $(document).on('click','input#ssm_user, input#ssm_user_edit',function () {
   if (this.checked){
     $('div.for_ship_user').attr('hidden',true);
     $('div.all_user').attr('hidden',false);
+    $('#add_user_submit').attr('hidden',false);
     // $('option.admin_role').attr('hidden',false);
     $('option.role-ssm').attr('hidden',false);
     $('option.role-srd').attr('hidden',true);
@@ -1444,6 +1676,7 @@ $(document).on('click','input#srd_user, input#srd_user_edit',function () {
   if (this.checked){
     $('div.for_ship_user').attr('hidden',true);
     $('div.all_user').attr('hidden',false);
+    $('#add_user_submit').attr('hidden',false);
     // $('option.admin_role').attr('hidden',false);
     $('option.role-ssm').attr('hidden',true);
     $('option.role-srd').attr('hidden',false);
@@ -1456,7 +1689,33 @@ $(document).on('click','input#srd_user, input#srd_user_edit',function () {
  }); 
 
 
+// Add-user modal back to its first state: nothing chosen, and everything below
+// the Ship/SSM/SRD choice hidden. form.reset() alone clears the radios but
+// leaves the rows it revealed on screen, so the next time the modal opened it
+// showed the whole form with no type selected - and a form with no type
+// picked is exactly how accounts ended up with a blank user type.
+function resetAddUserModal() {
+  var $form = $('#user_add_form');
+  if (!$form.length) { return; }
+  $form[0].reset();
+  $form.find('div.for_ship_user, div.all_user').attr('hidden', true);
+  $form.find('option.admin_role, option.ship_role').attr('hidden', false);
+  $form.find('input.vessel_not_for_admin').attr('disabled', true);
+  $('#add_user_submit').attr('hidden', true);
+  $form.find('.form_error').css('display', 'none').find('p').remove();
+}
+$(document).on('show.bs.modal hidden.bs.modal', '#myModal', resetAddUserModal);
+
 // Add Item Function 
+// Same three colours as the initial Blade render (user.blade.php) - ship
+// crew blue, shore SRD green, shore SSM amber - so a row added or edited
+// through AJAX matches one rendered on page load instead of falling back to
+// plain text.
+function userTypeBadge(type) {
+  var cls = { ship: 'badge-primary', srd: 'badge-success', ssm: 'badge-warning' }[type] || 'badge-secondary';
+  return type ? '<span class="badge ' + cls + '">' + String(type).toUpperCase() + '</span>' : '';
+}
+
 $(document).on('submit','#user_add_form',function(event){
   event.preventDefault();
   $("#user_add_form .form_error").css('display','none');
@@ -1478,7 +1737,7 @@ $(document).on('submit','#user_add_form',function(event){
       var  idx= table.rows().count();
       idx++;
       var rowNode = table
-      .row.add( ['<b class="serial">'+idx+'</b>', response[1]['name'], response[1]['email'], response[2]['role'], response[2]['user_type'], response[3], response[2]['created_by']+ '<br>' +response[2]['created_at'], response[2]['updated_by'] +'<br>'+response[2]['updated_at'],
+      .row.add( ['<b class="serial">'+idx+'</b>', response[1]['name'], response[1]['email'], response[2]['role'], userTypeBadge(response[2]['user_type']), response[3], response[2]['created_by']+ '<br><small class="text-muted">' +String(response[1]['created_label']).replace(', ','<br>')+'</small>', response[2]['updated_by'] +'<br><small class="text-muted">'+String(response[1]['updated_label']).replace(', ','<br>')+'</small>',
         '<div class="action"><button class="btn btn-info mr-1 edit-user" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>'+
         '<button class="btn btn-danger delete-user" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button><div>'])
       .order([0, 'dsc']).draw()
@@ -1487,7 +1746,7 @@ $(document).on('submit','#user_add_form',function(event){
       .css( 'color', 'green' )
       .animate( { color: 'red' } );
       swal('Excellent!',response[0],'success').then(function() {
-        $('#user_add_form')[0].reset();
+        resetAddUserModal();
         $("[data-dismiss=modal]").trigger({ type: "click" });
         $("#user_add_form .form_error").css('display','none');
       });
@@ -1549,45 +1808,6 @@ $(document).on('click', '.delete-user', function(){
         });
       });
 
-// delete survey function()
-$(document).on('click', '#update_order_status', function(e){
-  e.preventDefault();
-  var id = $(this).data('id');
-  var status = $('#order_status').children("option:selected").val();
-  swal({
-    title: 'Are you sure?',
-    text: "You want to update this order status!",
-    type: 'warning',
-    showCancelButton: true,
-    confirmButtonColor: '#3085d6',
-    cancelButtonColor: '#d33',
-    confirmButtonText: 'Yes, update it!',
-    showLoaderOnConfirm: true,
-    preConfirm: function() {
-      return new Promise(function(resolve) {
-        $.ajax({
-          url: '/order/status/update',
-          type: 'post',
-          data: {
-            _token: CSRF_TOKEN,
-            'id':id,
-            'status':status,
-          },
-          dataType: 'json'
-        })
-        .done(function(response){
-          swal('Wel Done!',response[0],'success').then(function(){
-            // window.location.href='/delivered/requisition';
-          })
-          .fail(function(response){
-            swal('Oops...', 'Something went wrong!' , 'error');
-          });
-        });
-      });
-    },
-    allowOutsideClick: false
-  });
-});
 $(document).on('click','.edit-user',function(e){
   e.preventDefault();
   var id = $(this).data('id');
@@ -1682,10 +1902,10 @@ $(document).on('submit','#user_edit_form',function(event){
       '<b class="serial">'+tr_sl+'</b>',
       response[1]['name'],
       response[1]['email'],
-      response[2]['role'],response[2]['user_type'],
+      response[2]['role'], userTypeBadge(response[2]['user_type']),
       response[3], 
-      response[2]['created_by']+'<br>'+response[2]['created_at'], 
-      response[2]['updated_by']+'<br>'+response[2]['updated_at'],  
+      response[2]['created_by']+'<br><small class="text-muted">'+String(response[1]['created_label']).replace(', ','<br>')+'</small>', 
+      response[2]['updated_by']+'<br><small class="text-muted">'+String(response[1]['updated_label']).replace(', ','<br>')+'</small>',  
       '<button class="btn btn-info edit-user mr-1" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button><button class="btn btn-danger delete-user" data-id="'+response[1]['id']+'" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>'
       ];
       table
@@ -1749,12 +1969,13 @@ $(document).on('click','#indSave',function(e){
   }else if(role=='operator'){
     var itemId = $(this).parent('td').parent('tr').find('td.rcv_qty input').data('id');
     var itemValue = $(this).parent('td').parent('tr').find('td.rcv_qty input').val();
-  }else if(role=='am-srd'){
-    var itemId = $(this).parent('td').parent('tr').find('td.req_qty input').data('id');
-    var itemValue = $(this).parent('td').parent('tr').find('td.req_qty input').val();
-    // alert(itemId)
-
   }
+  // am-srd used to have a branch here too, but it only ever rendered because
+  // of a bug in view-order-detail.blade.php (`$order->ast_m_app` reads a
+  // property that doesn't exist on Order - it's `$order->orderApproval->ast_m_app`
+  // - so that check silently evaluated to "always true"). AM-SRD editing Req
+  // Qty was never part of the design; that markup is gone now, so this branch
+  // can no longer fire and has been removed with it.
   var url='/single-qty/update';
   var type='post';
   $.ajax({

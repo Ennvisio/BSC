@@ -261,8 +261,7 @@
 								<th>Vessel Name</th>
 								<th>Req. Date</th>
 								<th>Port</th>
-								<th>status</th>
-								<th>status from ssm</th>
+								<th>Stage</th>
 								<th>Created By</th>
 								<th>Updated By</th>
 								<!-- <th class="action">Action</th> -->
@@ -281,8 +280,7 @@
 									<td>{{!empty($order->vessel->name)?$order->vessel->name:''}}</td>
 									<td>{{!empty($order->req_date)?$order->req_date:''}}</td>
 									<td>{{!empty($order->port_name)?$order->port_name:''}}</td>
-									<td>{{!empty($order->status)?$order->status:''}}</td>
-									<td>{{!empty($order->status_from_am)?$order->status_from_am:''}}</td>
+									<td><span class="badge badge-info">{{ $order->currentStageLabel() }}</span></td>
 									<td>{{!empty($order->created_by)?$order->created_by:''}}</td>
 									<td>{{!empty($order->updated_by)?$order->updated_by:''}}</td>
 									<td class="action">

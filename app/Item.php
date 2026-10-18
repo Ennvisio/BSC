@@ -14,4 +14,10 @@ class Item extends Model
 	public function orderItems(){
 		return $this->hasMany(OrderItem::class);
 	}
+	public function itemGroup(){
+		return $this->belongsTo(ItemGroup::class);
+	}
+	public function vessels(){
+		return $this->belongsToMany(Vessel::class, 'vessel_items');
+	}
 }
