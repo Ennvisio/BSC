@@ -586,7 +586,7 @@ $(function () {
 			case 'name_with_manufacturer':
 				var nm = stripPlaceholder(item.name), mfr = stripPlaceholder(item.manufacturer);
 				return mfr ? (nm + ' - ' + mfr) : nm;
-			case 'impa_code': return stripPlaceholder(item.impa_code);
+			case 'impa_code': return stripPlaceholder(item.impa_code) || stripPlaceholder(item.article_number);
 			case 'article_number': return stripPlaceholder(item.article_number);
 			case 'drawing_number': return stripPlaceholder(item.drawing_number);
 			case 'part_number': return stripPlaceholder(item.part_number);

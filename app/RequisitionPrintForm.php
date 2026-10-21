@@ -159,7 +159,11 @@ class RequisitionPrintForm
             // its own column - "Pipe - J.P. Sauer & Sohn...".
             'name_with_manufacturer' => trim(self::text($item->name ?? null)
                 .(self::text($item->manufacturer ?? null) !== '' ? ' - '.self::text($item->manufacturer) : '')),
-            'impa_code' => self::text($item->impa_code ?? null),
+            // impa_code is '-' or duplicated for most imported Stores items;
+            // article_number is the clean identifier those imports actually carry.
+            'impa_code' => self::text($item->impa_code ?? null) !== ''
+                ? self::text($item->impa_code ?? null)
+                : self::text($item->article_number ?? null),
             'drawing_number' => self::text($item->drawing_number ?? null),
             'part_number' => self::text($item->part_number ?? null),
             'article_number' => self::text($item->article_number ?? null),

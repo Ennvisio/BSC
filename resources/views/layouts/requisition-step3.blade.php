@@ -56,7 +56,7 @@
 						<thead>
 							<tr>
 								<th>#</th>
-								<th>Article #</th>
+								<th>{{ strtoupper($order->category->symbol ?? '') === 'STR' ? 'IMPA Code' : 'Article #' }}</th>
 								<th>Item Name with full Specifications</th>
 								<th>Unit</th>
 								<th>Opening Stock</th>
