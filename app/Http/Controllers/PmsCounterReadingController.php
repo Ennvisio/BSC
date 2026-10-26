@@ -27,7 +27,17 @@ class PmsCounterReadingController extends Controller
     {
         $this->authorizePmsVesselView($component->vessel_id);
 
-        $component->load(['vessel:id,name', 'location:id,name', 'parent:id,name']);
+        $component->load(['vessel:id,name', 'location:id,name', 'parent:id,name', 'counterParent:id,name']);
+
+        if ($component->counter_parent_id) {
+            return view('layouts.pms-counter-readings', [
+                'component' => $component,
+                'readings' => collect(),
+                'deltas' => [],
+                'canEdit' => $this->canEditPmsVessel($component->vessel_id),
+            ]);
+        }
+
         $readings = $component->counterReadings()->with('enteredBy:id,name')->get();
 
         // Hours run since the previous reading - what a reader actually wants

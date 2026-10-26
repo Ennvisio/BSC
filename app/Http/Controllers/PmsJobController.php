@@ -6,7 +6,6 @@ use App\Exports\PmsJobsExport;
 use App\Http\Controllers\Concerns\PmsAccess;
 use App\PmsComponent;
 use App\PmsCondition;
-use App\PmsCounterReading;
 use App\PmsJob;
 use App\PmsJobType;
 use App\PmsLocation;
@@ -28,7 +27,7 @@ class PmsJobController extends Controller
 {
     use PmsAccess;
 
-    const FILTERS = ['all', 'overdue', 'duesoon', 'approval', 'critical'];
+    const FILTERS = ['all', 'planned', 'overdue', 'duesoon', 'due14', 'approval', 'critical'];
 
     public function __construct()
     {
@@ -58,6 +57,7 @@ class PmsJobController extends Controller
             'conditions' => PmsCondition::orderBy('id')->get(['id', 'name']),
             'manufacturers' => \App\Manufacturer::orderBy('name')->get(['id', 'name']),
             'defaultConditionId' => PmsCondition::defaultId(),
+            'initialFilter' => in_array($request->query('filter'), self::FILTERS, true) ? $request->query('filter') : 'all',
             'selectedComponent' => $ids->has($request->query('component_id')) ? $request->query('component_id') : null,
         ]);
     }
@@ -80,6 +80,7 @@ class PmsJobController extends Controller
 
         $filter = in_array($request->query('filter'), self::FILTERS, true) ? $request->query('filter') : 'all';
         $rows = $rows->filter(fn ($r) => match ($filter) {
+            'planned' => $r['status'] === PmsJob::PLANNED,
             'overdue' => $r['status'] === PmsJob::OVERDUE,
             'duesoon' => $r['status'] === PmsJob::DUE_SOON,
             'approval' => $r['status'] === PmsJob::WAITING_APPROVAL,
@@ -242,7 +243,7 @@ class PmsJobController extends Controller
             ->pluck(DB::raw('max(completed_at)'), 'job_definition_id');
 
         $counterIds = $jobs->pluck('component')->filter(fn ($c) => $c && $c->has_counter)->pluck('id')->unique()->values();
-        $currentRh = $this->latestReadings($counterIds);
+        $currentRh = app(PmsJobScheduler::class)->latestRhValues($counterIds->all());
 
         $parents = PmsComponent::where('vessel_id', $vesselId)->pluck('name', 'id');
 
@@ -278,27 +279,6 @@ class PmsJobController extends Controller
         })->sortBy(fn ($r) => [$r['due_date'] === null ? 1 : 0, $r['due_date'] ?? '', $r['name']])->values();
     }
 
-    /** component id => latest meter value (on or before today). */
-    private function latestReadings(Collection $componentIds): array
-    {
-        if ($componentIds->isEmpty()) {
-            return [];
-        }
-
-        $tomorrow = now()->addDay()->toDateString();
-        $latest = PmsCounterReading::whereIn('component_id', $componentIds)
-            ->where('reading_date', '<', $tomorrow)
-            ->groupBy('component_id')
-            ->pluck(DB::raw('max(reading_date)'), 'component_id');
-
-        $values = [];
-        foreach ($latest as $componentId => $date) {
-            $values[$componentId] = (float) PmsCounterReading::where('component_id', $componentId)
-                ->where('reading_date', $date)->value('value');
-        }
-
-        return $values;
-    }
 
     private function jobPayload(PmsJob $job): array
     {

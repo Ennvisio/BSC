@@ -152,6 +152,44 @@ class PmsJobSchedulerTest extends TestCase
         $this->assertSame(PmsJob::DUE_SOON, $job->fresh()->status);
     }
 
+    // ---------------------------------------------------------------- dependent counters
+
+    public function test_dependent_component_rh_job_becomes_due_from_the_parents_readings(): void
+    {
+        $parent = $this->makeComponent(['name' => 'MAIN ENGINE', 'has_counter' => true]);
+        $this->reading($parent, '2026-01-10', 1000);
+        $dependent = $this->makeComponent(['name' => 'TURBOCHARGER', 'has_counter' => true, 'counter_parent_id' => $parent->id]);
+
+        $job = $this->scheduler->definitionSaved($this->makeDefinition($dependent, [], [[500, 'RunningHour']]));
+        $this->assertSame(1500.0, (float) $job->due_running_hours, 'the base RH came from the parent - the dependent has no readings of its own');
+        $this->assertSame(PmsJob::PLANNED, $job->status);
+
+        $this->today('2026-02-01');
+        $this->reading($parent, '2026-02-01', 1500.5);
+        $this->scheduler->refreshComponent($parent);
+
+        $job->refresh();
+        $this->assertSame(PmsJob::OVERDUE, $job->status, 'the parent\'s meter passed the dependent job\'s due RH');
+    }
+
+    public function test_refreshing_the_parent_also_refreshes_every_dependents_jobs(): void
+    {
+        $parent = $this->makeComponent(['name' => 'MAIN ENGINE', 'has_counter' => true]);
+        $this->reading($parent, '2026-01-10', 1000);
+        $dependentA = $this->makeComponent(['name' => 'TURBOCHARGER A', 'has_counter' => true, 'counter_parent_id' => $parent->id]);
+        $dependentB = $this->makeComponent(['name' => 'TURBOCHARGER B', 'has_counter' => true, 'counter_parent_id' => $parent->id]);
+
+        $jobA = $this->scheduler->definitionSaved($this->makeDefinition($dependentA, [], [[500, 'RunningHour']]));
+        $jobB = $this->scheduler->definitionSaved($this->makeDefinition($dependentB, [], [[500, 'RunningHour']]));
+
+        $this->today('2026-02-01');
+        $this->reading($parent, '2026-02-01', 1500.5);
+        $this->scheduler->refreshComponent($parent);
+
+        $this->assertSame(PmsJob::OVERDUE, $jobA->fresh()->status);
+        $this->assertSame(PmsJob::OVERDUE, $jobB->fresh()->status);
+    }
+
     // ---------------------------------------------------------------- whichever first
 
     public function test_whichever_first_takes_the_rh_estimate_when_it_comes_before_the_year(): void

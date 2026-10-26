@@ -21,6 +21,10 @@
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
+        <!-- config/cache.php's 'default' reads CACHE_DRIVER (this app's skeleton
+             predates the CACHE_STORE rename) - CACHE_STORE alone silently did
+             nothing and every test ran against the real on-disk file cache. -->
+        <env name="CACHE_DRIVER" value="array"/>
         <env name="CACHE_STORE" value="array"/>
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>

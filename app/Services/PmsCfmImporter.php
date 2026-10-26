@@ -63,9 +63,12 @@ class PmsCfmImporter
     /**
      * @param  array  $vesselData  the decoded CFM_export_<CODE>.json
      * @param  array  $master  the decoded CFM_export_master.json's "master" node
+     * @param  array<string>  $excludeDefGuids  extra CFM job definition guids to skip, on top of ALWAYS_EXCLUDED_DEFINITIONS
+     * @param  bool  $removeUnmatched  soft-delete components with no cfm_guid, no jobs, no job
+     *               definitions and no readings - leftovers from the Excel import that this CFM
+     *               export never touched. Listed either way; only actually removed when true.
      */
-    /** @param  array<string>  $excludeDefGuids  extra CFM job definition guids to skip, on top of ALWAYS_EXCLUDED_DEFINITIONS */
-    public function import(int $vesselId, array $vesselData, array $master, int $userId, bool $dryRun = false, array $excludeDefGuids = []): PmsCfmImportResult
+    public function import(int $vesselId, array $vesselData, array $master, int $userId, bool $dryRun = false, array $excludeDefGuids = [], bool $removeUnmatched = false): PmsCfmImportResult
     {
         $result = new PmsCfmImportResult;
         $lookups = $this->buildLookups($master);
@@ -73,8 +76,9 @@ class PmsCfmImporter
         $isExcluded = fn (string $guid): bool => isset($excluded[strtolower($guid)]);
 
         try {
-            DB::transaction(function () use ($vesselId, $vesselData, $lookups, $userId, $result, $dryRun, $isExcluded) {
+            DB::transaction(function () use ($vesselId, $vesselData, $lookups, $userId, $result, $dryRun, $isExcluded, $removeUnmatched) {
                 $componentIds = $this->importComponents($vesselId, $vesselData['components'] ?? [], $lookups, $result);
+                $this->linkDependentCounters($vesselData['components'] ?? [], $componentIds, $result);
                 $this->importCounters($vesselData['counters'] ?? [], $componentIds, $userId, $result);
 
                 $openJobs = $vesselData['openJobs'] ?? [];
@@ -88,6 +92,10 @@ class PmsCfmImporter
 
                 $this->importJobs($vesselId, $openJobs, $componentIds, $definitionIds, $definitionMeta, $userId, $result, $isExcluded);
 
+                if ($removeUnmatched) {
+                    $this->removeUnmatchedComponents($vesselId, $result);
+                }
+
                 if ($dryRun) {
                     throw new PmsCfmDryRunRollback;
                 }
@@ -97,6 +105,83 @@ class PmsCfmImporter
         }
 
         return $result;
+    }
+
+    /**
+     * --remove-unmatched: soft-delete components left over from before this
+     * CFM data existed (typically the earlier Excel import) - never tagged
+     * with a cfm_guid by any CFM import, and with nothing hanging off them:
+     * no job, no job definition (even a deactivated one), no counter
+     * reading. Found leaf-up, so a leftover parent whose only children are
+     * themselves leftover is caught too, without ever touching a component
+     * that still has a live child. Listed on $result either way - under
+     * --dry-run the delete below is rolled back with everything else, so
+     * the list is exactly what a real run would remove.
+     */
+    private function removeUnmatchedComponents(int $vesselId, PmsCfmImportResult $result): void
+    {
+        $components = PmsComponent::where('vessel_id', $vesselId)->get(['id', 'parent_id', 'cfm_guid', 'name']);
+        if ($components->isEmpty()) {
+            return;
+        }
+
+        $ids = $components->pluck('id');
+        $withJobs = PmsJob::where('vessel_id', $vesselId)->whereIn('component_id', $ids)->distinct()->pluck('component_id')->flip();
+        $withDefs = PmsJobDefinition::withTrashed()->where('vessel_id', $vesselId)->whereIn('component_id', $ids)->distinct()->pluck('component_id')->flip();
+        $withReadings = PmsCounterReading::whereIn('component_id', $ids)->distinct()->pluck('component_id')->flip();
+
+        $byId = $components->keyBy('id');
+        $eligible = fn (PmsComponent $c) => $c->cfm_guid === null
+            && ! $withJobs->has($c->id) && ! $withDefs->has($c->id) && ! $withReadings->has($c->id);
+
+        $childCount = [];
+        foreach ($components as $c) {
+            if ($c->parent_id) {
+                $childCount[$c->parent_id] = ($childCount[$c->parent_id] ?? 0) + 1;
+            }
+        }
+
+        // Repeatedly take components with no remaining (un-removed) children:
+        // a leftover subtree collapses from its leaves up to its root.
+        $queue = $components->filter(fn ($c) => ($childCount[$c->id] ?? 0) === 0 && $eligible($c))->pluck('id')->all();
+        $toRemove = [];
+        while ($queue) {
+            $id = array_pop($queue);
+            if (isset($toRemove[$id])) {
+                continue;
+            }
+            $toRemove[$id] = $byId[$id];
+
+            $parentId = $byId[$id]->parent_id;
+            if ($parentId && isset($byId[$parentId])) {
+                $childCount[$parentId] = max(0, ($childCount[$parentId] ?? 1) - 1);
+                if ($childCount[$parentId] === 0 && $eligible($byId[$parentId])) {
+                    $queue[] = $parentId;
+                }
+            }
+        }
+
+        if (! $toRemove) {
+            return;
+        }
+
+        $result->unmatchedComponents = collect($toRemove)->map(fn ($c) => [
+            'id' => $c->id, 'name' => $c->name, 'path' => $this->componentPath($c, $byId),
+        ])->values()->all();
+        $result->add('components_unmatched', count($toRemove));
+
+        PmsComponent::whereIn('id', array_keys($toRemove))->delete();
+    }
+
+    private function componentPath(PmsComponent $component, \Illuminate\Support\Collection $byId): string
+    {
+        $names = [];
+        for ($node = $component, $guard = 0; $node && $guard < 50; $guard++) {
+            array_unshift($names, $node->name);
+            $node = $node->parent_id ? ($byId[$node->parent_id] ?? null) : null;
+        }
+
+        return implode(' › ', $names);
     }
 
     /** One row per fleet definition - name and how many components it has an open job against - so an admin can review before the real import. */
@@ -226,6 +311,56 @@ class PmsCfmImporter
     private function componentKey(?string $parentId, string $name): string
     {
         return ($parentId ?? 'null').'|'.$this->norm($name);
+    }
+
+    /**
+     * CounterMode "DependentCounter" components get their counter_parent_id
+     * set from CounterDependsOnComponentGuid - a separate pass, because that
+     * guid can point anywhere in the file, not just at an equipment-tree
+     * ancestor (components are imported parents-before-children for the
+     * equipment tree, but a counter dependency is a different graph - see
+     * the class doc). Idempotent: a component already linked to the right
+     * source is left alone and counted under "already linked".
+     */
+    private function linkDependentCounters(array $components, array $componentIds, PmsCfmImportResult $result): void
+    {
+        $targets = [];
+        foreach ($components as $c) {
+            if (($c['CounterMode'] ?? null) !== 'DependentCounter' || empty($c['CounterDependsOnComponentGuid'])) {
+                continue;
+            }
+
+            $ourId = $componentIds[$c['Guid']] ?? null;
+            if (! $ourId) {
+                // The dependent component itself wasn't imported (e.g. a folder) - nothing to link.
+                continue;
+            }
+
+            $sourceId = $componentIds[$c['CounterDependsOnComponentGuid']] ?? null;
+            if (! $sourceId) {
+                $result->warn('counter_parent_missing', 'Component "'.$c['Name'].'" depends on a counter that was not imported - left unlinked.');
+
+                continue;
+            }
+
+            $targets[$ourId] = $sourceId;
+        }
+
+        if (! $targets) {
+            return;
+        }
+
+        $current = PmsComponent::whereIn('id', array_keys($targets))->pluck('counter_parent_id', 'id');
+        foreach ($targets as $id => $sourceId) {
+            if ((string) ($current[$id] ?? '') === (string) $sourceId) {
+                $result->add('components_counter_already_linked');
+
+                continue;
+            }
+
+            PmsComponent::whereKey($id)->update(['counter_parent_id' => $sourceId]);
+            $result->add('components_counter_linked');
+        }
     }
 
     // ------------------------------------------------------------------
@@ -458,6 +593,9 @@ class PmsCfmImporter
         $today = CarbonImmutable::today();
         $tomorrow = $today->addDay()->toDateString();
         $currentRh = [];
+        // A dependent counter has no readings of its own - resolved once here now
+        // that linkDependentCounters() has already set every counter_parent_id.
+        $counterParents = PmsComponent::where('vessel_id', $vesselId)->whereNotNull('counter_parent_id')->pluck('counter_parent_id', 'id');
 
         foreach ($openJobs as $job) {
             if ($isExcluded($job['SourceJobDefinitionGuid'])) {
@@ -507,7 +645,7 @@ class PmsCfmImporter
                     $dueDate ? CarbonImmutable::parse($dueDate) : null,
                     $warningDate ? CarbonImmutable::parse($warningDate) : null,
                     $dueRh,
-                    $currentRh[$componentId] ??= $this->latestReadingValue($componentId, $tomorrow),
+                    $currentRh[$componentId] ??= $this->latestReadingValue($counterParents[$componentId] ?? $componentId, $tomorrow),
                     $definitionMeta[$definitionId]['warning_period'] ?? 7,
                     $definitionMeta[$definitionId]['warning_unit'] ?? 'Days',
                     $today

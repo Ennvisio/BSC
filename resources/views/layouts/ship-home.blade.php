@@ -227,8 +227,13 @@
 			@php $serverPaged = $orders instanceof \Illuminate\Pagination\LengthAwarePaginator; @endphp
 			@if($serverPaged)@include('partials.server-list-controls', ['orders' => $orders, 'position' => 'top', 'q' => $q ?? '', 'perPage' => $perPageChoice ?? '15'])@endif
 			{{-- data-server-paginated: rows are paged by the server, so DataTables
-				 must leave this table alone (see admin-master / dataForm.js). --}}
-			<table id="example" class="table table-bordered dt-responsive" style="width: 100%;" @if($serverPaged) data-server-paginated="1" @endif>
+				 must leave this table alone (see partials.body-scripts). The id
+				 stays "example" either way - the Print button (order_list(), in
+				 print-pdf-custom.js) reads this table by that id - so $plainOrders
+				 (the dashboard's Latest 5 box) opts out with data-no-datatable
+				 instead, same effect as data-server-paginated: a plain static
+				 table, like My Draft Requisitions above it. --}}
+			<table id="example" class="table table-bordered dt-responsive" style="width: 100%;" @if($serverPaged) data-server-paginated="1" @endif @if($plainOrders ?? false) data-no-datatable="1" @endif>
 				<thead>
 					<th>#</th>
 					<th>Req. No</th>

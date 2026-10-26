@@ -1,4 +1,4 @@
-@extends('layouts.admin-master')
+@extends('layouts.pms')
 @section('main-content')
 @include('partials.pms-styles')
 <div class="col-lg-6 col-xl-12">
@@ -11,21 +11,11 @@
 		</div>
 		<div class="card-body">
 			<div class="pms-toolbar">
-				@if($vessels->isNotEmpty())
-				<form method="GET" action="{{ route('pms.jobs.index') }}">
-					<select name="vessel_id" class="form-control" id="pms-vessel-picker" aria-label="Vessel">
-						@foreach($vessels as $v)
-						<option value="{{ $v->id }}" {{ $v->id === $vessel->id ? 'selected' : '' }}>{{ $v->name }}</option>
-						@endforeach
-					</select>
-				</form>
-				@endif
+				{{-- The vessel picker lives in the PMS tab bar now (layouts.pms). --}}
 				<div class="pms-filters" role="group" aria-label="Filter jobs">
-					<button type="button" class="pms-filter active" data-filter="all">All <b>…</b></button>
-					<button type="button" class="pms-filter" data-filter="overdue">Overdue <b>…</b></button>
-					<button type="button" class="pms-filter" data-filter="duesoon">Due Soon <b>…</b></button>
-					<button type="button" class="pms-filter" data-filter="approval">Waiting Approval <b>…</b></button>
-					<button type="button" class="pms-filter" data-filter="critical">Critical <b>…</b></button>
+					@foreach(['all' => 'All', 'planned' => 'Planned', 'overdue' => 'Overdue', 'duesoon' => 'Due Soon', 'due14' => 'Due in 14 days', 'approval' => 'Waiting Approval', 'critical' => 'Critical'] as $key => $label)
+					<button type="button" class="pms-filter {{ $initialFilter === $key ? 'active' : '' }}" data-filter="{{ $key }}">{{ $label }} <b>…</b></button>
+					@endforeach
 				</div>
 				<span class="spacer"></span>
 				<input type="search" class="form-control pms-search" id="pms-jobs-search" placeholder="Search job, component, rank, type…" aria-label="Search jobs">
@@ -44,12 +34,22 @@
 					@foreach($locations as $location)
 					@php $roots = $rootsByLocation->get($location->id, collect()); @endphp
 					@if($roots->isNotEmpty())
-					<div class="pms-jt-loc">{{ $location->name }}</div>
-					<ul class="pms-jt">
-						@foreach($roots as $node)
-						@include('partials.pms-job-tree-node', ['node' => $node])
-						@endforeach
-					</ul>
+					<div class="pms-jt-location collapsed" data-location-id="{{ $location->id }}">
+						<button type="button" class="pms-jt-loc-head">
+							<i class="fas fa-chevron-down pms-jt-loc-caret"></i>
+							<span class="pms-jt-loc-name">{{ $location->name }}</span>
+							<span class="pms-jt-badges">
+								<span class="pms-jt-badge pms-jt-badge-resched zero" title="Rescheduled jobs">0</span>
+								<span class="pms-jt-badge pms-jt-badge-duesoon zero" title="Due soon">0</span>
+								<span class="pms-jt-badge pms-jt-badge-overdue zero" title="Overdue">0</span>
+							</span>
+						</button>
+						<ul class="pms-jt">
+							@foreach($roots as $node)
+							@include('partials.pms-job-tree-node', ['node' => $node])
+							@endforeach
+						</ul>
+					</div>
 					@endif
 					@endforeach
 					@if($rootsByLocation->isEmpty())
@@ -256,13 +256,18 @@ $(function () {
 	var jobsUrl = '{{ url('/pms/jobs') }}';
 	var csrf = '{{ csrf_token() }}';
 	var today = '{{ now()->toDateString() }}';
+	var due14 = (function () {
+		var d = new Date(today + 'T00:00:00Z');
+		d.setUTCDate(d.getUTCDate() + 14);
+		return d.toISOString().slice(0, 10);
+	})();
 	var tomorrow = '{{ now()->addDay()->toDateString() }}';
 	var defaultConditionId = @json($defaultConditionId);
 	var statusLabels = { Planned: 'Planned', DueSoon: 'Due Soon', Overdue: 'Overdue', WaitingApproval: 'Waiting Approval', Completed: 'Completed', Cancelled: 'Cancelled' };
 	var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 	var rows = [];
-	var state = { filter: 'all', component: @json($selectedComponent), q: '' };
+	var state = { filter: @json($initialFilter), component: @json($selectedComponent), q: '' };
 	var current = null; // the job open in the dialog
 
 	function esc(text) { return $('<div>').text(text == null ? '' : String(text)).html(); }
@@ -278,8 +283,6 @@ $(function () {
 		return errors ? Object.values(errors)[0][0] : ((xhr.responseJSON && xhr.responseJSON.message) || 'Something went wrong.');
 	}
 
-	$('#pms-vessel-picker').on('change', function () { this.form.submit(); });
-
 	// ---- Tree ------------------------------------------------------------
 	// parent of every component, read off the rendered tree, so counts can be
 	// rolled up and a selection can take in everything beneath it.
@@ -287,6 +290,13 @@ $(function () {
 	$('.pms-jt li[data-id]').each(function () {
 		var $parent = $(this).parent().closest('li[data-id]');
 		parentOf[$(this).attr('data-id')] = $parent.length ? $parent.attr('data-id') : null;
+	});
+	// Which location a root (top-level) component belongs to, so rolled-up
+	// counts can continue past the tree into that location's own badges.
+	var locationOfRoot = {};
+	$('.pms-jt-location').each(function () {
+		var locId = $(this).attr('data-location-id');
+		$(this).find('> ul > li[data-id]').each(function () { locationOfRoot[$(this).attr('data-id')] = locId; });
 	});
 
 	function scopeIds(id) {
@@ -299,6 +309,9 @@ $(function () {
 	$('.pms-jobs-tree').on('click', '.pms-jt-caret', function () {
 		$(this).closest('li').toggleClass('collapsed');
 	});
+	$('.pms-jobs-tree').on('click', '.pms-jt-loc-head', function () {
+		$(this).closest('.pms-jt-location').toggleClass('collapsed');
+	});
 	$('.pms-jobs-tree').on('click', '.pms-jt-label', function () {
 		selectComponent($(this).attr('data-id'));
 	});
@@ -309,7 +322,7 @@ $(function () {
 		$('.pms-jt-label, #pms-jt-all').removeClass('is-selected');
 		if (id) {
 			var $label = $('.pms-jt-label[data-id="' + id + '"]').addClass('is-selected');
-			$label.parents('li.collapsed').removeClass('collapsed');
+			$label.parents('li.collapsed, .pms-jt-location.collapsed').removeClass('collapsed');
 		} else {
 			$('#pms-jt-all').addClass('is-selected');
 		}
@@ -319,8 +332,12 @@ $(function () {
 	// ---- Filters / search -------------------------------------------------
 	function matchesFilter(r, filter) {
 		switch (filter) {
+			case 'planned': return r.status === 'Planned';
 			case 'overdue': return r.status === 'Overdue';
 			case 'duesoon': return r.status === 'DueSoon';
+			// Due within 14 days and not yet overdue - independent of the
+			// DueSoon label, whose warning window is set per job definition.
+			case 'due14': return (r.status === 'Planned' || r.status === 'DueSoon') && !!r.due_date && r.due_date >= today && r.due_date <= due14;
 			case 'approval': return r.status === 'WaitingApproval';
 			case 'critical': return r.critical;
 			default: return true;
@@ -376,27 +393,62 @@ $(function () {
 		var scope = state.component ? scopeIds(state.component) : null;
 
 		// Filter pill counts: within the selected component and search.
-		var pillCounts = { all: 0, overdue: 0, duesoon: 0, approval: 0, critical: 0 };
+		var pillCounts = { all: 0, planned: 0, overdue: 0, duesoon: 0, due14: 0, approval: 0, critical: 0 };
 		// Tree counts: within the active filter and search, rolled up the tree.
 		var treeCounts = {}, total = 0;
+		// Status badges: always rescheduled/due soon/overdue, regardless of the
+		// active filter pill - rolled up the tree and, past the root, into
+		// that root's location header too (see locationOfRoot above).
+		var badgeCounts = { resched: {}, duesoon: {}, overdue: {} };
+		var locBadgeCounts = { resched: {}, duesoon: {}, overdue: {} };
 		var shown = [];
+
+		function bump(map, key) { map[key] = (map[key] || 0) + 1; }
 
 		$.each(rows, function (_, r) {
 			if (!matchesSearch(r)) { return; }
+
+			if (r.rescheduled || r.status === 'DueSoon' || r.status === 'Overdue') {
+				var locId = null;
+				for (var id = r.component_id; id; id = parentOf[id]) {
+					if (r.rescheduled) { bump(badgeCounts.resched, id); }
+					if (r.status === 'DueSoon') { bump(badgeCounts.duesoon, id); }
+					if (r.status === 'Overdue') { bump(badgeCounts.overdue, id); }
+					locId = locationOfRoot[id] || locId;
+				}
+				if (locId) {
+					if (r.rescheduled) { bump(locBadgeCounts.resched, locId); }
+					if (r.status === 'DueSoon') { bump(locBadgeCounts.duesoon, locId); }
+					if (r.status === 'Overdue') { bump(locBadgeCounts.overdue, locId); }
+				}
+			}
+
 			var inScope = !scope || scope[r.component_id];
 			if (inScope) {
 				$.each(pillCounts, function (f) { if (matchesFilter(r, f)) { pillCounts[f]++; } });
 			}
 			if (!matchesFilter(r, state.filter)) { return; }
 			total++;
-			for (var id = r.component_id; id; id = parentOf[id]) { treeCounts[id] = (treeCounts[id] || 0) + 1; }
+			for (var id2 = r.component_id; id2; id2 = parentOf[id2]) { treeCounts[id2] = (treeCounts[id2] || 0) + 1; }
 			if (inScope) { shown.push(r); }
 		});
 
+		function applyBadges($row, counts) {
+			$row.find('.pms-jt-badge-resched').text(counts.resched || 0).toggleClass('zero', !counts.resched);
+			$row.find('.pms-jt-badge-duesoon').text(counts.duesoon || 0).toggleClass('zero', !counts.duesoon);
+			$row.find('.pms-jt-badge-overdue').text(counts.overdue || 0).toggleClass('zero', !counts.overdue);
+		}
+
 		$('.pms-filter').each(function () { $(this).find('b').text(pillCounts[$(this).attr('data-filter')]); });
 		$('.pms-jt-label').each(function () {
-			var n = treeCounts[$(this).attr('data-id')] || 0;
+			var id = $(this).attr('data-id');
+			var n = treeCounts[id] || 0;
 			$(this).find('.pms-jt-count').text(n).toggleClass('zero', n === 0);
+			applyBadges($(this), { resched: badgeCounts.resched[id], duesoon: badgeCounts.duesoon[id], overdue: badgeCounts.overdue[id] });
+		});
+		$('.pms-jt-location').each(function () {
+			var locId = $(this).attr('data-location-id');
+			applyBadges($(this).find('.pms-jt-loc-head'), { resched: locBadgeCounts.resched[locId], duesoon: locBadgeCounts.duesoon[locId], overdue: locBadgeCounts.overdue[locId] });
 		});
 		$('#pms-jt-all-count').text(total);
 

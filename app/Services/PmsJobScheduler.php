@@ -242,6 +242,7 @@ class PmsJobScheduler
         $job->fill($this->scheduleFor($job));
         if ($job->isDirty()) {
             $job->save();
+            PmsDashboardCache::bump($job->vessel_id);
         }
 
         return $job;
@@ -267,14 +268,26 @@ class PmsJobScheduler
         return $changed;
     }
 
-    /** A reading was added or removed: estimates and RH statuses for this component may have moved. */
+    /**
+     * A reading was added or removed on $component: estimates and RH
+     * statuses for its own jobs may have moved - and so may those of every
+     * component that uses $component's meter (a dependent counter has no
+     * readings of its own, so a reading is only ever recorded against the
+     * source, never against a dependent - see PmsCounterReadingService).
+     */
     public function refreshComponent(PmsComponent $component): void
     {
-        PmsJob::where('component_id', $component->id)
+        $componentIds = PmsComponent::where('counter_parent_id', $component->id)->pluck('id')->push($component->id);
+
+        PmsJob::whereIn('component_id', $componentIds)
             ->whereIn('status', PmsJob::ACTIVE_STATUSES)
             ->with(['definition.intervals', 'component'])
             ->get()
             ->each(fn ($job) => $this->refresh($job));
+
+        // A reading changes the "stale counters" dashboard widget even when
+        // no job's own schedule moved, so this bumps on its own too.
+        PmsDashboardCache::bump($component->vessel_id);
     }
 
     /**
@@ -348,6 +361,7 @@ class PmsJobScheduler
             // The next job is scheduled from this completion straight away -
             // approval signs off the paperwork, it doesn't hold up the work.
             $this->createNextJob($definition);
+            PmsDashboardCache::bump($job->vessel_id);
 
             return $job;
         });
@@ -361,6 +375,7 @@ class PmsJobScheduler
         }
 
         $job->update(['status' => PmsJob::COMPLETED, 'approved_by' => $userId, 'approved_at' => now()]);
+        PmsDashboardCache::bump($job->vessel_id);
 
         return $job;
     }
@@ -452,6 +467,7 @@ class PmsJobScheduler
         $job->fill($this->scheduleFor($job));
         $job->original_due_date = $job->due_date;
         $job->save();
+        PmsDashboardCache::bump($job->vessel_id);
 
         // The job gets its own copy of the parts, so they can be changed
         // for this job without touching the definition.
@@ -553,7 +569,8 @@ class PmsJobScheduler
     /**
      * Latest reading on or before today, plus the average hours per day over
      * the last AVERAGE_WINDOW_DAYS. Null for a component with no counter or
-     * no readings.
+     * no readings. For a dependent counter this reads its counterSourceId()'s
+     * readings - it has none of its own.
      */
     public function meter(PmsComponent $component): ?array
     {
@@ -581,7 +598,9 @@ class PmsJobScheduler
 
     /**
      * averagePerDay() for many components in one query: component id =>
-     * hours per day (null with fewer than two readings in the window).
+     * hours per day (null with fewer than two readings in the window). A
+     * dependent counter's average comes from its counter source's readings -
+     * several dependents sharing one source only cost that source one query.
      *
      * @param  array<string>  $componentIds
      */
@@ -591,31 +610,102 @@ class PmsJobScheduler
             return [];
         }
 
+        $sources = $this->counterSourceIds($componentIds);
+        $sourceIds = array_values(array_unique(array_filter($sources)));
+
         $today = CarbonImmutable::today();
-        $byComponent = PmsCounterReading::whereIn('component_id', $componentIds)
+        $byComponent = PmsCounterReading::whereIn('component_id', $sourceIds)
             ->where('reading_date', '>=', $today->subDays(self::AVERAGE_WINDOW_DAYS)->toDateString())
             ->where('reading_date', '<', $this->dayAfter($today))
             ->orderBy('reading_date')
             ->get(['component_id', 'reading_date', 'value'])
             ->groupBy('component_id');
 
-        $averages = array_fill_keys($componentIds, null);
-        foreach ($byComponent as $componentId => $readings) {
+        $bySource = array_fill_keys($sourceIds, null);
+        foreach ($byComponent as $sourceId => $readings) {
             if ($readings->count() < 2) {
                 continue;
             }
             $first = $readings->first();
             $last = $readings->last();
             $days = CarbonImmutable::parse($first->reading_date)->diffInDays(CarbonImmutable::parse($last->reading_date), true);
-            $averages[$componentId] = $days > 0 ? ((float) $last->value - (float) $first->value) / $days : null;
+            $bySource[$sourceId] = $days > 0 ? ((float) $last->value - (float) $first->value) / $days : null;
+        }
+
+        $averages = [];
+        foreach ($componentIds as $id) {
+            $averages[$id] = isset($sources[$id]) ? $bySource[$sources[$id]] : null;
         }
 
         return $averages;
     }
 
+    /**
+     * The latest reading on or before today for each given component - the
+     * current running hours shown next to a component or a job, resolved
+     * through a dependent counter to its source. Just the value, no
+     * averaging, for display rather than scheduling.
+     *
+     * @param  array<string>  $componentIds
+     * @return array<string,?float>
+     */
+    public function latestRhValues(array $componentIds): array
+    {
+        if (! $componentIds) {
+            return [];
+        }
+
+        $sources = $this->counterSourceIds($componentIds);
+        $sourceIds = array_values(array_unique(array_filter($sources)));
+        $tomorrow = $this->dayAfter(CarbonImmutable::today());
+
+        $bySource = PmsCounterReading::whereIn('component_id', $sourceIds)
+            ->where('reading_date', '<', $tomorrow)
+            ->orderByDesc('reading_date')
+            ->get(['component_id', 'value'])
+            ->unique('component_id')
+            ->pluck('value', 'component_id');
+
+        $values = [];
+        foreach ($componentIds as $id) {
+            $sourceId = $sources[$id] ?? null;
+            $values[$id] = $sourceId !== null && isset($bySource[$sourceId]) ? (float) $bySource[$sourceId] : null;
+        }
+
+        return $values;
+    }
+
+    /**
+     * Each given component's counter source id - itself, or its
+     * counter_parent_id when it's a dependent counter. One query; a
+     * component already in hand with has_counter/counter_parent_id loaded
+     * doesn't need it (see PmsComponent::counterSourceId()), this is for
+     * when only ids are available.
+     *
+     * @param  array<string>  $componentIds
+     * @return array<string,?string>  null for a component with no counter at all
+     */
+    public function counterSourceIds(array $componentIds): array
+    {
+        if (! $componentIds) {
+            return [];
+        }
+
+        $rows = PmsComponent::whereIn('id', $componentIds)->get(['id', 'has_counter', 'counter_parent_id']);
+
+        $sources = [];
+        foreach ($rows as $row) {
+            $sources[$row->id] = $row->has_counter ? ($row->counter_parent_id ?? $row->id) : null;
+        }
+
+        return $sources;
+    }
+
     private function latestReading(PmsComponent $component): ?PmsCounterReading
     {
-        return PmsCounterReading::where('component_id', $component->id)
+        $sourceId = $component->counter_parent_id ?? $component->id;
+
+        return PmsCounterReading::where('component_id', $sourceId)
             ->where('reading_date', '<', $this->dayAfter(CarbonImmutable::today()))
             ->orderByDesc('reading_date')
             ->first();
@@ -627,7 +717,8 @@ class PmsJobScheduler
             return null;
         }
 
-        $value = PmsCounterReading::where('component_id', $component->id)
+        $sourceId = $component->counter_parent_id ?? $component->id;
+        $value = PmsCounterReading::where('component_id', $sourceId)
             ->where('reading_date', '<', $this->dayAfter($date))
             ->orderByDesc('reading_date')
             ->value('value');

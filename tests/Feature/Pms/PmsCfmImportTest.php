@@ -53,9 +53,9 @@ class PmsCfmImportTest extends TestCase
         parent::tearDown();
     }
 
-    private function runImport(bool $dryRun = false)
+    private function runImport(bool $dryRun = false, array $excludeDefGuids = [], bool $removeUnmatched = false)
     {
-        return $this->importer->import($this->vesselId, $this->vesselData, $this->master, $this->userId, $dryRun);
+        return $this->importer->import($this->vesselId, $this->vesselData, $this->master, $this->userId, $dryRun, $excludeDefGuids, $removeUnmatched);
     }
 
     private function componentNamed(string $name): PmsComponent
@@ -223,6 +223,75 @@ class PmsCfmImportTest extends TestCase
         $this->assertSame('2026-02-01', $live->due_date->toDateString());
     }
 
+    // ---------------------------------------------------------------- remove unmatched
+
+    public function test_remove_unmatched_only_removes_untouched_childless_leftovers(): void
+    {
+        // Reused by the CFM data (c-main-engine in the fixture) - gets a cfm_guid, must survive.
+        $reused = $this->makeComponent(['name' => 'MAIN ENGINE', 'parent_id' => null]);
+
+        // A whole leftover subtree: removed leaf-first, root included once its only child is gone.
+        $leftoverRoot = $this->makeComponent(['name' => 'OLD EXCEL SYSTEM', 'parent_id' => null]);
+        $leftoverChild = $this->makeComponent(['name' => 'OLD EXCEL PART', 'parent_id' => $leftoverRoot->id]);
+
+        // Protected by having a reading.
+        $withReading = $this->makeComponent(['name' => 'HAS READING', 'parent_id' => null]);
+        $this->reading($withReading, '2025-01-01', 10);
+
+        // Protected by having a job definition (even with no job ever generated from it).
+        $withDefinition = $this->makeComponent(['name' => 'HAS DEFINITION', 'parent_id' => null]);
+        $definition = $this->makeDefinition($withDefinition, [], [[1, 'Month']]);
+
+        // Protected by having a job (against a different definition than its own).
+        $withJob = $this->makeComponent(['name' => 'HAS JOB', 'parent_id' => null]);
+        PmsJob::create(['vessel_id' => $this->vesselId, 'component_id' => $withJob->id, 'job_definition_id' => $definition->id, 'status' => PmsJob::PLANNED]);
+
+        // A parent that survives (one live child left) next to a sibling that's removed on its own.
+        $parent = $this->makeComponent(['name' => 'MIXED PARENT', 'parent_id' => null]);
+        $eligibleChild = $this->makeComponent(['name' => 'ELIGIBLE CHILD', 'parent_id' => $parent->id]);
+        $protectedChild = $this->makeComponent(['name' => 'PROTECTED CHILD', 'parent_id' => $parent->id]);
+        $protectedChild->update(['cfm_guid' => 'already-tagged-guid']);
+
+        $result = $this->runImport(removeUnmatched: true);
+
+        $this->assertNotNull($reused->fresh(), 'reused by this import - not removed');
+        $this->assertNull(PmsComponent::find($leftoverRoot->id));
+        $this->assertNull(PmsComponent::find($leftoverChild->id));
+        $this->assertNotNull(PmsComponent::find($withReading->id));
+        $this->assertNotNull(PmsComponent::find($withDefinition->id));
+        $this->assertNotNull(PmsComponent::find($withJob->id));
+        $this->assertNotNull(PmsComponent::find($parent->id), 'still has a live child (protectedChild)');
+        $this->assertNull(PmsComponent::find($eligibleChild->id));
+        $this->assertNotNull(PmsComponent::find($protectedChild->id));
+
+        $this->assertEqualsCanonicalizing(['OLD EXCEL SYSTEM', 'OLD EXCEL PART', 'ELIGIBLE CHILD'], array_column($result->unmatchedComponents, 'name'));
+        $this->assertSame(3, $result->counts['components_unmatched']);
+        $childPath = collect($result->unmatchedComponents)->firstWhere('name', 'OLD EXCEL PART')['path'];
+        $this->assertSame('OLD EXCEL SYSTEM › OLD EXCEL PART', $childPath);
+    }
+
+    public function test_remove_unmatched_dry_run_lists_without_deleting(): void
+    {
+        $leftover = $this->makeComponent(['name' => 'OLD EXCEL SYSTEM', 'parent_id' => null]);
+
+        $result = $this->runImport(dryRun: true, removeUnmatched: true);
+
+        $this->assertSame(1, $result->counts['components_unmatched']);
+        $this->assertSame(['OLD EXCEL SYSTEM'], array_column($result->unmatchedComponents, 'name'));
+        $this->assertNotNull(PmsComponent::find($leftover->id), 'dry run - nothing actually removed');
+    }
+
+    public function test_leftovers_are_untouched_and_unlisted_without_the_option(): void
+    {
+        $leftover = $this->makeComponent(['name' => 'OLD EXCEL SYSTEM', 'parent_id' => null]);
+
+        $result = $this->runImport();
+
+        $this->assertNotNull(PmsComponent::find($leftover->id));
+        $this->assertSame([], $result->unmatchedComponents);
+        $this->assertSame(0, $result->counts['components_unmatched']);
+    }
+
     // ---------------------------------------------------------------- re-run and dry-run
 
     public function test_rerunning_the_import_adds_nothing_new(): void
@@ -264,5 +333,64 @@ class PmsCfmImportTest extends TestCase
         $this->assertSame(0, PmsComponent::count(), 'nothing was actually saved');
         $this->assertSame(0, PmsJobDefinition::count());
         $this->assertSame(0, PmsJob::count());
+    }
+
+    // ---------------------------------------------------------------- dependent counters
+
+    public function test_dependent_counter_mode_links_counter_parent_id(): void
+    {
+        $vesselData = ['components' => [
+            [
+                'Guid' => 'c-parent', 'Name' => 'MAIN ENGINE 2', 'ParentComponentGuid' => null,
+                'VesselLocationGuid' => 'loc-engine', 'IsFolder' => false, 'ComponentCategoryGuid' => 'cat-unknown',
+                'CounterMode' => 'IndependentCounter', 'IsCritical' => false, 'IsClassRelevant' => false,
+                'IsInactive' => false, 'SortOrder' => 1,
+            ],
+            [
+                'Guid' => 'c-dependent', 'Name' => 'TURBOCHARGER', 'ParentComponentGuid' => 'c-parent',
+                'VesselLocationGuid' => 'loc-engine', 'IsFolder' => false, 'ComponentCategoryGuid' => 'cat-unknown',
+                'CounterMode' => 'DependentCounter', 'CounterDependsOnComponentGuid' => 'c-parent',
+                'IsCritical' => false, 'IsClassRelevant' => false, 'IsInactive' => false, 'SortOrder' => 2,
+            ],
+        ]];
+
+        $result = $this->importer->import($this->vesselId, $vesselData, $this->master, $this->userId);
+
+        $parent = PmsComponent::where('cfm_guid', 'c-parent')->sole();
+        $dependent = PmsComponent::where('cfm_guid', 'c-dependent')->sole();
+
+        $this->assertTrue($parent->has_counter);
+        $this->assertNull($parent->counter_parent_id);
+        $this->assertTrue($dependent->has_counter);
+        $this->assertSame($parent->id, $dependent->counter_parent_id);
+        $this->assertSame(1, $result->counts['components_counter_linked']);
+        $this->assertSame(0, $result->counts['components_counter_already_linked']);
+
+        // Re-running must not create anything new, and must report the link
+        // as already in place rather than relinking it.
+        $second = $this->importer->import($this->vesselId, $vesselData, $this->master, $this->userId);
+        $this->assertSame(0, $second->counts['components_created']);
+        $this->assertSame(0, $second->counts['components_counter_linked']);
+        $this->assertSame(1, $second->counts['components_counter_already_linked']);
+        $this->assertSame($parent->id, $dependent->fresh()->counter_parent_id);
+    }
+
+    public function test_a_dependent_counter_pointing_at_an_unimported_component_is_left_unlinked_with_a_warning(): void
+    {
+        $vesselData = ['components' => [
+            [
+                'Guid' => 'c-dependent', 'Name' => 'TURBOCHARGER', 'ParentComponentGuid' => null,
+                'VesselLocationGuid' => 'loc-engine', 'IsFolder' => false, 'ComponentCategoryGuid' => 'cat-unknown',
+                'CounterMode' => 'DependentCounter', 'CounterDependsOnComponentGuid' => 'c-missing',
+                'IsCritical' => false, 'IsClassRelevant' => false, 'IsInactive' => false, 'SortOrder' => 1,
+            ],
+        ]];
+
+        $result = $this->importer->import($this->vesselId, $vesselData, $this->master, $this->userId);
+
+        $dependent = PmsComponent::where('cfm_guid', 'c-dependent')->sole();
+        $this->assertTrue($dependent->has_counter);
+        $this->assertNull($dependent->counter_parent_id);
+        $this->assertSame(1, $result->warningCounts['counter_parent_missing'] ?? 0);
     }
 }

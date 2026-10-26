@@ -62,17 +62,21 @@ class PmsCounterController extends Controller
         ], $saved === 0 && $failed > 0 ? 422 : 200);
     }
 
-    /** One row per counter: tree path, last reading and average hours per day. */
+    /** One row per counter: tree path, last reading and average hours per day - resolved through a dependent's counter parent. */
     private function counters(int $vesselId, PmsJobScheduler $scheduler, ?array $only = null): Collection
     {
-        $all = PmsComponent::where('vessel_id', $vesselId)->get(['id', 'name', 'parent_id', 'location_id', 'has_counter', 'is_inactive', 'sort_order'])->keyBy('id');
+        $all = PmsComponent::where('vessel_id', $vesselId)
+            ->get(['id', 'name', 'parent_id', 'location_id', 'has_counter', 'counter_parent_id', 'is_inactive', 'sort_order'])
+            ->keyBy('id');
         $counters = $all->where('has_counter', true)->when($only !== null, fn ($c) => $c->whereIn('id', $only));
         if ($counters->isEmpty()) {
             return collect();
         }
 
         $ids = $counters->keys()->all();
-        $latest = PmsCounterReading::whereIn('component_id', $ids)
+        $sources = $scheduler->counterSourceIds($ids);
+        $sourceIds = array_values(array_unique(array_filter($sources)));
+        $latestBySource = PmsCounterReading::whereIn('component_id', $sourceIds)
             ->where('reading_date', '<', now()->addDay()->toDateString())
             ->orderByDesc('reading_date')->get(['component_id', 'reading_date', 'value'])
             ->unique('component_id')->keyBy('component_id');
@@ -81,14 +85,15 @@ class PmsCounterController extends Controller
         $locationOrder = $locations->pluck('id')->flip();
         $locationNames = $locations->pluck('name', 'id');
 
-        return $counters->map(function ($c) use ($all, $latest, $averages, $locationOrder, $locationNames) {
+        return $counters->map(function ($c) use ($all, $latestBySource, $sources, $averages, $locationOrder, $locationNames) {
             $names = [];
             $sortKey = [];
             for ($node = $c, $guard = 0; $node && $guard < 50; $node = $node->parent_id ? $all->get($node->parent_id) : null, $guard++) {
                 array_unshift($names, $node->name);
                 array_unshift($sortKey, sprintf('%010d', $node->sort_order).mb_strtolower($node->name));
             }
-            $last = $latest->get($c->id);
+            $sourceId = $sources[$c->id] ?? null;
+            $last = $sourceId ? $latestBySource->get($sourceId) : null;
 
             return [
                 'id' => $c->id,
@@ -96,6 +101,8 @@ class PmsCounterController extends Controller
                 'path' => implode(' › ', array_slice($names, 0, -1)),
                 'location' => $locationNames[$c->location_id] ?? '',
                 'inactive' => (bool) $c->is_inactive,
+                'dependent' => $c->counter_parent_id !== null,
+                'parent_name' => $c->counter_parent_id ? ($all->get($c->counter_parent_id)->name ?? '?') : null,
                 'last_date' => $last?->reading_date->toDateString(),
                 'last_value' => $last ? (float) $last->value : null,
                 'per_day' => isset($averages[$c->id]) ? round($averages[$c->id], 1) : null,

@@ -77,6 +77,9 @@ class PmsCounterReadingService
         if (! $component->has_counter) {
             $this->fail('value', 'This component doesn\'t have a running-hour counter.');
         }
+        if ($component->counter_parent_id) {
+            $this->fail('value', 'This component uses another component\'s meter - record the reading there instead.');
+        }
 
         if ($date === null || trim((string) $date) === '') {
             $this->fail('reading_date', 'Enter the reading date.');

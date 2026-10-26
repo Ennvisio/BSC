@@ -1,7 +1,7 @@
 <div class="srd-topbar">
   <div class="srd-topbar-left">
     <a href="#" class="js-srd-menu-toggle srd-menu-toggle"><i class="fas fa-bars"></i></a>
-    <div class="srd-search"><i class="fas fa-search"></i><input type="text" placeholder="Search vessels, certificates, items…"></div>
+    @include('partials.module-switch')
   </div>
   <div class="srd-topbar-right">
     @if(!empty(auth()->user()->role->role) && auth()->user()->role->role=='super-admin'||

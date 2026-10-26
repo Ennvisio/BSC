@@ -33,7 +33,7 @@ $(document).ready(function() {
     })
   });
 
-  var table = $('#example').not('[data-server-paginated]').DataTable();
+  var table = $('#example').not('[data-server-paginated]').not('[data-no-datatable]').DataTable();
   var orderTable = $('#example1').DataTable();
   var id=null; var tr_id=null;  var tr_sl=null;
 
@@ -196,37 +196,38 @@ $(document).on('click', '.delete-survey', function(){
           allowOutsideClick: false
         });
       });
- // delete Vessel function()
- $(document).on('click', '.delete-vessel', function(){
-   var tr = $(this).parents('tr');
-   var tr_id=tr.attr('id');
+ // Activate / deactivate a vessel - excludes it from (or restores it to)
+ // reports and every vessel picker across the app.
+ $(document).on('click', '.toggle-vessel-status', function(){
    var id = $(this).data('id');
+   var active = $(this).data('active');
+   var activating = active == 1;
    swal({
      title: 'Are you sure?',
-     text: "You want to delete this Vessel!",
+     text: activating
+       ? 'This vessel will appear again in reports and vessel selection.'
+       : 'This vessel will stop appearing in reports and vessel selection across the app.',
      type: 'warning',
      showCancelButton: true,
-     confirmButtonColor: '#3085d6',
-     cancelButtonColor: '#d33',
-     confirmButtonText: 'Yes, delete it!',
+     confirmButtonColor: activating ? '#28a745' : '#d33',
+     cancelButtonColor: '#3085d6',
+     confirmButtonText: activating ? 'Yes, activate it!' : 'Yes, deactivate it!',
      showLoaderOnConfirm: true,
      preConfirm: function() {
        return new Promise(function(resolve) {
          $.ajax({
-           url: '/vessel/delete',
+           url: '/vessel/toggle-status',
            type: 'post',
            data: {
              _token: CSRF_TOKEN,
-             'id':id,
+             'id': id,
+             'active': active,
            },
            dataType: 'json'
          })
          .done(function(response){
-           swal('Congratulation!',response[0],'success').then(function(){
-             table
-             .row("tr#"+tr_id)
-             .remove()
-             .draw();
+           swal('Done!', response[0], 'success').then(function(){
+             window.location.reload();
            });
          })
          .fail(function(response){

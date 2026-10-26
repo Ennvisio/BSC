@@ -1,12 +1,13 @@
 {{-- One component and, recursively, everything under it. Takes $node,
-	 $childrenByParent (parent_id => children) and $canEdit. --}}
+	 $childrenByParent (parent_id => children), $canEdit and $currentRh
+	 (component id => resolved latest RH, own or via counter_parent_id). --}}
 @php
 	$children = $childrenByParent->get($node->id, collect());
 	$conditionClass = 'pms-cond-'.\Illuminate\Support\Str::slug($node->condition->name ?? '');
 	$editPayload = $node->only([
 		'id', 'location_id', 'parent_id', 'name', 'type', 'category_id', 'manufacturer_id', 'serial_no', 'part_no',
-		'class_code', 'internal_code', 'condition_id', 'has_counter', 'is_critical', 'is_class_relevant',
-		'is_inactive', 'remark', 'sort_order',
+		'class_code', 'internal_code', 'condition_id', 'has_counter', 'counter_parent_id', 'is_critical',
+		'is_class_relevant', 'is_inactive', 'remark', 'sort_order',
 	]) + ['installation_date' => optional($node->installation_date)->format('Y-m-d')];
 	$searchText = mb_strtolower(implode(' ', array_filter([
 		$node->name, $node->type, $node->serial_no, $node->part_no, $node->class_code, $node->internal_code,
@@ -34,10 +35,14 @@
 			@if($node->is_inactive)<span class="pms-flag pms-flag-inactive">Inactive</span>@endif
 		</div>
 		@if($node->has_counter)
-		<div class="pms-node-rh" title="Latest running-hour reading">
+		<div class="pms-node-rh" title="{{ $node->counter_parent_id ? 'Uses the meter of '.($node->counterParent->name ?? '?') : 'Latest running-hour reading' }}">
 			<i class="fas fa-stopwatch"></i>
-			<a href="{{ route('pms.readings.index', $node->id) }}">
-				{{ $node->latestReading ? number_format((float) $node->latestReading->value, 1).' h' : 'No reading' }}
+			<a href="{{ route('pms.readings.index', $node->counter_parent_id ?? $node->id) }}">
+				@if($node->counter_parent_id)
+					Uses {{ $node->counterParent->name ?? '?' }}
+				@else
+					{{ isset($currentRh[$node->id]) ? number_format((float) $currentRh[$node->id], 1).' h' : 'No reading' }}
+				@endif
 			</a>
 		</div>
 		@endif
@@ -63,7 +68,7 @@
 	@if($children->isNotEmpty())
 	<ul>
 		@foreach($children as $child)
-		@include('partials.pms-component-node', ['node' => $child])
+		@include('partials.pms-component-node', ['node' => $child, 'currentRh' => $currentRh ?? []])
 		@endforeach
 	</ul>
 	@endif

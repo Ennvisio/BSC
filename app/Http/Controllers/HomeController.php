@@ -78,13 +78,13 @@ class HomeController extends Controller
             ->whereNotNull('min_qty')->whereColumn('stock_qty', '<=', 'min_qty')->count(),
         ];
 
-        // The full picture, not the old status='ready' slice - a dashboard
-        // should show everything that's happened on this vessel, and the
-        // dedicated Pending/Approved/Received pages already cover the
-        // narrower, role-specific views for anyone who wants those instead.
+        // Just a glance, not the full history - the dedicated Pending/
+        // Approved/Received pages (and /home/order for shore roles) already
+        // cover seeing everything; this dashboard card is the 5 most recent.
         $orders = Order::where('vessel_id', $vesselId)
           ->where('ord_status', true)
           ->orderBy('created_at', 'desc')
+          ->take(5)
           ->get();
 
         $drafts = Order::where('status', 'draft')
@@ -97,7 +97,12 @@ class HomeController extends Controller
         // its own labelled row of them next to the item ones.
         $serviceStats = app(ServiceRequisitionApprovalController::class)->stats();
 
-        return view('layouts.ship-home', compact('orders', 'drafts', 'stats', 'serviceStats'));
+        $listTitle = 'Latest 5 Requisitions';
+        // A glance, not a worked list - no DataTables search/sort/paging
+        // chrome, same as the Drafts table right above it.
+        $plainOrders = true;
+
+        return view('layouts.ship-home', compact('orders', 'drafts', 'stats', 'serviceStats', 'listTitle', 'plainOrders'));
       }else{
         return redirect('/pending/requisition');
       }
@@ -579,8 +584,23 @@ public function deleteBudgetGroup(Request $request){
 }
 public function getVessels()
 {
-  $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
+  // Both active and inactive vessels are listed here, so an inactive one
+  // can still be found and reactivated - everywhere else (reports, vessel
+  // pickers) only ever queries status=true.
+  $vessels=Vessel::orderBy('status','desc')->orderBy('name')->get();
   return view('layouts.vessel',compact('vessels'));
+}
+public function toggleVesselStatus(Request $request)
+{
+  $vessel = Vessel::findOrFail($request->id);
+  $vessel->status = $request->boolean('active');
+  $vessel->save();
+
+  $data = $vessel->status
+    ? 'Vessel activated. It will appear again in reports and vessel selection.'
+    : 'Vessel deactivated. It will no longer appear in reports or vessel selection.';
+
+  return response()->json([$data, $vessel]);
 }
 public function addVesselForm()
 {

@@ -11,6 +11,7 @@ use App\PmsJob;
 use App\PmsJobType;
 use App\PmsLocation;
 use App\Rank;
+use App\Services\PmsJobScheduler;
 use App\Vessel;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
@@ -28,7 +29,7 @@ class PmsComponentController extends Controller
 
     private const DUPLICATE_NAME = 'A component with this name already exists here.';
 
-    public function __construct()
+    public function __construct(private PmsJobScheduler $scheduler)
     {
         $this->middleware('auth');
     }
@@ -39,7 +40,7 @@ class PmsComponentController extends Controller
         $vessel = $this->pmsVessel($request);
 
         $components = PmsComponent::where('vessel_id', $vessel->id)
-            ->with(['category:id,name', 'manufacturer:id,name', 'condition:id,name', 'latestReading'])
+            ->with(['category:id,name', 'manufacturer:id,name', 'condition:id,name', 'latestReading', 'counterParent:id,name'])
             ->withCount([
                 'jobDefinitions as jobs_count' => fn ($q) => $q->where('is_active', true),
                 'jobs as overdue_jobs_count' => fn ($q) => $q->where('status', PmsJob::OVERDUE),
@@ -47,6 +48,13 @@ class PmsComponentController extends Controller
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get();
+
+        // Resolved current RH per component that has a counter (own or
+        // dependent) - one batch query, so a dependent's badge shows the
+        // parent's value instead of "No reading".
+        $currentRh = $this->scheduler->latestRhValues(
+            $components->filter(fn ($c) => $c->has_counter)->pluck('id')->all()
+        );
 
         // A component whose parent isn't in the set (shouldn't happen - a
         // parent can't be deleted while it has children - but cheap to
@@ -71,6 +79,11 @@ class PmsComponentController extends Controller
             'total' => $components->count(),
             // Flat list for the Parent picker, in tree order with depth.
             'parentOptions' => $this->flattenTree($locations, $rootsByLocation, $childrenByParent),
+            // Components that can lend their meter to another - only ones
+            // with their own counter, so the link can't chain.
+            'counterParentOptions' => $components->filter(fn ($c) => $c->has_counter && ! $c->counter_parent_id)
+                ->map(fn ($c) => ['id' => $c->id, 'name' => $c->name])->values(),
+            'currentRh' => $currentRh,
             'categories' => PmsComponentCategory::orderBy('name')->get(),
             'manufacturers' => Manufacturer::orderBy('name')->get(['id', 'name']),
             'conditions' => PmsCondition::orderBy('id')->get(),
@@ -159,6 +172,12 @@ class PmsComponentController extends Controller
             ], 422);
         }
 
+        if ($component->counterDependents()->exists()) {
+            return response()->json([
+                'message' => 'Other components use "'.$component->name.'"\'s meter - change them first.',
+            ], 422);
+        }
+
         // Soft delete: running-hour readings (and, later, job history) stay
         // attached to it rather than being orphaned.
         $component->delete();
@@ -168,7 +187,7 @@ class PmsComponentController extends Controller
 
     private function validated(Request $request, int $vesselId, ?PmsComponent $component = null): array
     {
-        foreach (['has_counter', 'is_critical', 'is_class_relevant', 'is_inactive'] as $flag) {
+        foreach (['is_critical', 'is_class_relevant', 'is_inactive'] as $flag) {
             $request->merge([$flag => $request->boolean($flag)]);
         }
 
@@ -188,7 +207,11 @@ class PmsComponentController extends Controller
             'internal_code' => ['nullable', 'string', 'max:255'],
             'installation_date' => ['nullable', 'date', 'before_or_equal:'.Carbon::today()->toDateString()],
             'condition_id' => ['required', 'integer', 'exists:pms_conditions,id'],
-            'has_counter' => ['boolean'],
+            'counter_mode' => ['required', Rule::in(['none', 'own', 'dependent'])],
+            'counter_parent_id' => [
+                'nullable', 'uuid',
+                Rule::exists('pms_components', 'id')->where('vessel_id', $vesselId)->whereNull('deleted_at'),
+            ],
             'is_critical' => ['boolean'],
             'is_class_relevant' => ['boolean'],
             'is_inactive' => ['boolean'],
@@ -198,7 +221,10 @@ class PmsComponentController extends Controller
             'parent_id.exists' => 'The parent must be another component on this vessel.',
             'category_id.required' => 'Select a component category.',
             'installation_date.before_or_equal' => 'The installation date can\'t be in the future.',
+            'counter_parent_id.exists' => 'The meter must be another component on this vessel.',
         ]);
+
+        $data = $this->resolveCounterMode($data, $vesselId, $component);
 
         if (! empty($data['parent_id'])) {
             if ($component) {
@@ -233,6 +259,57 @@ class PmsComponentController extends Controller
             abort(response()->json([
                 'message' => self::DUPLICATE_NAME,
                 'errors' => ['name' => [self::DUPLICATE_NAME]],
+            ], 422));
+        }
+
+        return $data;
+    }
+
+    /**
+     * "none"/"own"/"dependent" from the form into the has_counter +
+     * counter_parent_id columns, with the no-chaining rule enforced: a
+     * counter_parent_id must itself point at an own-meter component, and a
+     * component other components already depend on can't become dependent
+     * (or counter-less) itself.
+     */
+    private function resolveCounterMode(array $data, int $vesselId, ?PmsComponent $component): array
+    {
+        $mode = $data['counter_mode'];
+        unset($data['counter_mode']);
+
+        if ($component && $mode !== 'own' && $component->counterDependents()->exists()) {
+            abort(response()->json([
+                'message' => 'Other components use this one\'s meter - change them first.',
+                'errors' => ['counter_mode' => ['Other components use this one\'s meter.']],
+            ], 422));
+        }
+
+        $data['has_counter'] = $mode !== 'none';
+
+        if ($mode !== 'dependent') {
+            $data['counter_parent_id'] = null;
+
+            return $data;
+        }
+
+        if (empty($data['counter_parent_id'])) {
+            abort(response()->json([
+                'message' => 'Choose which component\'s meter this uses.',
+                'errors' => ['counter_parent_id' => ['Choose which component\'s meter this uses.']],
+            ], 422));
+        }
+        if ($component && $data['counter_parent_id'] === $component->id) {
+            abort(response()->json([
+                'message' => 'A component can\'t use its own meter.',
+                'errors' => ['counter_parent_id' => ['Choose a different component.']],
+            ], 422));
+        }
+
+        $parent = PmsComponent::where('vessel_id', $vesselId)->whereKey($data['counter_parent_id'])->first();
+        if (! $parent || ! $parent->has_counter || $parent->counter_parent_id) {
+            abort(response()->json([
+                'message' => 'That component doesn\'t have its own meter to use.',
+                'errors' => ['counter_parent_id' => ['Choose a component with its own meter.']],
             ], 422));
         }
 

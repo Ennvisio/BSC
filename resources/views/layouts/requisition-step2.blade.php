@@ -8,6 +8,11 @@
 	   true even when the word alone is wider than the column. */
 	#example1 thead th{ word-break: keep-all; overflow-wrap: normal; }
 
+	/* .pptitle is nowrap app-wide (card-header titles are normally short) -
+	   this header's text is a full sentence, so it needs to wrap instead of
+	   running off the card. */
+	.card-header.first .pptitle{ white-space: normal; }
+
 	/* ---- Attachments column: chips on a saved line, an Add trigger, a
 		 quiet hint on a line that hasn't been saved yet. ---- */
 	.attachments-cell{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:150px; }
@@ -94,8 +99,8 @@
 		<div class="col-xl-12">
 			<div class="card order-card">
 				<div class="card-header first">
-					<strong class="pptitle">{{ $order->title }} &nbsp;
-						<span style="color:red;">{{ $order->vessel->name }}</span>
+					<strong class="pptitle">Pick a category, then search the catalogue and add each item this requisition needs, with its required quantity &nbsp;
+						<span style="color:red;">&mdash; {{ $order->vessel->name }}</span>
 					</strong>
 					<div class="right-button">Step 3 of 4 — Add Items</div>
 				</div>

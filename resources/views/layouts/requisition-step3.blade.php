@@ -56,8 +56,9 @@
 						<thead>
 							<tr>
 								<th>#</th>
-								<th>{{ strtoupper($order->category->symbol ?? '') === 'STR' ? 'IMPA Code' : 'Article #' }}</th>
-								<th>Item Name with full Specifications</th>
+								@foreach($headCols as $col)
+								<th>{{ $col['label'] }}</th>
+								@endforeach
 								<th>Unit</th>
 								<th>Opening Stock</th>
 								<th>Quantity of Last Supply</th>
@@ -71,8 +72,14 @@
 							@forelse($order->orderItems as $orderItem)
 							<tr>
 								<td>{{ $loop->iteration }}</td>
-								<td>{{ $orderItem->item->article_number ?? $orderItem->item->impa_code }}</td>
-								<td>{{ $orderItem->item->name }}</td>
+								@foreach($headCols as $col)
+								@php $cellValue = \App\RequisitionPrintForm::valueFor($col['get'], $orderItem, $liveStock); @endphp
+								@if(in_array($col['get'], ['name', 'name_with_spec'], true))
+								<td>{!! nl2br(e($cellValue !== '' ? $cellValue : ($orderItem->item->name ?? ''))) !!}</td>
+								@else
+								<td>{{ $cellValue !== '' ? $cellValue : '—' }}</td>
+								@endif
+								@endforeach
 								<td>{{ $orderItem->item->unit }}</td>
 								<td>{{ $orderItem->opening_stock ?? '—' }}</td>
 								<td>{{ $orderItem->last_supply_qty ?? '—' }}</td>
@@ -92,7 +99,7 @@
 								</td>
 							</tr>
 							@empty
-							<tr><td colspan="10" class="text-center">No items added.</td></tr>
+							<tr><td colspan="{{ count($headCols) + 8 }}" class="text-center">No items added.</td></tr>
 							@endforelse
 						</tbody>
 					</table>

@@ -25,12 +25,13 @@
           <th>Master</th>
           <th>Engineer</th>
           <th>Prev. Record</th>
+          <th>Status</th>
           <th class="action">Action</th>
         </thead>
         <tbody>
           @if(!empty($vessels))
           @foreach($vessels as $vessel)
-          <tr id="vessel-{{$vessel->id}}">
+          <tr id="vessel-{{$vessel->id}}" class="{{ $vessel->status ? '' : 'vessel-inactive' }}">
             <td class="sl_no"><b class="serial"> {{$loop->iteration}}</b> </td>
             <td>{{!empty($vessel->name)?$vessel->name:''}}</td>
             <td>
@@ -55,19 +56,32 @@
               {{!empty($vessel->prev_port_no)?$vessel->prev_port_no:''}} <br>
               {{!empty($vessel->prev_reg_date)?$vessel->prev_reg_date:''}}
             </td>
+            <td>
+              @if($vessel->status)
+              <span class="badge badge-success">Active</span>
+              @else
+              <span class="badge badge-secondary">Inactive</span>
+              @endif
+            </td>
             <td class="action">
 
               <a title="view this vessel" class="btn btn-info view-vessel" data-toggle="tooltip" data-placement="top" href="{{url('/vessel-view/'.$vessel->id)}}" data-toggle="tooltip" data-placement="top"> <i class="fas fa-eye"></i></a>
               <a  title="edit this vessel" class="btn btn-info edit-vessel" data-toggle="tooltip" data-placement="top" href="{{url('/vessel-edit/'.$vessel->id)}}"> <i class="fas fa-edit"></i> </a>
 
           <!--     @if(empty($vessel->vesselFrameworkAndDetail) && empty($vessel->vesselDimension) && empty($vessel->vesselEngine) && empty($vessel->vesselBoiler) && empty($vessel->vesselDetail))
-              
+
             @endif -->
-              <!-- 
+              <!--
                 <a title="add detail of this vessel" class="btn btn-primary add-vessel-detail" data-toggle="tooltip" data-placement="top" href="{{url('/vessel-detail-add/'.$vessel->id)}}" > <i class="fas fa-plus"></i> </a>  -->
-                <button  title="delete this vessel" class="btn btn-danger delete-vessel" data-id="{{$vessel->id}}" data-toggle="tooltip" data-placement="top">
-                  <i class="fas fa-trash-alt"></i>
+                @if($vessel->status)
+                <button title="deactivate this vessel - it will stop appearing in reports and vessel selection" class="btn btn-danger toggle-vessel-status" data-id="{{$vessel->id}}" data-active="0" data-toggle="tooltip" data-placement="top">
+                  <i class="fas fa-ban"></i>
                 </button>
+                @else
+                <button title="activate this vessel - it will appear again in reports and vessel selection" class="btn btn-success toggle-vessel-status" data-id="{{$vessel->id}}" data-active="1" data-toggle="tooltip" data-placement="top">
+                  <i class="fas fa-check"></i>
+                </button>
+                @endif
               </td>
             </tr>
             @endforeach
@@ -85,5 +99,11 @@
   <!-- logo-base64 for pdf page -->
   @include('pdf.logo-base64')
   <!-- logo-base64 for pdf page -->
+  @endsection
+
+  @section('home-js')
+  <style>
+  tr.vessel-inactive{ opacity:.55; }
+  </style>
   @endsection
 

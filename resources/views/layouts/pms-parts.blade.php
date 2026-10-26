@@ -1,4 +1,4 @@
-@extends('layouts.admin-master')
+@extends('layouts.pms')
 @section('main-content')
 @include('partials.pms-styles')
 <div class="col-lg-6 col-xl-12">
@@ -8,16 +8,7 @@
 		</div>
 		<div class="card-body">
 			<div class="pms-toolbar">
-				@if($vessels->isNotEmpty())
-				<form method="GET" action="{{ route('pms.parts.index') }}">
-					@if($pending)<input type="hidden" name="filter" value="pending">@endif
-					<select name="vessel_id" class="form-control" id="pms-vessel-picker" aria-label="Vessel">
-						@foreach($vessels as $v)
-						<option value="{{ $v->id }}" {{ $v->id === $vessel->id ? 'selected' : '' }}>{{ $v->name }}</option>
-						@endforeach
-					</select>
-				</form>
-				@endif
+				{{-- The vessel picker lives in the PMS tab bar now (layouts.pms). --}}
 				<div class="pms-filters" role="group" aria-label="Filter parts">
 					<a href="{{ route('pms.parts.index', ['vessel_id' => $vessel->id]) }}" class="pms-filter {{ $pending ? '' : 'active' }}">All parts{{ $pending ? '' : ' ' }}@unless($pending)<b>{{ $totalParts }}</b>@endunless</a>
 					<a href="{{ route('pms.parts.index', ['vessel_id' => $vessel->id, 'filter' => 'pending']) }}" class="pms-filter {{ $pending ? 'active' : '' }}">Not yet requisitioned @if($pending)<b>{{ $totalParts }}</b>@endif</a>
@@ -70,8 +61,3 @@
 </div>
 @endsection
 
-@section('home-js')
-<script>
-$(function () { $('#pms-vessel-picker').on('change', function () { this.form.submit(); }); });
-</script>
-@endsection

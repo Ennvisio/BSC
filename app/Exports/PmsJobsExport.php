@@ -23,8 +23,8 @@ class PmsJobsExport implements FromArray, WithTitle, WithStyles, WithColumnWidth
     ];
 
     const FILTER_LABELS = [
-        'all' => 'All open jobs', 'overdue' => 'Overdue', 'duesoon' => 'Due Soon',
-        'approval' => 'Waiting Approval', 'critical' => 'Critical',
+        'all' => 'All open jobs', 'planned' => 'Planned', 'overdue' => 'Overdue', 'duesoon' => 'Due Soon',
+        'due14' => 'Due in 14 days', 'approval' => 'Waiting Approval', 'critical' => 'Critical',
     ];
 
     private int $headerRow = 4;

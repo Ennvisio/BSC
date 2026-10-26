@@ -51,6 +51,7 @@ Route::post('/vessel/store/engine','HomeController@storeEngine');
 Route::post('/vessel/store/boiler','HomeController@storeBoiler');
 Route::post('/vessel/store/geninfo','HomeController@storeGeninfo');
 Route::post('/vessel/delete','HomeController@deleteVessel')->name('delete.vessel');
+Route::post('/vessel/toggle-status', 'HomeController@toggleVesselStatus')->name('vessel.toggleStatus');
 
 Route::get('/vessel-view/{vessel_id}', 'HomeController@viewVesselDetail')->name('view.vessel.detail');
 
@@ -209,6 +210,7 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   // PMS (planned maintenance) - step 1: master data, the per-vessel
   // component tree and running-hour readings. Who can do what is enforced in
   // the controllers (see Concerns\PmsAccess), same as the rest of this app.
+  Route::get('/pms', 'PmsDashboardController@index')->name('pms.dashboard');
   Route::get('/pms/components', 'PmsComponentController@index')->name('pms.components.index');
   Route::get('/pms/components/import', 'PmsComponentImportController@create')->name('pms.components.import');
   Route::get('/pms/components/import/template', 'PmsComponentImportController@template')->name('pms.components.import.template');
@@ -228,6 +230,10 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   Route::post('/pms/master/{type}/{id}/update', 'PmsMasterDataController@update')->whereNumber('id')->name('pms.master.update');
   Route::post('/pms/master/{type}/{id}/delete', 'PmsMasterDataController@destroy')->whereNumber('id')->name('pms.master.delete');
   Route::get('/pms/jobs', 'PmsJobController@index')->name('pms.jobs.index');
+  Route::get('/pms/reports', fn () => redirect()->route('pms.reports.overview'))->name('pms.reports.index');
+  Route::get('/pms/reports/overview', 'PmsReportController@overview')->name('pms.reports.overview');
+  Route::get('/pms/reports/overdue', 'PmsReportController@overdue')->name('pms.reports.overdue');
+  Route::get('/pms/reports/history', 'PmsReportController@history')->name('pms.reports.history');
   Route::get('/pms/jobs/data', 'PmsJobController@data')->name('pms.jobs.data');
   Route::get('/pms/jobs/export', 'PmsJobController@export')->name('pms.jobs.export');
   Route::get('/pms/jobs/{job}', 'PmsJobController@show')->whereUuid('job')->name('pms.jobs.show');

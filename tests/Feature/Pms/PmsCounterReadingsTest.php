@@ -155,6 +155,28 @@ class PmsCounterReadingsTest extends TestCase
         $this->assertSame('2026-03-01', $job->fresh()->due_date->toDateString());
     }
 
+    // ---------------------------------------------------------------- dependent counters
+
+    public function test_a_dependent_component_cannot_take_a_reading(): void
+    {
+        $parent = $this->counter('ME', 1000);
+        $dependent = $this->makeComponent(['name' => 'TC', 'has_counter' => true, 'counter_parent_id' => $parent->id]);
+
+        try {
+            $this->readings->record($dependent, '2026-01-10', 1100, $this->userId);
+            $this->fail('Expected a refusal.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('uses another component\'s meter', $e->errors()['value'][0]);
+        }
+        $this->assertSame(0, PmsCounterReading::where('component_id', $dependent->id)->count());
+
+        $result = $this->readings->recordMany($this->vesselId, [
+            $dependent->id => ['reading_date' => '2026-01-10', 'value' => 1100],
+        ], $this->userId);
+        $this->assertSame([], $result['saved']);
+        $this->assertStringContainsString('uses another component\'s meter', $result['errors'][$dependent->id]);
+    }
+
     // ---------------------------------------------------------------- shared rules
 
     public function test_a_single_reading_follows_the_same_rules(): void

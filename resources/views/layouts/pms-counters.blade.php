@@ -1,4 +1,4 @@
-@extends('layouts.admin-master')
+@extends('layouts.pms')
 @section('main-content')
 @include('partials.pms-styles')
 <div class="col-lg-6 col-xl-12">
@@ -13,15 +13,7 @@
 		</div>
 		<div class="card-body">
 			<div class="pms-toolbar">
-				@if($vessels->isNotEmpty())
-				<form method="GET" action="{{ route('pms.counters.index') }}">
-					<select name="vessel_id" class="form-control" id="pms-vessel-picker" aria-label="Vessel">
-						@foreach($vessels as $v)
-						<option value="{{ $v->id }}" {{ $v->id === $vessel->id ? 'selected' : '' }}>{{ $v->name }}</option>
-						@endforeach
-					</select>
-				</form>
-				@endif
+				{{-- The vessel picker lives in the PMS tab bar now (layouts.pms). --}}
 				<input type="search" class="form-control pms-search" id="pc-search" placeholder="Search components…" aria-label="Search counters">
 				<span class="spacer"></span>
 				<span class="pms-muted" style="font-size:13px;">{{ $counters->count() }} {{ \Illuminate\Support\Str::plural('counter', $counters->count()) }}</span>
@@ -57,7 +49,7 @@
 						@php $currentLocation = $c['location']; @endphp
 						<tr class="pc-location"><td colspan="{{ $canEdit ? 6 : 3 }}">{{ $currentLocation }}</td></tr>
 						@endif
-						<tr data-id="{{ $c['id'] }}" data-last="{{ $c['last_value'] }}" data-last-date="{{ $c['last_date'] }}"
+						<tr data-id="{{ $c['id'] }}" data-last="{{ $c['last_value'] }}" data-last-date="{{ $c['last_date'] }}" data-dependent="{{ $c['dependent'] ? 1 : 0 }}"
 							data-search="{{ mb_strtolower($c['path'].' '.$c['name']) }}" class="{{ $c['inactive'] ? 'pc-inactive' : '' }}">
 							<td>
 								<a href="{{ route('pms.readings.index', $c['id']) }}" class="pc-name">{{ $c['name'] }}</a>
@@ -65,7 +57,9 @@
 								@if($c['path'])<span class="pp-sub">{{ $c['path'] }}</span>@endif
 							</td>
 							<td class="pc-last">
-								@if($c['last_value'] !== null)
+								@if($c['dependent'])
+								<span class="pms-muted">Uses meter of {{ $c['parent_name'] }}</span>
+								@elseif($c['last_value'] !== null)
 								<strong>{{ number_format($c['last_value'], 1) }} h</strong><span class="pp-sub">{{ \Carbon\Carbon::parse($c['last_date'])->format('d M Y') }}</span>
 								@else
 								<span class="pms-muted">No reading yet</span>
@@ -73,12 +67,16 @@
 							</td>
 							<td class="pms-num pc-avg">{{ $c['per_day'] !== null ? number_format($c['per_day'], 1) : '—' }}</td>
 							@if($canEdit)
+							@if($c['dependent'])
+							<td colspan="3" class="pms-muted">Record readings on {{ $c['parent_name'] }} instead.</td>
+							@else
 							<td><input type="date" class="form-control form-control-sm pc-date" value="{{ now()->toDateString() }}" max="{{ now()->toDateString() }}" aria-label="New reading date for {{ $c['name'] }}"></td>
 							<td>
 								<input type="number" class="form-control form-control-sm pc-value" min="0" step="0.1" aria-label="New RH for {{ $c['name'] }}">
 								<span class="pc-hint"></span>
 							</td>
 							<td class="pc-result"></td>
+							@endif
 							@endif
 						</tr>
 						@endforeach
@@ -113,8 +111,6 @@ $(function () {
 	function fmtDate(iso) { var p = iso.split('-'); return p[2] + ' ' + months[parseInt(p[1], 10) - 1] + ' ' + p[0]; }
 	function fmtH(v) { return Number(v).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
 	function esc(t) { return $('<div>').text(t == null ? '' : String(t)).html(); }
-
-	$('#pms-vessel-picker').on('change', function () { this.form.submit(); });
 
 	$('#pc-search').on('input', function () {
 		var q = $.trim($(this).val()).toLowerCase(), any = false;

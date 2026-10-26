@@ -24,7 +24,8 @@ class PmsImportCfm extends Command
     protected $signature = 'pms:import-cfm {code : The vessel\'s CFM internal code, e.g. AGD}
         {vessel_id : This app\'s vessel id to import into}
         {--dry-run : Run the whole import and roll it back - report counts without saving anything}
-        {--exclude-def=* : A CFM job definition guid to skip, along with its jobs - repeatable}';
+        {--exclude-def=* : A CFM job definition guid to skip, along with its jobs - repeatable}
+        {--remove-unmatched : Soft-delete components with no cfm_guid, no jobs, no job definitions and no readings - leftovers from the Excel import}';
 
     protected $description = 'Import one vessel\'s PMS (components, counters, job definitions, open jobs) from a CFM export';
 
@@ -59,7 +60,8 @@ class PmsImportCfm extends Command
         $dryRun = (bool) $this->option('dry-run');
         $this->info(($dryRun ? '[DRY RUN] ' : '').'Importing CFM export for '.$code.' into '.$vessel->name.' (vessel #'.$vessel->id.')…');
 
-        $result = $importer->import($vessel->id, $vesselData, $master, (int) auth()->id() ?: 1, $dryRun, (array) $this->option('exclude-def'));
+        $removeUnmatched = (bool) $this->option('remove-unmatched');
+        $result = $importer->import($vessel->id, $vesselData, $master, (int) auth()->id() ?: 1, $dryRun, (array) $this->option('exclude-def'), $removeUnmatched);
 
         if ($dryRun) {
             $this->printFleetDefinitions($result);
@@ -71,6 +73,8 @@ class PmsImportCfm extends Command
             $this->newLine();
             $this->line('Skipped: '.$result->counts['jobs_excluded'].' jobs from excluded definitions ('.$result->counts['definitions_excluded'].' definitions).');
         }
+
+        $this->printUnmatchedComponents($result, $dryRun);
 
         if ($dryRun) {
             $this->comment('Dry run only - nothing was saved.');
@@ -96,6 +100,25 @@ class PmsImportCfm extends Command
         ));
     }
 
+    /** --remove-unmatched: components with no cfm_guid, no jobs, no job definitions and no readings. */
+    private function printUnmatchedComponents(\App\Services\PmsCfmImportResult $result, bool $dryRun): void
+    {
+        if (! $result->unmatchedComponents) {
+            return;
+        }
+
+        $n = count($result->unmatchedComponents);
+        $this->newLine();
+        $this->line(($dryRun ? "Would remove {$n} components" : "Removed {$n} components")
+            .' (leftovers from before this CFM data - no cfm_guid, jobs, definitions or readings):');
+        foreach (array_slice($result->unmatchedComponents, 0, 50) as $c) {
+            $this->line('  - '.$c['path']);
+        }
+        if ($n > 50) {
+            $this->line('  ...and '.($n - 50).' more.');
+        }
+    }
+
     private function printCounts(\App\Services\PmsCfmImportResult $result): void
     {
         $this->newLine();
@@ -105,6 +128,7 @@ class PmsImportCfm extends Command
             ['Job definitions', $result->counts['definitions_created'].' ('.$result->counts['definitions_fleet_split'].' from fleet definitions)', $result->counts['definitions_already_imported'], '', $result->counts['definitions_skipped'].' ('.$result->counts['definitions_excluded'].' excluded)'],
             ['Open jobs', $result->counts['jobs_created'], $result->counts['jobs_already_imported'], '', $result->counts['jobs_skipped'].' ('.$result->counts['jobs_excluded'].' excluded)'],
             ['Last-done history', $result->counts['last_done_created'], $result->counts['last_done_already_imported'], '', ''],
+            ['Dependent counters linked', $result->counts['components_counter_linked'], $result->counts['components_counter_already_linked'], '', ''],
         ]);
     }
 

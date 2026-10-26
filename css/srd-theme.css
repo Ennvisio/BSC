@@ -163,13 +163,28 @@ body.srd{ display:block; }
   padding:0 24px;
 }
 .srd-topbar-left{ display:flex; align-items:center; gap:14px; }
-.srd-search{
-  display:flex; align-items:center; gap:8px;
-  background:var(--srd-surface); border:1px solid var(--srd-border);
-  border-radius:8px; padding:7px 12px; width:300px; max-width:40vw;
-  color:var(--srd-muted); font-size:13px;
+/* Module switcher: which half of the app you're in (Ship Repair / PMS) -
+   the PMS module's own teal (#0E7C74) marks its tab, a shade apart from
+   this app's --srd-accent, deliberately: it's the door into a differently
+   themed area, not just another sidebar link. Shared by the main topbar
+   and the PMS layout's own header - see partials.module-switch. */
+.srd-module-switch{
+  display:flex; align-items:center; gap:4px; padding:4px;
+  background:#F7F9F9; border-radius:12px; flex-shrink:0;
 }
-.srd-search input{ border:0; background:transparent; outline:0; font-size:13px; width:100%; color:var(--srd-ink); }
+.srd-module-tab{
+  display:inline-flex; align-items:center; gap:7px; height:40px; padding:0 16px;
+  border-radius:8px; background:#fff; border:1px solid #DFE5E4;
+  font-weight:600; font-size:14px; text-decoration:none; white-space:nowrap;
+}
+/* `.srd a` (specificity 0,1,1) otherwise outranks the plain `.srd-module-tab`
+   class alone (0,1,0) - same fix as `.srd a.btn-dark` above. */
+.srd a.srd-module-tab, .srd a.srd-module-tab:hover{ color:#24312F; text-decoration:none; }
+.srd-module-tab.active{ background:#005866; border-color:#005866; }
+.srd a.srd-module-tab.active, .srd a.srd-module-tab.active:hover{ color:#fff; }
+@media (max-width:480px){
+  .srd-module-tab{ padding:0 10px; font-size:13px; gap:5px; }
+}
 .srd-topbar-right{ display:flex; align-items:center; gap:14px; }
 .srd-icon-btn{
   width:36px; height:36px; border-radius:8px; border:1px solid var(--srd-border);
@@ -312,7 +327,6 @@ body.srd{ display:block; }
     display:flex; width:36px; height:36px; border-radius:8px; border:1px solid var(--srd-border);
     background:#fff; align-items:center; justify-content:center; color:var(--srd-ink-soft); margin-right:6px;
   }
-  .srd-search{ display:none; }
   .srd-content{ padding:18px 16px 32px; }
   .srd-stat-card{ margin-bottom:0; }
 }

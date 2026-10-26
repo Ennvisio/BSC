@@ -390,7 +390,13 @@ class RequisitionController extends Controller
         $liveStock = app(StockService::class)
             ->snapshotFor($order->vessel_id, $order->orderItems->pluck('item_id')->all());
 
-        return view('layouts.requisition-step3', compact('order', 'liveStock'));
+        // The item columns follow the category's own BSC form (see
+        // App\RequisitionPrintForm) - Spares shows manufacturer/part/item
+        // numbers, Stores the IMPA code, and so on - same as the order detail
+        // page and the printed form, rather than one fixed generic column.
+        $headCols = \App\RequisitionPrintForm::headColumns($order->category->symbol ?? null);
+
+        return view('layouts.requisition-step3', compact('order', 'liveStock', 'headCols'));
     }
 
     public function submit(Order $order)

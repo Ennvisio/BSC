@@ -19,7 +19,7 @@ class PmsComponent extends Model
     protected $fillable = [
         'cfm_guid', 'vessel_id', 'location_id', 'parent_id', 'name', 'type', 'category_id', 'manufacturer_id',
         'serial_no', 'part_no', 'class_code', 'internal_code', 'installation_date', 'condition_id',
-        'has_counter', 'is_critical', 'is_class_relevant', 'is_inactive', 'remark', 'sort_order',
+        'has_counter', 'counter_parent_id', 'is_critical', 'is_class_relevant', 'is_inactive', 'remark', 'sort_order',
     ];
 
     protected $casts = [
@@ -68,6 +68,30 @@ class PmsComponent extends Model
     public function counterReadings()
     {
         return $this->hasMany(PmsCounterReading::class, 'component_id')->orderByDesc('reading_date');
+    }
+
+    /** The component whose meter this one uses, for a dependent counter (CFM's "DependentCounter"). */
+    public function counterParent()
+    {
+        return $this->belongsTo(self::class, 'counter_parent_id');
+    }
+
+    /** Components that read their running hours from this one's meter. */
+    public function counterDependents()
+    {
+        return $this->hasMany(self::class, 'counter_parent_id')->orderBy('name');
+    }
+
+    /** True once the running hours this component has is really its own - false for a dependent counter. */
+    public function hasOwnMeter(): bool
+    {
+        return $this->has_counter && $this->counter_parent_id === null;
+    }
+
+    /** The component whose readings carry this one's running hours - itself, unless it depends on another. */
+    public function counterSourceId(): ?string
+    {
+        return $this->has_counter ? ($this->counter_parent_id ?? $this->id) : null;
     }
 
     public function jobDefinitions()

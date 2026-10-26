@@ -42,6 +42,8 @@ trait BuildsPmsSchema
             '2026_10_15_100000_create_pms_parts_tables.php',
             '2026_10_16_100000_make_pms_component_category_nullable.php',
             '2026_10_17_100000_add_cfm_guid_to_pms_tables.php',
+            '2026_10_21_100000_add_report_indexes_to_pms_jobs.php',
+            '2026_10_22_100000_add_counter_parent_id_to_pms_components.php',
         ];
 
         $this->buildStockStubs();

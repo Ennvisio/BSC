@@ -241,7 +241,7 @@ $(document).ready(function() {
         paging: false, searching: false, info: false, ordering: false, lengthChange: false
     } : {};
 
-    var table = $('#example').DataTable( $.extend(true, {
+    var table = $('#example').not('[data-no-datatable]').DataTable( $.extend(true, {
     aLengthMenu: [[10, 25, 50, 75, 100, -1], [10, 25, 50, 75, 100, "All"]],
     iDisplayLength: 10,
     buttons: [

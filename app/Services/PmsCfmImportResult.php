@@ -13,6 +13,8 @@ class PmsCfmImportResult
         'definitions_skipped' => 0, 'definitions_excluded' => 0,
         'jobs_created' => 0, 'jobs_already_imported' => 0, 'jobs_skipped' => 0, 'jobs_excluded' => 0,
         'last_done_created' => 0, 'last_done_already_imported' => 0,
+        'components_unmatched' => 0,
+        'components_counter_linked' => 0, 'components_counter_already_linked' => 0,
     ];
 
     /** @var array<string,int> warning category => how many times it happened */
@@ -23,6 +25,14 @@ class PmsCfmImportResult
 
     /** @var array<int,array{guid:string,name:string,job_count:int,excluded:bool}> every fleet (no-component) definition found, for review before the real import */
     public array $fleetDefinitions = [];
+
+    /**
+     * @var array<int,array{id:string,name:string,path:string}> components with
+     *      --remove-unmatched: no cfm_guid, no jobs, no job definitions and no
+     *      readings - soft-deleted when --remove-unmatched is given, otherwise
+     *      just listed so they can be reviewed first.
+     */
+    public array $unmatchedComponents = [];
 
     public function add(string $counter, int $by = 1): void
     {

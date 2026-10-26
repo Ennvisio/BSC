@@ -1,4 +1,4 @@
-@extends('layouts.admin-master')
+@extends('layouts.pms')
 @section('main-content')
 @include('partials.pms-styles')
 <div class="col-lg-6 col-xl-12">
@@ -17,7 +17,12 @@
 				Each reading is the total on the meter that day.
 			</p>
 
-			@if(!$component->has_counter)
+			@if($component->counter_parent_id)
+			<div class="alert alert-info">
+				This component uses the meter of <strong>{{ $component->counterParent->name ?? '?' }}</strong> - it has no readings of its own.
+				<a href="{{ route('pms.readings.index', $component->counter_parent_id) }}">View that component's running hours &rsaquo;</a>
+			</div>
+			@elseif(!$component->has_counter)
 			<div class="alert alert-warning">This component doesn't have a running-hour counter, so no new readings can be added.</div>
 			@elseif($canEdit)
 			<form id="pms-reading-form" class="form-inline mb-3" style="gap:10px;">
@@ -30,6 +35,7 @@
 			</form>
 			@endif
 
+			@unless($component->counter_parent_id)
 			<table id="pms-readings-table" class="table table-bordered" style="width:100%;">
 				<thead>
 					<tr>
@@ -58,6 +64,7 @@
 					@endforelse
 				</tbody>
 			</table>
+			@endunless
 		</div>
 	</div>
 </div>

@@ -1,4 +1,4 @@
-@extends('layouts.admin-master')
+@extends('layouts.pms')
 @section('main-content')
 @include('partials.pms-styles')
 <div class="col-lg-6 col-xl-12">
@@ -17,17 +17,7 @@
 			<div class="alert alert-success">{{ session('message') }}</div>
 			@endif
 			<div class="pms-toolbar">
-				{{-- Ship users are pinned to their own vessel (PmsAccess::pmsVessel),
-					 so only shore users get a vessel picker at all. --}}
-				@if($vessels->isNotEmpty())
-				<form method="GET" action="{{ route('pms.components.index') }}">
-					<select name="vessel_id" class="form-control" id="pms-vessel-picker" aria-label="Vessel">
-						@foreach($vessels as $v)
-						<option value="{{ $v->id }}" {{ $v->id === $vessel->id ? 'selected' : '' }}>{{ $v->name }}</option>
-						@endforeach
-					</select>
-				</form>
-				@endif
+				{{-- The vessel picker lives in the PMS tab bar now (layouts.pms). --}}
 				<input type="search" class="form-control pms-search" id="pms-search" placeholder="Search name, model, serial, maker…" aria-label="Search components">
 				<span class="spacer"></span>
 				<span class="pms-muted" style="font-size:13px;">{{ $total }} {{ \Illuminate\Support\Str::plural('component', $total) }}</span>
@@ -53,7 +43,7 @@
 					@else
 					<ul class="pms-tree">
 						@foreach($roots as $node)
-						@include('partials.pms-component-node', ['node' => $node])
+						@include('partials.pms-component-node', ['node' => $node, 'currentRh' => $currentRh])
 						@endforeach
 					</ul>
 					@endif
@@ -161,11 +151,30 @@
 							<input type="number" class="form-control" id="pc-sort" name="sort_order" min="0" step="1" value="0">
 						</div>
 						<div class="form-group full">
-							<div class="pms-checks">
-								<div class="custom-control custom-checkbox">
-									<input type="checkbox" class="custom-control-input" id="pc-counter" name="has_counter" value="1">
-									<label class="custom-control-label" for="pc-counter">Has running-hour counter</label>
+							<label>Counter</label>
+							<div class="pms-counter-mode">
+								<div class="custom-control custom-radio custom-control-inline">
+									<input type="radio" class="custom-control-input" id="pc-counter-none" name="counter_mode" value="none" checked>
+									<label class="custom-control-label" for="pc-counter-none">None</label>
 								</div>
+								<div class="custom-control custom-radio custom-control-inline">
+									<input type="radio" class="custom-control-input" id="pc-counter-own" name="counter_mode" value="own">
+									<label class="custom-control-label" for="pc-counter-own">Own meter</label>
+								</div>
+								<div class="custom-control custom-radio custom-control-inline">
+									<input type="radio" class="custom-control-input" id="pc-counter-dependent" name="counter_mode" value="dependent">
+									<label class="custom-control-label" for="pc-counter-dependent">Uses meter of…</label>
+								</div>
+							</div>
+							<select class="form-control pms-hidden" id="pc-counter-parent" name="counter_parent_id" style="margin-top:8px;">
+								<option value="">— pick component —</option>
+								@foreach($counterParentOptions as $opt)
+								<option value="{{ $opt['id'] }}">{{ $opt['name'] }}</option>
+								@endforeach
+							</select>
+						</div>
+						<div class="form-group full">
+							<div class="pms-checks">
 								<div class="custom-control custom-checkbox">
 									<input type="checkbox" class="custom-control-input" id="pc-critical" name="is_critical" value="1">
 									<label class="custom-control-label" for="pc-critical">Critical</label>
@@ -206,9 +215,6 @@
 @endif
 <script>
 $(function () {
-	// --- Vessel picker (shore users) ---------------------------------------
-	$('#pms-vessel-picker').on('change', function () { this.form.submit(); });
-
 	// --- Expand / collapse ---------------------------------------------------
 	$(document).on('click', '.pms-node-toggle:not(.leaf)', function () {
 		$(this).closest('.pms-node').toggleClass('collapsed');
@@ -277,6 +283,23 @@ $(function () {
 		$('#pc-class').prop('checked', $opt.data('class') == 1);
 	}
 
+	// A dependent component can't be a meter source itself, and a component
+	// can't use its own meter - both hidden from the picker when editing.
+	function syncCounterParentOptions(editingId) {
+		var $sel = $('#pc-counter-parent');
+		$sel.find('option[value]').each(function () {
+			if (!$(this).val()) { return; }
+			var ok = $(this).val() !== editingId;
+			$(this).prop('hidden', !ok).prop('disabled', !ok);
+		});
+		if ($sel.find('option:selected').prop('disabled')) { $sel.val(''); }
+	}
+
+	function toggleCounterParent() {
+		$('#pc-counter-parent').toggleClass('pms-hidden', $('input[name="counter_mode"]:checked').val() !== 'dependent');
+	}
+	$(document).on('change', 'input[name="counter_mode"]', toggleCounterParent);
+
 	function openForm(title, url, values, editingId) {
 		$form[0].reset();
 		$form.data('url', url).data('editing', editingId || '');
@@ -285,12 +308,19 @@ $(function () {
 		$.each(values || {}, function (name, value) {
 			var $input = $form.find('[name="' + name + '"]');
 			if ($input.is(':checkbox')) { $input.prop('checked', !!value); }
-			else { $input.val(value === null ? '' : value); }
+			else if (!$input.is(':radio')) { $input.val(value === null ? '' : value); }
 		});
 		if (!editingId) { applyCategoryDefaults(); }
 		syncParentOptions(editingId || '');
 		if (values && values.parent_id) { $('#pc-parent').val(values.parent_id); }
 		$('#pc-location').prop('disabled', !!$('#pc-parent').val());
+
+		var mode = values && values.counter_parent_id ? 'dependent' : (values && values.has_counter ? 'own' : 'none');
+		$('input[name="counter_mode"][value="' + mode + '"]').prop('checked', true);
+		syncCounterParentOptions(editingId || '');
+		if (values && values.counter_parent_id) { $('#pc-counter-parent').val(values.counter_parent_id); }
+		toggleCounterParent();
+
 		$('#pms-component-modal').modal('show');
 	}
 
