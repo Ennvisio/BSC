@@ -28,6 +28,7 @@ class CatalogController extends Controller
 
             return view('layouts.catalog-browse', [
                 'vessel' => $vessel,
+                'vessels' => null,
                 // Folders that actually lead to one of THIS vessel's own
                 // items, not the fleet-wide tree - showing 6,824 folders next
                 // to "0 items" (a vessel with nothing imported yet) reads as
@@ -42,6 +43,11 @@ class CatalogController extends Controller
 
         return view('layouts.catalog-browse', [
             'vessel' => null,
+            // Shore/admin can optionally narrow the whole tree to one
+            // vessel's own catalog (children()/items()/search() below all
+            // honour ?vessel_id= once one is picked) - the dropdown this
+            // feeds.
+            'vessels' => Vessel::where('status', true)->orderBy('name')->get(['id', 'name']),
             'groupCount' => ItemGroup::count(),
             'itemCount' => Item::count(),
             'vesselCount' => Vessel::where('status', true)->count(),
@@ -53,15 +59,16 @@ class CatalogController extends Controller
      * AJAX: children of a group (or top-level groups when $parentId is null),
      * plus how many items live directly in each one - lets the UI show a
      * leaf (no children, has items) differently from a branch still worth
-     * drilling into. For ship users, both the list itself and the counts
-     * are scoped to their own vessel's catalog.
+     * drilling into. Scoped to one vessel's own catalog whenever
+     * resolveVesselId() resolves one - always true for a ship user, optional
+     * for shore/admin once they've picked one from the dropdown.
      */
     public function children(Request $request, $parentId = null)
     {
         $categoryId = (int) $request->query('category_id');
+        $vesselId = $this->resolveVesselId($request);
 
-        if ($this->isShipUser()) {
-            $vesselId = auth()->user()->role->vessel_id;
+        if ($vesselId !== null) {
             $visibleIds = $this->visibleGroupIdsForVessel($vesselId, $categoryId);
             $childrenMap = $this->childrenMap();
 
@@ -93,12 +100,13 @@ class CatalogController extends Controller
 
     /**
      * AJAX: items that live directly in one group, with which vessels
-     * actually stock each one. Ship users only ever see their own vessel's
-     * items - never other vessels' items even if this group also holds them.
+     * actually stock each one. Scoped to one vessel's own items - never
+     * another vessel's, even if this group also holds them - whenever
+     * resolveVesselId() resolves one.
      */
-    public function items($groupId)
+    public function items(Request $request, $groupId)
     {
-        return $this->browseItems(Item::where('item_group_id', $groupId));
+        return $this->browseItems($request, Item::where('item_group_id', $groupId));
     }
 
     /**
@@ -107,29 +115,27 @@ class CatalogController extends Controller
      * silently becomes "item_group_id = ''", matching nothing, rather than
      * the error or empty-category message the picker should show instead).
      */
-    public function categoryItems($categoryId)
+    public function categoryItems(Request $request, $categoryId)
     {
-        return $this->browseItems(Item::where('category_id', $categoryId));
+        return $this->browseItems($request, Item::where('category_id', $categoryId));
     }
 
-    private function browseItems($query)
+    private function browseItems(Request $request, $query)
     {
         $query->where('status', true);
 
-        $isShip = $this->isShipUser();
+        $vesselId = $this->resolveVesselId($request);
 
-        if ($isShip) {
-            $vesselId = auth()->user()->role->vessel_id;
+        if ($vesselId !== null) {
             $query->whereHas('vessels', fn ($q) => $q->where('vessel_id', $vesselId));
         }
 
         // Which OTHER vessels stock an item is fleet information, and belongs
-        // only to shore staff. Loading it for a ship user told them what the
-        // rest of the fleet carries - and the list could only ever name their
-        // own vessel plus everyone else's, so there was nothing in it for them
-        // anyway. The column is dropped from their table entirely (see
-        // catalog-browse.blade.php), rather than narrowed to one obvious name.
-        if (! $isShip) {
+        // only to shore staff looking at the whole fleet. The column is
+        // dropped entirely (see catalog-browse.blade.php) once a single
+        // vessel is in view - everyone showing in it would just be the one
+        // vessel already named at the top of the page.
+        if ($vesselId === null) {
             $query->with(['vessels' => fn ($q) => $q->select('vessels.id', 'vessels.name')]);
         }
 
@@ -146,7 +152,7 @@ class CatalogController extends Controller
         // returns items from several groups at once with no such path.
         $items->each(fn ($item) => $item->item_group_name = $item->itemGroup->name ?? null);
 
-        return response()->json($this->withVesselStock($items));
+        return response()->json($this->withVesselStock($items, $vesselId));
     }
 
     /**
@@ -174,8 +180,9 @@ class CatalogController extends Controller
                     ->orWhere('article_number', 'like', "%{$term}%");
             });
 
-        if ($this->isShipUser()) {
-            $vesselId = auth()->user()->role->vessel_id;
+        $vesselId = $this->resolveVesselId($request);
+
+        if ($vesselId !== null) {
             $visibleIds = $this->visibleGroupIdsForVessel($vesselId, $categoryId);
             $groupsQuery->whereIn('id', $visibleIds);
             $itemsQuery->whereHas('vessels', fn ($q) => $q->where('vessel_id', $vesselId));
@@ -188,27 +195,32 @@ class CatalogController extends Controller
         ]);
         $items->each(fn ($item) => $item->item_group_name = $item->itemGroup->name ?? null);
 
-        return response()->json(['groups' => $groups, 'items' => $this->withVesselStock($items)]);
+        return response()->json(['groups' => $groups, 'items' => $this->withVesselStock($items, $vesselId)]);
     }
 
     /**
-     * Attach the current vessel's stock figures to each item, so the picker
-     * can show what's already on board before anyone requests more. Only
-     * meaningful for ship users - shore staff aren't looking at one vessel.
+     * Attach a vessel's stock figures to each item, so the picker can show
+     * what's already on board before anyone requests more. $vesselId is
+     * whatever resolveVesselId() resolved - a ship user's own vessel, or a
+     * shore/admin user's chosen one; null (fleet-wide, nothing picked) skips
+     * this entirely, since there's no single vessel's stock to show.
      *
      * Deliberately one query for the whole page of items rather than one per
      * item, and items with no stock row simply report 0.
      */
-    private function withVesselStock($items)
+    private function withVesselStock($items, ?int $vesselId)
     {
-        if (! $this->isShipUser() || $items->isEmpty()) {
+        if ($vesselId === null || $items->isEmpty()) {
             return $items;
         }
 
-        $stock = app(StockService::class)
-            ->snapshotFor(auth()->user()->role->vessel_id, $items->pluck('id')->all());
+        $stock = app(StockService::class)->snapshotFor($vesselId, $items->pluck('id')->all());
 
-        $canEditStock = (auth()->user()->role->role ?? null) === 'master';
+        // Only a ship's own Master may correct ITS stock figures - a shore/
+        // admin user looking at a vessel they picked from the dropdown gets
+        // the same read-only figures a shore user already saw before, never
+        // an edit control for a vessel they aren't actually on.
+        $canEditStock = $this->isShipUser() && (auth()->user()->role->role ?? null) === 'master';
 
         return $items->map(function ($item) use ($stock, $canEditStock) {
             $item->stock_qty = $stock[$item->id]['stock_qty'] ?? 0;
@@ -226,6 +238,24 @@ class CatalogController extends Controller
     private function isShipUser(): bool
     {
         return ! empty(auth()->user()->role->user_type) && auth()->user()->role->user_type === 'ship';
+    }
+
+    /**
+     * The vessel to scope the browse tree to, if any. A ship user's own
+     * vessel always wins - they never see the fleet-wide tree. A shore/admin
+     * user sees the whole fleet UNLESS they've picked one vessel from the
+     * dropdown browse() hands them (?vessel_id=), which every AJAX call here
+     * then carries forward.
+     */
+    private function resolveVesselId(Request $request): ?int
+    {
+        if ($this->isShipUser()) {
+            return auth()->user()->role->vessel_id;
+        }
+
+        $vesselId = (int) $request->query('vessel_id');
+
+        return $vesselId > 0 ? $vesselId : null;
     }
 
     /**

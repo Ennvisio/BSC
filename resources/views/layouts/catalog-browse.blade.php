@@ -19,6 +19,25 @@
 			</div>
 
 			<div class="form-group row">
+				{{-- Shore/admin only - a ship user's vessel is already fixed,
+					 so there's nothing to pick. Vessel comes first: it has to
+					 be chosen before Category can mean anything (the tree and
+					 item list below are both scoped to whichever vessel is
+					 selected, same as a ship user already sees automatically -
+					 see CatalogController::resolveVesselId()). Left on
+					 "fleet-wide" (blank), every category/folder/item still
+					 shows the same unscoped list as before. --}}
+				@if(isset($vessels))
+				<div class="col-md-4">
+					<label for="catalog-vessel">Vessel</label>
+					<select id="catalog-vessel" class="form-control">
+						<option value="">-- Fleet-wide (all vessels) --</option>
+						@foreach($vessels as $v)
+						<option value="{{$v->id}}">{{$v->name}}</option>
+						@endforeach
+					</select>
+				</div>
+				@endif
 				<div class="col-md-4">
 					<label for="catalog-category">Category</label>
 					<select id="catalog-category" class="form-control">
@@ -55,6 +74,11 @@ $(function () {
 	var path = [];
 	var itemsTable = null;
 	var categoryId = '';
+	// '' = fleet-wide. Only ever set client-side for shore/admin - a ship
+	// user has no #catalog-vessel select at all, so this just stays '' and
+	// the server resolves their own vessel on its own (see
+	// CatalogController::resolveVesselId()).
+	var vesselId = '';
 
 	function esc(value) {
 		return $('<div>').text(value === null || value === undefined ? '' : value).html();
@@ -74,7 +98,7 @@ $(function () {
 		$('#catalog-group-filter').val('');
 		$('#catalog-groups').html('<p class="text-muted p-2">Loading…</p>');
 
-		$.getJSON('{{url("/catalog/browse/children")}}/' + (parentId || ''), { category_id: categoryId }, function (groups) {
+		$.getJSON('{{url("/catalog/browse/children")}}/' + (parentId || ''), { category_id: categoryId, vessel_id: vesselId }, function (groups) {
 			if (groups.length === 0) {
 				$('#catalog-groups').html('<p class="text-muted p-3">No sub-categories here — showing its items on the right. &rarr;</p>');
 				loadItems(parentId);
@@ -121,7 +145,7 @@ $(function () {
 	function loadItems(groupId) {
 		$('#catalog-items-wrapper').html('<p class="text-muted p-2">Loading items…</p>');
 
-		$.getJSON('{{url("/catalog/browse/items")}}/' + groupId, function (items) {
+		$.getJSON('{{url("/catalog/browse/items")}}/' + groupId, { vessel_id: vesselId }, function (items) {
 			if (items.length === 0) {
 				$('#catalog-items-wrapper').html('<p class="text-muted">No items in this category.</p>');
 				return;
@@ -241,6 +265,22 @@ $(function () {
 			var name = $(this).data('name').toLowerCase();
 			$(this).toggle(name.indexOf(term) !== -1);
 		});
+	});
+
+	$('#catalog-vessel').on('change', function () {
+		vesselId = $(this).val();
+		var vesselName = $(this).children('option:selected').text();
+		$('.pptitle').text('Browse Catalog' + (vesselId ? ' — ' + vesselName : ''));
+
+		// Already drilled into a category - the counts and item lists below
+		// are all vessel-scoped, so switching vessels starts that category
+		// over from its root rather than leaving stale, wrongly-scoped
+		// groups on screen.
+		if (categoryId) {
+			path = [{ id: '', name: $('#catalog-category').children('option:selected').text() }];
+			renderBreadcrumb();
+			loadGroups('');
+		}
 	});
 
 	$('#catalog-category').on('change', function () {
