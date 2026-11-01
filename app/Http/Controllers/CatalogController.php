@@ -98,8 +98,23 @@ class CatalogController extends Controller
      */
     public function items($groupId)
     {
-        $query = Item::where('item_group_id', $groupId)
-            ->where('status', true);
+        return $this->browseItems(Item::where('item_group_id', $groupId));
+    }
+
+    /**
+     * AJAX: a category's own items, for when it has no folders at all - the
+     * item picker's fallback so it never asks items() for group id '' (which
+     * silently becomes "item_group_id = ''", matching nothing, rather than
+     * the error or empty-category message the picker should show instead).
+     */
+    public function categoryItems($categoryId)
+    {
+        return $this->browseItems(Item::where('category_id', $categoryId));
+    }
+
+    private function browseItems($query)
+    {
+        $query->where('status', true);
 
         $isShip = $this->isShipUser();
 

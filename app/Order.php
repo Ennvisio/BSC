@@ -65,6 +65,20 @@ class Order extends Model
 		return $this->status === 'rejected';
 	}
 
+	/**
+	 * Received, but not all of it - some lines still have an outstanding
+	 * quantity after the ship confirmed receipt. Needs orderItems loaded
+	 * (with rcv_item_qty/del_item_qty/item_qty) to answer without a query.
+	 */
+	public function isPartlyReceived(): bool
+	{
+		if ($this->status !== 'received') {
+			return false;
+		}
+
+		return $this->orderItems->contains(fn (OrderItem $line) => $line->isPartlyReceived());
+	}
+
 	protected $casts = [
 		'official_remarks_at' => 'datetime',
 	];
@@ -317,7 +331,7 @@ class Order extends Model
 		// weeks a tender actually takes.
 		if ($this->inProcurement()) {
 			if ($this->procurementClosed()) {
-				return 'Closed';
+				return $this->isPartlyReceived() ? 'Partly Received' : 'Closed';
 			}
 
 			return ProcurementStage::owner($this->procurement_stage) === ProcurementStage::OWNER_SHIP
@@ -328,7 +342,10 @@ class Order extends Model
 		// Requisitions that never entered procurement (they predate it, or
 		// haven't reached DGM SSM yet) keep the original status-based labels.
 		if ($this->status === 'received') {
-			return 'Closed';
+			// A short delivery that's never going to be topped up otherwise
+			// just reads as "Closed" like every fully-filled requisition,
+			// with the shortfall visible only by opening the item lines.
+			return $this->isPartlyReceived() ? 'Partly Received' : 'Closed';
 		}
 
 		if ($this->status === 'delivered') {

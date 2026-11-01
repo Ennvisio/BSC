@@ -38,6 +38,12 @@ class OrderFormPart extends Model
         return $this->belongsTo(User::class, 'edited_by');
     }
 
+    /** Every earlier answer set this part held before a correction overwrote it, oldest first. */
+    public function edits()
+    {
+        return $this->hasMany(OrderFormPartEdit::class)->orderBy('edited_at');
+    }
+
     /** Every required answer and the declaration are in. */
     public function isComplete(): bool
     {

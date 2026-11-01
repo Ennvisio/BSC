@@ -161,6 +161,17 @@ class OrderFormPartController extends Controller
 
         $existing = $order->formPart($part);
 
+        // A real correction, not the ship's first save - keep what it said
+        // before this overwrites it, so "Last corrected by..." isn't the
+        // only trace that something changed.
+        if ($existing && $existing->answers !== $result['answers']) {
+            $existing->edits()->create([
+                'answers' => $existing->answers,
+                'edited_by' => auth()->id(),
+                'edited_at' => Carbon::now(),
+            ]);
+        }
+
         OrderFormPart::updateOrCreate(
             ['order_id' => $order->id, 'part' => $part],
             [

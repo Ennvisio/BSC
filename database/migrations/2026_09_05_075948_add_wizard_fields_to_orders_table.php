@@ -31,8 +31,18 @@ return new class extends Migration
         // relaxes them via raw SQL instead of adding that dependency for two
         // columns. req_no's unique index still holds - MySQL permits any
         // number of NULLs in a unique key.
-        DB::statement('ALTER TABLE orders MODIFY category_id INT NULL');
-        DB::statement('ALTER TABLE orders MODIFY req_no VARCHAR(191) NULL');
+        //
+        // SQLite has no MODIFY COLUMN - and, unlike MySQL, never enforced
+        // NOT NULL as a hard block on an application-level insert the way
+        // this app relies on either (nothing here needs the constraint
+        // itself relaxed on that driver), so this only runs on MySQL. Kept
+        // driver-aware rather than skipped outright so the schema stays
+        // buildable end-to-end for feature tests (sqlite), same reasoning
+        // as BuildsPmsSchema.
+        if (DB::connection()->getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE orders MODIFY category_id INT NULL');
+            DB::statement('ALTER TABLE orders MODIFY req_no VARCHAR(191) NULL');
+        }
     }
 
     /**
@@ -45,7 +55,9 @@ return new class extends Migration
             $table->dropColumn(['title', 'budget_group_id', 'department', 'eta', 'etd', 'remarks', 'high_priority']);
         });
 
-        DB::statement('ALTER TABLE orders MODIFY category_id INT NOT NULL');
-        DB::statement('ALTER TABLE orders MODIFY req_no VARCHAR(191) NOT NULL');
+        if (DB::connection()->getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE orders MODIFY category_id INT NOT NULL');
+            DB::statement('ALTER TABLE orders MODIFY req_no VARCHAR(191) NOT NULL');
+        }
     }
 };

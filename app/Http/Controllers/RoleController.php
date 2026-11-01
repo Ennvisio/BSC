@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use App\OrderApproval;
+use App\Role;
 
 class RoleController extends Controller
 {
@@ -102,7 +103,10 @@ class RoleController extends Controller
 		// $rejected flips it to ONLY the rejected ones - the same who-sees-what
 		// rules, for the Rejected list and its dashboard card.
 		$query = Order::where('ord_status', true)->where('status', $rejected ? '=' : '!=', 'rejected')
-			->where('vessel_id', auth()->user()->role->vessel_id);
+			->where('vessel_id', auth()->user()->role->vessel_id)
+			// So currentStageLabel()'s Partly Received check doesn't run a
+			// fresh query per row in these list views.
+			->with('orderItems:id,order_id,item_qty,del_item_qty,rcv_item_qty');
 
 		if ($role === 'chief-officer' || $role === 'second-engineer') {
 			// Only what this officer raised themselves.
@@ -150,19 +154,43 @@ class RoleController extends Controller
 	 * through approveRequisition(), but it still counts here the same way.
 	 */
 	/**
-	 * Ship side: item requisitions that were rejected, with the same
+	 * Item requisitions that were rejected. Ship side keeps the same
 	 * who-sees-what scoping as Pending/Approved/Delivered (the officer who
 	 * raised it, Chief Engineer the engine room's, Master the whole vessel).
+	 *
+	 * Office side never had this list at all - every requisition rejected at
+	 * an office stage (GM/DGM/AGM/AM/Superintendent SRD, or the SSM chain),
+	 * not scoped to who personally rejected it, same as Pending/Approved
+	 * aren't scoped to "mine" either. Told apart from a ship-side rejection
+	 * by rejected_by_role, the role actually recorded at the moment it was
+	 * rejected (see RoleController::rejectRequisition()) - not status alone,
+	 * which doesn't say WHERE in the chain it died.
 	 */
 	public function rejectedRequisition()
 	{
-		abort_unless(auth()->user()->role->user_type == 'ship', 403);
+		if (auth()->user()->role->user_type == 'ship') {
+			$orders = $this->shipTrackingScope(true)->orderBy('updated_at', 'desc')->get();
+			$drafts = collect();
+			$listTitle = 'Rejected Requisitions';
 
-		$orders = $this->shipTrackingScope(true)->orderBy('updated_at', 'desc')->get();
-		$drafts = collect();
+			return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle'));
+		}
+
+		$shipRoles = array_keys(array_filter(Role::TYPE_BY_ROLE, fn ($type) => $type === 'ship'));
+
+		$items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
+		$categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
+		$vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
+
+		$orders = Order::where('ord_status', true)
+			->where('status', 'rejected')
+			->whereNotIn('rejected_by_role', $shipRoles)
+			->orderBy('rejected_at', 'desc')
+			->get();
+
 		$listTitle = 'Rejected Requisitions';
 
-		return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle'));
+		return view('layouts.order', compact('items', 'categories', 'vessels', 'orders', 'listTitle'));
 	}
 
 	public function myApprovals()
@@ -714,6 +742,43 @@ class RoleController extends Controller
 			return array($data);
 		}
 
+		// Whoever currently HOLDS this requisition, and only them - same rule
+		// rejectRequisition() already enforces via hasPendingActionFor(). Until
+		// this was added, every branch below ran off the caller's role alone,
+		// with no check that it was actually this requisition's turn with
+		// them: a GM (SRD) could "approve" a requisition still waiting on the
+		// ship, and a Master could approve one that isn't even their vessel's.
+		$role = auth()->user()->role->role ?? null;
+		if (! $order->hasPendingActionFor($role, auth()->user()->id)) {
+			return response()->json([
+				'message' => 'This requisition is not with you right now, so you cannot act on it.',
+			], 403);
+		}
+
+		// hasPendingActionFor() doesn't check vessel for the ship-side chain
+		// (chief officer/second engineer/master/chief engineer) - those roles
+		// review their OWN vessel's requisitions only, never another ship's.
+		if ((auth()->user()->role->user_type ?? null) === 'ship'
+			&& $order->vessel_id != (auth()->user()->role->vessel_id ?? null)) {
+			return response()->json([
+				'message' => 'This requisition belongs to another vessel.',
+			], 403);
+		}
+
+		// The SSM branch below is specifically the Delivery action (it sets
+		// deliver_date and moves status to 'delivered'). hasPendingActionFor()
+		// is generically true for an SSM officer at ANY SSM-owned stage - once
+		// procurement tracks a real stage, this shortcut only applies once
+		// that stage actually IS Delivery; any earlier stage (Tendering,
+		// Purchase Order, ...) is advanced through ProcurementController
+		// instead, not by marking the whole requisition delivered early.
+		if (in_array($role, ['agm-ssm', 'am-ssm', 'superintendent-ssm'], true)
+			&& $order->inProcurement() && $order->procurement_stage !== ProcurementStage::DELIVERY) {
+			return response()->json([
+				'message' => 'This requisition is not at the Delivery stage yet.',
+			], 403);
+		}
+
 		if (auth()->user()->role->role == 'second-engineer' || auth()->user()->role->role == 'chief-officer') {
 			// Reason of Requisition belongs to whoever is raising the
 			// requisition, not to Master/Chief Engineer reviewing it
@@ -843,6 +908,31 @@ class RoleController extends Controller
 		// moment any one of them acts. Whoever it is can also adjust each
 		// line's Deliver Qty (defaults to Req Qty client-side) right here.
 		elseif (in_array(auth()->user()->role->role, ['agm-ssm', 'am-ssm', 'superintendent-ssm'], true)) {
+			// Can't deliver more than the ship actually asked for. Checked
+			// before anything else in this branch is touched, so a line that
+			// fails this leaves the order's approval state untouched rather
+			// than half-updated.
+			$deliverQty = (array) $req->deliver_qty;
+			if (! empty($deliverQty)) {
+				$lines = OrderItem::where('order_id', $order->id)
+					->whereIn('id', array_keys($deliverQty))
+					->with('item:id,name')
+					->get(['id', 'item_qty', 'item_id']);
+
+				foreach ($lines as $line) {
+					$qty = $deliverQty[$line->id] ?? null;
+					if ($qty === '' || $qty === null) {
+						continue;
+					}
+
+					if ((int) $qty > (int) $line->item_qty) {
+						return response()->json([
+							'message' => 'Delivered quantity for "'.($line->item->name ?? 'an item').'" ('.$qty.') cannot exceed the required quantity ('.$line->item_qty.').',
+						], 422);
+					}
+				}
+			}
+
 			$column = [
 				'agm-ssm' => 'agm_app_ssm',
 				'am-ssm' => 'am_app_ssm',
@@ -963,7 +1053,7 @@ class RoleController extends Controller
 
 		if ($reason === '') {
 			return response()->json([
-				'message' => 'Please give a reason for rejecting this requisition.',
+				'message' => 'Enter a reason for rejecting this requisition.',
 			], 422);
 		}
 

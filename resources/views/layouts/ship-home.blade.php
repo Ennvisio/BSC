@@ -259,7 +259,7 @@
 						<td>{{!empty($order->vessel->name)?$order->vessel->name:''}}</td>
 						<td>{{!empty($order->req_date)?$order->req_date:''}}</td>
 						<td>{{!empty($order->port_name)?$order->port_name:''}}</td>
-						<td><span class="badge badge-info">{{ $order->currentStageLabel() }}</span></td>
+						<td><span class="badge {{ $order->currentStageLabel() === 'Partly Received' ? 'badge-warning' : 'badge-info' }}">{{ $order->currentStageLabel() }}</span></td>
 						<td>{{ $order->creator->name ?? '' }}</td>
 					</tr>
 					@endforeach

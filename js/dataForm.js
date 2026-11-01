@@ -1498,14 +1498,27 @@ $(document).on('click', '#approve_order', function(){
   var rcvRemarks = $('#rcv_remarks').length ? $('#rcv_remarks').val() : null;
   var attachmentIds = (typeof window.procurementDocumentIds === 'function')
     ? window.procurementDocumentIds() : [];
+  // This one button/handler covers three different actions (see $approveLabel
+  // in view-order-detail.blade.php) - the confirm dialog has to say which one
+  // is actually happening, not a generic "approve" that doesn't match a
+  // "Confirm Delivery"/"Confirm Receipt" button.
+  var approveLabel = $(this).data('label') || 'Approve';
+  var dialogText = {
+    'Confirm Delivery': 'You want to confirm this requisition has been delivered to the vessel!',
+    'Confirm Receipt': 'You want to confirm this delivery has been received on board!'
+  }[approveLabel] || 'You want to approve this Requisition!';
+  var confirmButtonText = {
+    'Confirm Delivery': 'Yes, confirm delivery!',
+    'Confirm Receipt': 'Yes, confirm receipt!'
+  }[approveLabel] || 'Yes, approve it!';
   swal({
     title: 'Are you sure?',
-    text: "You want to approve this Requisition!",
+    text: dialogText,
     type: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#3085d6',
     cancelButtonColor: '#d33',
-    confirmButtonText: 'Yes, approve it!',
+    confirmButtonText: confirmButtonText,
     showLoaderOnConfirm: true,
     preConfirm: function() {
       return new Promise(function(resolve) {

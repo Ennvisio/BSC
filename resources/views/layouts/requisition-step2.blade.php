@@ -568,7 +568,14 @@ $(function () {
 	}).remove().draw();
 
 	function esc(value) {
-		return $('<div>').text(value === null || value === undefined ? '' : value).html();
+		// jQuery's .html() (the browser's own innerHTML serializer) only
+		// escapes &, < and > - it leaves quotes alone since they're only
+		// dangerous inside an attribute value, which is exactly how every
+		// caller here uses this (data-name=, data-item-name=). An item name
+		// containing a " or ' would otherwise break out of the attribute.
+		return $('<div>').text(value === null || value === undefined ? '' : value).html()
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#39;');
 	}
 
 	// Mirrors App\RequisitionPrintForm::valueFor()/PLACEHOLDERS exactly, for
@@ -772,16 +779,43 @@ $(function () {
 			$('#item-picker-groups').html(html || '<p class="text-muted p-2">No sub-folders here.</p>');
 
 			if (groups.length === 0) {
-				loadItemsForGroup(parentId);
+				if (parentId) {
+					// A leaf folder - its own items live right here.
+					loadItemsForGroup(parentId);
+				} else {
+					// The category itself has no folders at all - its items
+					// live directly under the category, not any group, so
+					// asking for group id '' would match nothing.
+					loadItemsForCategory();
+				}
 			} else {
 				$('#item-picker-items').html('<p class="text-muted p-2">Select a folder to see its items.</p>');
 			}
+		}).fail(function () {
+			$('#item-picker-groups').html('<p class="text-danger p-2">Could not load folders. Please try again.</p>');
+			$('#item-picker-items').html('<p class="text-danger p-2">Could not load items. Please try again.</p>');
 		});
 	}
 
 	function loadItemsForGroup(groupId) {
 		$('#item-picker-items').html('<p class="text-muted p-2">Loading items…</p>');
-		$.getJSON('{{url("/catalog/browse/items")}}/' + groupId, function (items) { renderItems(items); });
+		$.getJSON('{{url("/catalog/browse/items")}}/' + groupId, function (items) { renderItems(items); })
+			.fail(function () {
+				$('#item-picker-items').html('<p class="text-danger p-2">Could not load items. Please try again.</p>');
+			});
+	}
+
+	function loadItemsForCategory() {
+		$('#item-picker-items').html('<p class="text-muted p-2">Loading items…</p>');
+		$.getJSON('{{url("/catalog/browse/category-items")}}/' + categoryId, function (items) {
+			if (items.length === 0) {
+				$('#item-picker-items').html('<p class="text-muted p-2">No items in this category for your vessel.</p>');
+			} else {
+				renderItems(items);
+			}
+		}).fail(function () {
+			$('#item-picker-items').html('<p class="text-danger p-2">Could not load items. Please try again.</p>');
+		});
 	}
 
 	function runSearch(term) {
@@ -792,6 +826,9 @@ $(function () {
 			});
 			$('#item-picker-groups').html(html || '<p class="text-muted p-2">No matching folders.</p>');
 			renderItems(result.items);
+		}).fail(function () {
+			$('#item-picker-groups').html('<p class="text-danger p-2">Search failed. Please try again.</p>');
+			$('#item-picker-items').html('<p class="text-danger p-2">Search failed. Please try again.</p>');
 		});
 	}
 
@@ -859,7 +896,17 @@ $(function () {
 	$('#commit-staged-items').on('click', function () {
 		Object.values(staged).forEach(function (item) {
 			var existingRow = pageOrderTable.row('#row_ordered_item-' + item.id);
+			// Re-picking an item already on the table (e.g. to change its qty
+			// from the picker rather than inline) rebuilds its row from
+			// scratch below - carry over whatever it already had attached
+			// and whether it's already a real order_items row, or Save &
+			// Next's delete-and-recreate (see storeStep2) has nothing to
+			// re-link and the files silently drop off the requisition.
+			var carriedAttachments = [];
+			var wasSaved = false;
 			if (existingRow.any()) {
+				carriedAttachments = currentAttachmentsFromCell($(existingRow.node()).find('.attachments-cell'));
+				wasSaved = !!$(existingRow.node()).data('saved');
 				existingRow.remove();
 			}
 
@@ -903,12 +950,21 @@ $(function () {
 					orBlank(item.lastSupplyDate),
 					orBlank(item.stockQty),
 					'<input type="number" min="1" class="form-control form-control-sm required-qty" name="item_qty[]" style="width:80px;" value="' + item.qty + '" data-original="' + item.qty + '" required>',
-					attachmentsCellHtml(item.id, [], esc(item.name)),
+					attachmentsCellHtml(item.id, carriedAttachments, esc(item.name)),
 					'',
 					'<button type="button" class="btn btn-danger btn-sm delete-order-item-row"><i class="fas fa-trash-alt"></i></button>',
 				])
 			).draw().node();
 			stagedRow.id = 'row_ordered_item-' + item.id;
+
+			// Carried over from the row this replaced (see above) - keeps the
+			// qty-edit and delete handlers (which both branch on these) going
+			// straight to the server for an item that already exists on the
+			// draft, exactly as the row they're replacing did.
+			if (wasSaved) {
+				$(stagedRow).attr('data-saved', '1');
+			}
+			$(stagedRow).attr('data-item-id', item.id);
 
 			// row.add() builds the <td> wrappers itself, so the cell contents
 			// above can't carry the class and data-item-id that

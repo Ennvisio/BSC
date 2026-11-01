@@ -37,4 +37,25 @@ class OrderItem extends Model
 
 		return $changes->where('field', $field)->values();
 	}
+
+	/**
+	 * Required quantity less whatever's actually been confirmed on board so
+	 * far - the figure a partial delivery/receipt leaves open. Falls back to
+	 * Delivered Qty before Received Qty exists yet (the best figure known at
+	 * the time), same as the Rcv Qty input's own default elsewhere on the
+	 * detail page; never negative (a correction or an over-delivery doesn't
+	 * show as "owing less than nothing").
+	 */
+	public function outstandingQty(): int
+	{
+		$fulfilled = $this->rcv_item_qty ?? $this->del_item_qty ?? 0;
+
+		return max(0, (int) $this->item_qty - (int) $fulfilled);
+	}
+
+	/** Still short after being marked received - a partial delivery the ship never actually got the rest of. */
+	public function isPartlyReceived(): bool
+	{
+		return $this->rcv_item_qty !== null && $this->outstandingQty() > 0;
+	}
 }

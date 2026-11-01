@@ -22,47 +22,7 @@
 	     would push what approvers came here to see off the screen. --}}
 	<div class="collapse" id="form-part-{{ strtolower($part) }}-body">
 		<div class="od-card-body">
-			@foreach($questions as $q)
-			@php
-				$a = $formPart->answerFor($q['key']);
-				$chosen = array_values(array_filter((array) $a['choice'], fn ($v) => $v !== null && $v !== ''));
-				$filledFields = array_filter($a['fields'] ?? [], fn ($v) => $v !== '' && $v !== null);
-			@endphp
-			<div class="rf-q">
-				<div class="rf-q-title">
-					<span class="rf-q-no">{{ $q['no'] }}.</span>
-					@if(!empty($q['bn'])){{ $q['bn'] }} / @endif{{ $q['en'] }}
-				</div>
-
-				@if(count($chosen))
-				<div class="rf-opts">
-					@foreach($chosen as $value)
-					<span class="rf-chip-static">{{ \App\RequisitionForm::optionLabel($q, $value) }}</span>
-					@endforeach
-				</div>
-				@else
-				<span class="rf-none">Not answered</span>
-				@endif
-
-				@if(count($filledFields))
-				<div class="mt-2">
-					@foreach($q['fields'] as $field)
-					@if(!empty($a['fields'][$field['key']]))
-					<span class="rf-kv"><b>{{ $field['label'] }}:</b> {{ $a['fields'][$field['key']] }}</span>
-					@endif
-					@endforeach
-				</div>
-				@endif
-
-				@if(!empty($q['followup']) && !empty($a['followup']))
-				<div class="mt-2">
-					<span class="rf-kv"><b>{{ $q['followup']['label'] }}</b>
-						<span class="rf-chip-static ml-1">{{ $q['followup']['options'][$a['followup']] ?? $a['followup'] }}</span>
-					</span>
-				</div>
-				@endif
-			</div>
-			@endforeach
+			@include('partials.requisition-form-answers', ['questions' => $questions, 'answerSource' => $formPart])
 
 			@if(!empty($formPart->declaration))
 			<div class="rf-none mt-2">
@@ -79,6 +39,28 @@
 			<div class="rf-none mt-1">
 				Last corrected by {{ optional($formPart->editedBy)->name ?? '—' }}
 				on {{ optional($formPart->edited_at)->format('d M Y, h:i A') }}.
+				@if($formPart->edits->isNotEmpty())
+				<a href="#" data-toggle="collapse" data-target="#form-part-{{ strtolower($part) }}-history" aria-expanded="false">
+					View original answer{{ $formPart->edits->count() > 1 ? 's' : '' }}
+				</a>
+				@endif
+			</div>
+			@endif
+
+			{{-- What the ship (or whoever last held it) actually answered
+				 before each correction - kept so a fix to what Master/Chief
+				 Engineer saw never quietly erases what was originally declared. --}}
+			@if($formPart->edits->isNotEmpty())
+			<div class="collapse mt-2" id="form-part-{{ strtolower($part) }}-history">
+				@foreach($formPart->edits->reverse() as $edit)
+				<div class="rf-ro" style="border-top:1px dashed var(--srd-border); padding-top:10px; margin-top:10px;">
+					<div class="rf-none mb-2">
+						<b>Before the correction by {{ optional($edit->editedBy)->name ?? '—' }}
+						on {{ $edit->edited_at->format('d M Y, h:i A') }}:</b>
+					</div>
+					@include('partials.requisition-form-answers', ['questions' => $questions, 'answerSource' => $edit])
+				</div>
+				@endforeach
 			</div>
 			@endif
 		</div>

@@ -169,6 +169,7 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   Route::get('/catalog/browse', 'CatalogController@browse')->name('catalog.browse');
   Route::get('/catalog/browse/children/{parentId?}', 'CatalogController@children')->name('catalog.browse.children');
   Route::get('/catalog/browse/items/{groupId}', 'CatalogController@items')->name('catalog.browse.items');
+  Route::get('/catalog/browse/category-items/{categoryId}', 'CatalogController@categoryItems')->name('catalog.browse.categoryItems');
   Route::get('/catalog/browse/search', 'CatalogController@search')->name('catalog.browse.search');
 
   // Vessel stock (ROB). Every route here is Master-only - enforced in the

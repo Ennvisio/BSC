@@ -454,6 +454,12 @@
 						} elseif ($procStage === \App\ProcurementStage::RECEIPT_VERIFICATION
 							|| $order->canConfirmReceipt($currentRole)) {
 							$approveLabel = 'Confirm Receipt';
+						} elseif (in_array($currentRole, ['dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd'], true)) {
+							// A delegate doesn't give the final approval - their
+							// action sends it back up to GM (SRD) for that, so the
+							// button says what it actually does rather than
+							// implying they're the one signing off.
+							$approveLabel = 'Review & send to GM';
 						}
 
 						// Receipt & Verification (the procurement version of this
@@ -534,7 +540,7 @@
 								<i class="fas fa-check-circle"></i> {{ $approveLabel }}
 							</button>
 							@else
-							<button type="button" class="btn btn-primary" id="approve_order" data-id="{{$order->id}}">
+							<button type="button" class="btn btn-primary" id="approve_order" data-id="{{$order->id}}" data-label="{{ $approveLabel }}">
 								<i class="fas fa-check-circle"></i> {{ $approveLabel }}
 							</button>
 							@endif
@@ -548,7 +554,7 @@
 							@foreach($ssmOfficers ?? [] as $roleName => $officers)
 							<optgroup label="{{ strtoupper(str_replace('-', ' ', $roleName)) }}">
 								@foreach($officers as $officer)
-								<option value="{{ $officer->user->id }}">{{ $officer->user->name }}</option>
+								<option value="{{ $officer->user->id }}">{{ $officer->user->name }} ({{ strtoupper(str_replace('-', ' ', $roleName)) }})</option>
 								@endforeach
 							</optgroup>
 							@endforeach
@@ -567,7 +573,7 @@
 							@foreach($srdOfficers ?? [] as $roleName => $officers)
 							<optgroup label="{{ strtoupper(str_replace('-', ' ', $roleName)) }}">
 								@foreach($officers as $officer)
-								<option value="{{ $officer->user->id }}">{{ $officer->user->name }}</option>
+								<option value="{{ $officer->user->id }}">{{ $officer->user->name }} ({{ strtoupper(str_replace('-', ' ', $roleName)) }})</option>
 								@endforeach
 							</optgroup>
 							@endforeach
@@ -717,7 +723,7 @@
 								<tr class="od-thead-group">
 									<th colspan="{{ count($headCols) + 2 }}">Item</th>
 									<th colspan="4">Stock &amp; supply</th>
-									<th colspan="3">Quantities</th>
+									<th colspan="4">Quantities</th>
 									@if($showInvoiceCols)<th colspan="3">Invoice <span class="inv-cur">{{ $invCurrency }}</span></th>@endif
 									@if($showActionCol)<th></th>@endif
 								</tr>
@@ -734,6 +740,7 @@
 									<th class="num">Required Quantity</th>
 									<th class="num">Delivered</th>
 									<th class="num">Received</th>
+									<th class="num">Outstanding</th>
 									{{-- Invoice columns are SSM-side only, and only once
 										 there is something to show (or something to enter). --}}
 									@if($showInvoiceCols)
@@ -833,6 +840,18 @@
 										</div>
 										@else
 										{{!empty($orderItem->rcv_item_qty)?$orderItem->rcv_item_qty:'—'}}
+										@endif
+									</td>
+									<td class="num outstanding_qty">
+										{{-- Only meaningful once something has actually been
+											 confirmed back (delivered or received) - before that
+											 the whole required qty is "outstanding" by definition
+											 and not worth flagging. --}}
+										@if($orderItem->del_item_qty !== null || $orderItem->rcv_item_qty !== null)
+										@php $outstanding = $orderItem->outstandingQty(); @endphp
+										<span class="{{ $outstanding > 0 ? 'text-danger font-weight-bold' : 'text-muted' }}">{{ $outstanding }}</span>
+										@else
+										—
 										@endif
 									</td>
 									@if($showPrices && ($atInvoiceStage || $hasPricing))
@@ -1676,7 +1695,7 @@ $(function () {
 		var reason = $.trim($('#reject_reason').val());
 
 		if (!reason) {
-			$('#reject_error').text('Please give a reason for rejecting this requisition.');
+			$('#reject_error').text('Enter a reason for rejecting this requisition.');
 			$('#reject_reason').focus();
 			return;
 		}

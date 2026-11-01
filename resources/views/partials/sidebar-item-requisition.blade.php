@@ -11,7 +11,7 @@
 --}}
 @php
 	$role = auth()->user()->role->role ?? null;
-	$childUris = ['pending/requisition', 'my/approvals', 'approved/requisition', 'received/requisition', 'rejected/requisition', 'order/detail/{order_id}'];
+	$childUris = ['pending/requisition', 'my/approvals', 'approved/requisition', 'delivered/requisition', 'received/requisition', 'rejected/requisition', 'order/detail/{order_id}'];
 	$groupActive = in_array(Route::current()->uri(), $childUris, true) || Route::is('requisition.*');
 	$link = fn ($uris) => in_array(Route::current()->uri(), (array) $uris, true) ? 'active' : '';
 @endphp
@@ -30,9 +30,15 @@
 		<a href="{{ route('my.approvals') }}" class="srd-nav-item {{ $link('my/approvals') }}"><i class="fas fa-check-circle"></i>My Approvals</a>
 		@endif
 		<a href="{{ url('/approved/requisition') }}" class="srd-nav-item {{ $link('approved/requisition') }}"><i class="fas fa-clipboard"></i>Approved Requisition</a>
-		<a href="{{ url('/received/requisition') }}" class="srd-nav-item {{ $link('received/requisition') }}"><i class="fas fa-inbox"></i>{{ $mode === 'ship' ? 'Delivered' : 'Received' }} Requisition</a>
 		@if($mode === 'ship')
-		<a href="{{ route('rejected.requisition') }}" class="srd-nav-item {{ $link('rejected/requisition') }}"><i class="fas fa-times-circle"></i>Rejected Requisition</a>
+		{{-- Delivered (SSM has sent the goods, Master/Chief Engineer hasn't
+			 confirmed receipt yet) and Received (that confirmation is in) are
+			 two different stages - this used to point at the Received list
+			 under a "Delivered" label, so there was no way to see which
+			 requisitions were actually sitting delivered on board. --}}
+		<a href="{{ url('/delivered/requisition') }}" class="srd-nav-item {{ $link('delivered/requisition') }}"><i class="fas fa-truck"></i>Delivered Requisition</a>
 		@endif
+		<a href="{{ url('/received/requisition') }}" class="srd-nav-item {{ $link('received/requisition') }}"><i class="fas fa-inbox"></i>Received Requisition</a>
+		<a href="{{ route('rejected.requisition') }}" class="srd-nav-item {{ $link('rejected/requisition') }}"><i class="fas fa-times-circle"></i>Rejected Requisition</a>
 	</div>
 </div>

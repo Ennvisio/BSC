@@ -156,9 +156,26 @@ class AttachmentController extends Controller
         return response()->json($this->itemAttachmentsPayload($orderItem));
     }
 
-    /** AJAX: every attachment on one item - the wizard's own chip list, and the approver's "See attachments" modal. */
+    /**
+     * AJAX: every attachment on one item - the wizard's own chip list. (The
+     * order detail page's "See attachments" modal doesn't call this at all;
+     * it reads straight off orderItems.attachments, already eager-loaded
+     * for whoever is allowed to view that order - see
+     * HomeController::viewOrderDetail().) Same vessel rule as
+     * OrderPrintController::authorizeViewer(): a ship user may only list
+     * attachments on their own vessel's orders, never another ship's by
+     * guessing the id in the URL. In practice this whole route sits behind
+     * MemberMiddleWare, so only chief-officer/second-engineer - never a
+     * shore role - ever reach this check at all; it's kept vessel-scoped
+     * anyway rather than assuming that stays true forever.
+     */
     public function forItem(Order $order, $itemId)
     {
+        $roleRow = auth()->user()->role;
+        if (($roleRow->user_type ?? null) === 'ship') {
+            abort_unless($order->vessel_id == $roleRow->vessel_id, 403);
+        }
+
         $orderItem = OrderItem::where('order_id', $order->id)->where('item_id', $itemId)->firstOrFail();
 
         return response()->json($this->itemAttachmentsPayload($orderItem));

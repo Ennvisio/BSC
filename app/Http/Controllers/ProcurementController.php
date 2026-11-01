@@ -88,8 +88,10 @@ class ProcurementController extends Controller
 
         $skipped = ProcurementStage::isSkippable($stage) && ! $request->boolean('proceed', true);
 
-        if (ProcurementStage::capturesInvoice($stage) && ! $skipped) {
-            $validation = $this->validateInvoice($request, $order);
+        if (! $skipped) {
+            $validation = $this->validateRequiredMeta($stage, $request) ?? (
+                ProcurementStage::capturesInvoice($stage) ? $this->validateInvoice($request, $order) : null
+            );
 
             if ($validation !== null) {
                 return response()->json(['message' => $validation], 422);
@@ -127,6 +129,19 @@ class ProcurementController extends Controller
         $order->refresh();
         $label = ProcurementStage::label($stage);
 
+        $message = $skipped ? $label.' marked as not required.' : $label.' completed successfully!';
+
+        // Payment is a warn, not a block (a part-payment or a rounding
+        // difference against the invoice is a real thing that happens, not a
+        // data-entry mistake to refuse) - the amount is still recorded, just
+        // flagged in the same response the step-completed toast already shows.
+        if (! $skipped && $stage === ProcurementStage::PAYMENT) {
+            $warning = $this->paymentMismatchWarning($request, $order);
+            if ($warning !== null) {
+                $message .= ' '.$warning;
+            }
+        }
+
         // Stays on the same requisition rather than jumping to My Approvals -
         // procurement is ten stages one after another for the same officer,
         // so bouncing to a list and back in for every single one would be
@@ -134,9 +149,35 @@ class ProcurementController extends Controller
         // redirect to My Approvals from RoleController@approveRequisition;
         // this is deliberately different only for this multi-stage flow.
         return [
-            $skipped ? $label.' marked as not required.' : $label.' completed successfully!',
+            $message,
             'redirect' => route('view.order.detail', $order->id),
         ];
+    }
+
+    /**
+     * Payment's paid_amount against the invoice's payable total - a mismatch
+     * isn't blocked (partial payments and small rounding differences are
+     * normal), just called out so it isn't missed.
+     */
+    private function paymentMismatchWarning(Request $request, Order $order): ?string
+    {
+        if (! $request->filled('paid_amount')) {
+            return null;
+        }
+
+        $invoice = $order->invoice;
+        if (! $invoice || $invoice->payable === null) {
+            return null;
+        }
+
+        $paid = (float) $request->input('paid_amount');
+        $payable = (float) $invoice->payable;
+
+        if (round(abs($paid - $payable), 2) < 0.01) {
+            return null;
+        }
+
+        return 'Note: amount paid ('.number_format($paid, 2).') differs from the invoice total ('.number_format($payable, 2).').';
     }
 
     /**
@@ -179,6 +220,29 @@ class ProcurementController extends Controller
         }
 
         return $meta === [] ? null : $meta;
+    }
+
+    /**
+     * The one or two fields that make a stage's record actually mean
+     * something, required before it can be completed - everything else in
+     * META_FIELDS stays optional. Returns an error message, or null when
+     * it's good.
+     */
+    private const REQUIRED_META_FIELDS = [
+        ProcurementStage::TENDERING => ['tender_ref'],
+        ProcurementStage::AWARD_APPROVAL => ['awarded_amount'],
+        ProcurementStage::PURCHASE_ORDER => ['po_number', 'po_date'],
+    ];
+
+    private function validateRequiredMeta(string $stage, Request $request): ?string
+    {
+        foreach (self::REQUIRED_META_FIELDS[$stage] ?? [] as $field) {
+            if (! $request->filled($field)) {
+                return 'Enter the '.ProcurementStage::metaLabel($field).' before completing this stage.';
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -230,6 +294,15 @@ class ProcurementController extends Controller
 
             if (! is_numeric($price) || ! is_numeric($qty) || $price < 0 || $qty < 0) {
                 return 'Unit prices and quantities must be zero or more.';
+            }
+
+            // Can't invoice for more than what actually came aboard - rcv_item_qty
+            // once receipt is confirmed, del_item_qty before that (the figure
+            // the ship is working from while this is still in flight).
+            $received = $line->rcv_item_qty ?? $line->del_item_qty;
+            if ($received !== null && (float) $qty > (float) $received) {
+                return 'Invoiced quantity for "'.($line->item->name ?? 'an item').'" ('.$qty.') is more than the '
+                    .($line->rcv_item_qty !== null ? 'received' : 'delivered').' quantity ('.$received.').';
             }
         }
 
