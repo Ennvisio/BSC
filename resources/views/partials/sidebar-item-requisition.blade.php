@@ -30,14 +30,15 @@
 		<a href="{{ route('my.approvals') }}" class="srd-nav-item {{ $link('my/approvals') }}"><i class="fas fa-check-circle"></i>My Approvals</a>
 		@endif
 		<a href="{{ url('/approved/requisition') }}" class="srd-nav-item {{ $link('approved/requisition') }}"><i class="fas fa-clipboard"></i>Approved Requisition</a>
-		@if($mode === 'ship')
-		{{-- Delivered (SSM has sent the goods, Master/Chief Engineer hasn't
+		{{-- Delivered (SSM has sent the goods, the raising vessel hasn't
 			 confirmed receipt yet) and Received (that confirmation is in) are
 			 two different stages - this used to point at the Received list
-			 under a "Delivered" label, so there was no way to see which
-			 requisitions were actually sitting delivered on board. --}}
+			 under a "Delivered" label on ship, and didn't exist at all on the
+			 office side, so there was no way to see which requisitions were
+			 actually sitting delivered. HomeController::deliverReqForAll()
+			 serves both modes - the whole fleet's for office, vessel-scoped
+			 for ship. --}}
 		<a href="{{ url('/delivered/requisition') }}" class="srd-nav-item {{ $link('delivered/requisition') }}"><i class="fas fa-truck"></i>Delivered Requisition</a>
-		@endif
 		<a href="{{ url('/received/requisition') }}" class="srd-nav-item {{ $link('received/requisition') }}"><i class="fas fa-inbox"></i>Received Requisition</a>
 		<a href="{{ route('rejected.requisition') }}" class="srd-nav-item {{ $link('rejected/requisition') }}"><i class="fas fa-times-circle"></i>Rejected Requisition</a>
 	</div>

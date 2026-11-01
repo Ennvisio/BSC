@@ -47,7 +47,7 @@
 	</div>
 	@if($raiser)
 	<div class="{{ $cardCol }}">
-		<a href="{{url('/approved/requisition')}}" class="text-decoration-none">
+		<a href="{{url('/delivered/requisition')}}" class="text-decoration-none">
 			<div class="srd-stat-card">
 				<div class="srd-stat-icon is-green"><i class="fas fa-check-circle"></i></div>
 				<div class="srd-stat-body">

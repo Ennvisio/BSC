@@ -17,8 +17,12 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pixeden-stroke-7-icon@1.2.3/pe-icon-7-stroke/dist/pe-icon-7-stroke.min.css">
 <link rel="stylesheet" href="{{url('/css/zebra_datepicker.min.css')}}">
 <link rel="stylesheet" href="{{url('/assets/css/style.css')}}">
-<link rel="stylesheet" href="{{url('/css/style.css')}}">
-<link rel="stylesheet" href="{{url('/css/vesselFormstyle.css')}}">
+{{-- Our own stylesheets, as opposed to the template's assets/css/style.css
+	 above - versioned the same way css/srd-theme.css already is below, so a
+	 deploy's CSS changes show up on the next load instead of whatever the
+	 browser cached before. --}}
+<link rel="stylesheet" href="{{url('/css/style.css')}}?v={{ filemtime(base_path('css/style.css')) }}">
+<link rel="stylesheet" href="{{url('/css/vesselFormstyle.css')}}?v={{ filemtime(base_path('css/vesselFormstyle.css')) }}">
 <!-- SRD theme — extends Bootstrap's own classes, see css/srd-theme.css -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

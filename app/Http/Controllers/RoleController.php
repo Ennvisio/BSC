@@ -1006,9 +1006,16 @@ class RoleController extends Controller
 			$this->applyQuantityCorrection($order, 'item_qty', (array) $req->req_qty);
 		}
 
+		// A delegate's button reads "Review & send to GM" (see $approveLabel
+		// in view-order-detail.blade.php) - they aren't the one giving final
+		// approval, so the confirmation shouldn't claim they did.
+		$isSrdDelegate = in_array(auth()->user()->role->role, ['dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd'], true);
+
 		$data = $already_approved
 			? "Requested Requisition already approved!"
-			: "Requested Requisition has been approved successfully!";
+			: ($isSrdDelegate
+				? 'Reviewed and sent to GM (SRD) for approval.'
+				: "Requested Requisition has been approved successfully!");
 
 		// Everyone who takes a personal approve/review action here lands on
 		// their own approval history next, not the generic Approved

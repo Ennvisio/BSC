@@ -1505,11 +1505,13 @@ $(document).on('click', '#approve_order', function(){
   var approveLabel = $(this).data('label') || 'Approve';
   var dialogText = {
     'Confirm Delivery': 'You want to confirm this requisition has been delivered to the vessel!',
-    'Confirm Receipt': 'You want to confirm this delivery has been received on board!'
+    'Confirm Receipt': 'You want to confirm this delivery has been received on board!',
+    'Review & send to GM': 'You want to send this requisition to GM (SRD) for approval!'
   }[approveLabel] || 'You want to approve this Requisition!';
   var confirmButtonText = {
     'Confirm Delivery': 'Yes, confirm delivery!',
-    'Confirm Receipt': 'Yes, confirm receipt!'
+    'Confirm Receipt': 'Yes, confirm receipt!',
+    'Review & send to GM': 'Yes, send it!'
   }[approveLabel] || 'Yes, approve it!';
   swal({
     title: 'Are you sure?',
