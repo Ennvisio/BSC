@@ -80,6 +80,14 @@ trait BuildsRequisitionSchema
             '2026_10_10_100000_add_edited_by_to_order_form_parts_table.php',
             '2026_10_10_120000_create_order_item_quantity_changes_table.php',
             '2026_10_11_100000_add_subtotal_to_order_invoices_table.php',
+            '2026_10_31_100000_create_order_form_part_edits_table.php',
+            // stock_movements' FKs reference both of these, so they have to
+            // exist first even though nothing requisition-side reads them.
+            '2026_09_06_060200_create_stock_imports_table.php',
+            '2026_09_18_090000_create_stock_consumptions_table.php',
+            '2026_09_18_090100_create_attachment_stock_consumption_table.php',
+            '2026_11_03_100000_create_stock_movements_table.php',
+            '2026_11_04_100000_add_source_to_stock_imports_table.php',
         ];
 
         Artisan::call('migrate', [
@@ -102,6 +110,22 @@ trait BuildsRequisitionSchema
         DB::table('currencies')->insert(['code' => 'BDT', 'name' => 'Bangladeshi Taka', 'status' => true]);
         Schema::table('order_invoices', function (Blueprint $table) {
             $table->char('currency_code', 3)->default('BDT')->after('invoice_date');
+        });
+
+        // The real create_pms_parts_tables migration also creates
+        // pms_required_parts and FKs to pms_jobs/pms_components - a whole
+        // other module this schema doesn't build. A stand-in for just the
+        // part the item stock card reads (StockReportController's
+        // itemCardMovements() looks up which consumption, if any, was a PMS
+        // job's - see App\PmsUsedPart), with no FK to pms_jobs since that
+        // table doesn't exist here.
+        Schema::create('pms_used_parts', function (Blueprint $table) {
+            $table->id();
+            $table->uuid('job_id');
+            $table->unsignedInteger('item_id');
+            $table->unsignedBigInteger('stock_consumption_id');
+            $table->unsignedInteger('quantity');
+            $table->timestamps();
         });
 
         $this->vesselId = $this->makeVessel('MT TEST VESSEL')->id;

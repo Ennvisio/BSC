@@ -165,6 +165,9 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   Route::get('/catalog/import', 'ItemImportController@create')->name('catalog.import.form');
   Route::post('/catalog/import', 'ItemImportController@store')->name('catalog.import.store');
   Route::get('/catalog/import/history', 'ItemImportController@history')->name('catalog.import.history');
+  // "Add item manually" tab - a single catalog item by hand, no spreadsheet.
+  Route::get('/catalog/import/check-article', 'ItemImportController@checkArticleNumber')->name('catalog.import.check-article');
+  Route::post('/catalog/import/manual', 'ItemImportController@storeManual')->name('catalog.import.manual');
 
   Route::get('/catalog/browse', 'CatalogController@browse')->name('catalog.browse');
   Route::get('/catalog/browse/children/{parentId?}', 'CatalogController@children')->name('catalog.browse.children');
@@ -179,6 +182,9 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   Route::post('/stock/upload', 'StockController@store')->name('stock.upload.store');
   Route::get('/stock/history', 'StockController@history')->name('stock.history');
   Route::post('/stock/update', 'StockController@update')->name('stock.update');
+  // "Enter manually" tab on /stock/upload - a few items by hand, no spreadsheet.
+  Route::get('/stock/manual/search-items', 'StockController@searchItems')->name('stock.manual.search-items');
+  Route::post('/stock/manual', 'StockController@storeManual')->name('stock.manual.store');
 
   // Read-only stock reporting - Master/Chief Engineer see their own vessel,
   // GM (SRD)/every SSM role/super-admin see any vessel. See
@@ -187,6 +193,38 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   Route::get('/stock/report/summary', 'StockReportController@summary')->name('stock.report.summary');
   Route::get('/stock/report/data', 'StockReportController@data')->name('stock.report.data');
   Route::get('/stock/report/groups', 'StockReportController@groups')->name('stock.report.groups');
+
+  // Current Stock (Inventory module) - "opening + received - consumed ±
+  // corrections = current" per item, from the stock_movements ledger. Open
+  // to any ship role (own vessel) as well as the fleet-wide roles above -
+  // see App\Support\InventoryGate. groups() is shared with Stock Report,
+  // the group tree doesn't differ between the two.
+  Route::get('/inventory/stock', 'StockReportController@stock')->name('inventory.stock');
+  Route::get('/inventory/stock/summary', 'StockReportController@stockSummary')->name('inventory.stock.summary');
+  Route::get('/inventory/stock/data', 'StockReportController@stockData')->name('inventory.stock.data');
+  Route::get('/inventory/stock/export', 'StockReportController@stockExport')->name('inventory.stock.export');
+  Route::get('/inventory/stock/print', 'StockReportController@stockPrint')->name('inventory.stock.print');
+
+  // The item stock card - one item's whole movement history on one vessel.
+  // Registered after the literal /inventory/stock/* routes above, so
+  // {item} never swallows 'summary'/'data'/'export'/'print'. Opened from a
+  // row click on Current Stock, Stock Report, Browse Catalog and the
+  // Consumption Log.
+  Route::get('/inventory/stock/{item}/export', 'StockReportController@stockItemExport')->name('inventory.stock.item.export');
+  Route::get('/inventory/stock/{item}/pdf', 'StockReportController@stockItemPdf')->name('inventory.stock.item.pdf');
+  Route::get('/inventory/stock/{item}', 'StockReportController@stockItem')->name('inventory.stock.item');
+
+  // Movements & consumption report - fleet-level view of the same ledger,
+  // summed across every vessel when a fleet-wide viewer doesn't narrow to
+  // one (see App\Support\InventoryGate::resolveOptionalVesselId()). Also
+  // carries the requisition-to-consumption trace.
+  Route::get('/inventory/movements', 'StockMovementsReportController@index')->name('inventory.movements');
+  Route::get('/inventory/movements/data', 'StockMovementsReportController@data')->name('inventory.movements.data');
+  Route::get('/inventory/movements/summary', 'StockMovementsReportController@summary')->name('inventory.movements.summary');
+  Route::get('/inventory/movements/export', 'StockMovementsReportController@export')->name('inventory.movements.export');
+  Route::get('/inventory/movements/pdf', 'StockMovementsReportController@pdf')->name('inventory.movements.pdf');
+  Route::get('/inventory/movements/requisition-search', 'StockMovementsReportController@requisitionSearch')->name('inventory.movements.requisition-search');
+  Route::get('/inventory/movements/requisition-trace', 'StockMovementsReportController@requisitionTrace')->name('inventory.movements.requisition-trace');
 
   // Stock consumption. Write access (create/search-items/store) is
   // chief-officer/second-engineer only - enforced in the controller, same

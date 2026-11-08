@@ -734,7 +734,7 @@ class RoleController extends Controller
 				$stock = app(StockService::class);
 				foreach ($order->orderItems()->get() as $line) {
 					$receivedQty = (int) ($line->rcv_item_qty ?? $line->del_item_qty ?? 0);
-					$stock->addFromReceipt($order->vessel_id, $line->item_id, $receivedQty, auth()->user()->id, Carbon::now());
+					$stock->addFromReceipt($order->vessel_id, $line->item_id, $receivedQty, auth()->user()->id, Carbon::now(), $order->id, $line->id);
 				}
 			});
 

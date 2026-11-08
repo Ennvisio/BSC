@@ -89,9 +89,7 @@ class ProcurementController extends Controller
         $skipped = ProcurementStage::isSkippable($stage) && ! $request->boolean('proceed', true);
 
         if (! $skipped) {
-            $validation = $this->validateRequiredMeta($stage, $request) ?? (
-                ProcurementStage::capturesInvoice($stage) ? $this->validateInvoice($request, $order) : null
-            );
+            $validation = ProcurementStage::capturesInvoice($stage) ? $this->validateInvoice($request, $order) : null;
 
             if ($validation !== null) {
                 return response()->json(['message' => $validation], 422);
@@ -220,29 +218,6 @@ class ProcurementController extends Controller
         }
 
         return $meta === [] ? null : $meta;
-    }
-
-    /**
-     * The one or two fields that make a stage's record actually mean
-     * something, required before it can be completed - everything else in
-     * META_FIELDS stays optional. Returns an error message, or null when
-     * it's good.
-     */
-    private const REQUIRED_META_FIELDS = [
-        ProcurementStage::TENDERING => ['tender_ref'],
-        ProcurementStage::AWARD_APPROVAL => ['awarded_amount'],
-        ProcurementStage::PURCHASE_ORDER => ['po_number', 'po_date'],
-    ];
-
-    private function validateRequiredMeta(string $stage, Request $request): ?string
-    {
-        foreach (self::REQUIRED_META_FIELDS[$stage] ?? [] as $field) {
-            if (! $request->filled($field)) {
-                return 'Enter the '.ProcurementStage::metaLabel($field).' before completing this stage.';
-            }
-        }
-
-        return null;
     }
 
     /**

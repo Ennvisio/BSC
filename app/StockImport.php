@@ -7,9 +7,12 @@ use Illuminate\Database\Eloquent\Model;
 class StockImport extends Model
 {
     protected $fillable = [
-        'vessel_id', 'category_id', 'uploaded_by', 'filename', 'status',
+        'vessel_id', 'category_id', 'uploaded_by', 'filename', 'source', 'status',
         'row_count', 'updated_count', 'skipped_count', 'failed_count', 'error_log',
     ];
+
+    const SOURCE_UPLOAD = 'upload';
+    const SOURCE_MANUAL = 'manual';
 
     public function vessel()
     {

@@ -117,6 +117,7 @@
 .sr-tree-label:hover, .sr-tree-label:focus{ background:#eef6f6; }
 .sr-tree-count{ font-size:11.5px; color:#6b7877; font-variant-numeric:tabular-nums; }
 .sr-tree-msg{ padding:4px 12px; color:#6b7877; font-size:13px; }
+#stock-report-table tbody tr{ cursor:pointer; }
 </style>
 <script>
 $(function () {
@@ -304,6 +305,15 @@ $(function () {
 			order: [[0, 'asc']]
 		});
 	}
+
+	// Row click opens that item's stock card (the whole "opening + received -
+	// consumed ± corrections = current" history) for the vessel currently in
+	// view - delegated so it survives initTable() rebuilding the table.
+	$('#stock-report-table tbody').on('click', 'tr', function () {
+		var data = reportTable && reportTable.row(this).data();
+		if (!data || !data.item_id) { return; }
+		window.location = '{{ url('/inventory/stock') }}/' + data.item_id + '?vessel_id=' + encodeURIComponent($('#report_vessel_id').val());
+	});
 
 	function refresh() {
 		if (!ready()) {

@@ -48,8 +48,14 @@ class CatalogController extends Controller
             // honour ?vessel_id= once one is picked) - the dropdown this
             // feeds.
             'vessels' => Vessel::where('status', true)->orderBy('name')->get(['id', 'name']),
-            'groupCount' => ItemGroup::count(),
-            'itemCount' => Item::count(),
+            // Same reasoning as the ship branch above, just fleet-wide
+            // instead of one vessel: the raw catalog table (items/
+            // item_groups) holds everything ever imported, including stock
+            // that only ever belonged to a vessel that's since been
+            // deactivated - counting straight from it reads as "the fleet
+            // carries 57,852 items" even on a day nothing active does.
+            'groupCount' => count($this->visibleGroupIdsForActiveVessels()),
+            'itemCount' => Item::whereHas('vessels', fn ($q) => $q->where('vessels.status', true))->count(),
             'vesselCount' => Vessel::where('status', true)->count(),
             'categories' => $categories,
         ]);
@@ -301,13 +307,35 @@ class CatalogController extends Controller
      */
     private function visibleGroupIdsForVessel(int $vesselId, ?int $categoryId = null): array
     {
-        $parentMap = $this->parentMap();
-
         $leafIds = Item::whereHas('vessels', fn ($q) => $q->where('vessel_id', $vesselId))
             ->when($categoryId !== null, fn ($q) => $q->where('category_id', $categoryId))
             ->whereNotNull('item_group_id')
             ->distinct()
             ->pluck('item_group_id');
+
+        return $this->withAncestors($leafIds);
+    }
+
+    /**
+     * Every group that leads to an item SOME currently-active vessel
+     * carries, fleet-wide - the browse() stat card's own version of
+     * visibleGroupIdsForVessel() above, scoped to "any active vessel"
+     * instead of one.
+     */
+    private function visibleGroupIdsForActiveVessels(): array
+    {
+        $leafIds = Item::whereHas('vessels', fn ($q) => $q->where('vessels.status', true))
+            ->whereNotNull('item_group_id')
+            ->distinct()
+            ->pluck('item_group_id');
+
+        return $this->withAncestors($leafIds);
+    }
+
+    /** $leafIds plus every ancestor of each, walked in memory via parentMap(). */
+    private function withAncestors($leafIds): array
+    {
+        $parentMap = $this->parentMap();
 
         $visible = [];
         foreach ($leafIds as $id) {

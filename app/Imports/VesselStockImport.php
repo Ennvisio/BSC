@@ -44,6 +44,8 @@ class VesselStockImport implements ToCollection, WithChunkReading, WithHeadingRo
     private int $vesselId;
     private ?int $userId;
     private StockService $stock;
+    /** The stock_imports row this upload is already filed under, so every movement it writes links back to it. */
+    private ?int $stockImportId;
 
     public int $rowCount = 0;
     public int $updatedCount = 0;
@@ -52,11 +54,12 @@ class VesselStockImport implements ToCollection, WithChunkReading, WithHeadingRo
     /** @var array<int,string> */
     public array $errors = [];
 
-    public function __construct(int $vesselId, ?int $userId, StockService $stock)
+    public function __construct(int $vesselId, ?int $userId, StockService $stock, ?int $stockImportId = null)
     {
         $this->vesselId = $vesselId;
         $this->userId = $userId;
         $this->stock = $stock;
+        $this->stockImportId = $stockImportId;
     }
 
     public function chunkSize(): int
@@ -138,6 +141,6 @@ class VesselStockImport implements ToCollection, WithChunkReading, WithHeadingRo
             $payload[] = $values + ['item_id' => $itemIds[$articleNumber]];
         }
 
-        $this->updatedCount += $this->stock->bulkSet($this->vesselId, $payload, $this->userId);
+        $this->updatedCount += $this->stock->bulkSet($this->vesselId, $payload, $this->userId, $this->stockImportId);
     }
 }

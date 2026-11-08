@@ -14,6 +14,7 @@
 				<thead>
 					<th>#</th>
 					<th>File</th>
+					<th>Source</th>
 					<th>Category</th>
 					<th>Vessel</th>
 					<th>Uploaded By</th>
@@ -29,6 +30,13 @@
 					<tr>
 						<td>{{$loop->iteration}}</td>
 						<td>{{$import->filename}}</td>
+						<td>
+							@if($import->filename === 'Manual entry')
+							<span class="badge badge-info">Manual entry</span>
+							@else
+							<span class="badge badge-light">Upload</span>
+							@endif
+						</td>
 						<td>{{!empty($import->category->name) ? $import->category->name : ''}}</td>
 						<td>{{!empty($import->vessel->name) ? $import->vessel->name : ''}}</td>
 						<td>{{!empty($import->uploadedBy->name) ? $import->uploadedBy->name : ''}}</td>
@@ -67,7 +75,7 @@
 						</td>
 					</tr>
 					@empty
-					<tr><td colspan="11" class="text-center">No imports yet.</td></tr>
+					<tr><td colspan="12" class="text-center">No imports yet.</td></tr>
 					@endforelse
 				</tbody>
 			</table>

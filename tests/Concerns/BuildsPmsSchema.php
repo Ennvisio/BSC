@@ -159,6 +159,24 @@ trait BuildsPmsSchema
             $t->unsignedInteger('recorded_by');
             $t->timestamps();
         });
+        // Every StockService write (including PMS job completion's consume()
+        // call) writes one of these - see create_stock_movements_table.
+        Schema::create('stock_movements', function (Blueprint $t) {
+            $t->id();
+            $t->unsignedInteger('vessel_id');
+            $t->unsignedInteger('item_id');
+            $t->string('type', 20);
+            $t->integer('qty');
+            $t->integer('balance_after');
+            $t->date('moved_on');
+            $t->unsignedInteger('order_id')->nullable();
+            $t->unsignedInteger('order_item_id')->nullable();
+            $t->unsignedBigInteger('stock_consumption_id')->nullable();
+            $t->unsignedBigInteger('stock_import_id')->nullable();
+            $t->text('remarks')->nullable();
+            $t->unsignedInteger('user_id')->nullable();
+            $t->timestamps();
+        });
     }
 
     /** A catalogue item, optionally with stock on this test's vessel. */

@@ -40,7 +40,13 @@
 					@forelse($consumptions as $c)
 					<tr>
 						<td>{{ $c->consumed_on->format('d M Y') }}</td>
-						<td>{{ $c->item->name ?? '—' }}</td>
+						<td>
+							@if($c->item)
+							<a href="{{ route('inventory.stock.item', $c->item_id) }}">{{ $c->item->name }}</a>
+							@else
+							—
+							@endif
+						</td>
 						<td><span class="badge {{ $typeBadge[$c->consumption_type] ?? 'badge-secondary' }}">{{ $c->typeLabel() }}</span></td>
 						<td>{{ $c->qty }} {{ $c->item->unit ?? '' }}</td>
 						<td>{{ $c->department ?: '—' }}</td>

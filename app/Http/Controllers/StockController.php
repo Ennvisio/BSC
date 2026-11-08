@@ -83,8 +83,6 @@ class StockController extends Controller
         $vesselId = auth()->user()->role->vessel_id;
         $file = $request->file('stock_file');
 
-        $import = new VesselStockImport($vesselId, auth()->user()->id, $this->stock);
-
         $record = StockImport::create([
             'vessel_id' => $vesselId,
             'category_id' => $request->category_id ?: null,
@@ -92,6 +90,10 @@ class StockController extends Controller
             'filename' => $file->getClientOriginalName(),
             'status' => 'processing',
         ]);
+
+        // Created first so every movement this chunked import writes (see
+        // StockService::bulkSet()) can link straight back to this upload.
+        $import = new VesselStockImport($vesselId, auth()->user()->id, $this->stock, $record->id);
 
         try {
             Excel::import($import, $file);
@@ -185,6 +187,124 @@ class StockController extends Controller
             'opening_stock' => $row->opening_stock === null ? null : (int) $row->opening_stock,
             'min_qty' => $row->min_qty === null ? null : (int) $row->min_qty,
             'low' => $row->isLowStock(),
+        ]);
+    }
+
+    /**
+     * AJAX: items in this vessel's own catalog, for the "Enter manually"
+     * tab's search box - same query shape as
+     * StockConsumptionController::searchItems(), minus its stock_qty > 0
+     * filter (this is for SETTING figures, including the first one, so an
+     * item that has never had any stock yet still has to show up), plus an
+     * optional category narrower and the current figures already on record.
+     */
+    public function searchItems(Request $request)
+    {
+        $this->authorizeMaster();
+
+        $term = trim((string) $request->query('q'));
+        $vesselId = auth()->user()->role->vessel_id;
+
+        $rows = VesselItem::where('vessel_items.vessel_id', $vesselId)
+            ->join('items', 'items.id', '=', 'vessel_items.item_id')
+            ->when($request->filled('category_id'), fn ($q) => $q->where('items.category_id', (int) $request->query('category_id')))
+            ->when($term !== '', function ($q) use ($term) {
+                $q->where(function ($q2) use ($term) {
+                    $q2->where('items.name', 'like', "%{$term}%")
+                        ->orWhere('items.article_number', 'like', "%{$term}%");
+                });
+            })
+            ->orderBy('items.name')
+            ->limit(25)
+            ->get([
+                'vessel_items.item_id', 'items.name', 'items.article_number', 'items.unit',
+                'vessel_items.opening_stock', 'vessel_items.stock_qty', 'vessel_items.min_qty',
+            ]);
+
+        return response()->json($rows->map(fn ($r) => [
+            'id' => $r->item_id,
+            'name' => $r->name,
+            'article_number' => $r->article_number,
+            'unit' => $r->unit,
+            'opening_stock' => $r->opening_stock,
+            'stock_qty' => (int) $r->stock_qty,
+            'min_qty' => $r->min_qty,
+        ]));
+    }
+
+    /**
+     * The "Enter manually" tab's save: the same figures a spreadsheet upload
+     * would carry, typed in for a handful of items instead - one
+     * StockService::bulkSet() call so it writes 'opening'/'adjustment'
+     * movements exactly like the upload does (see StockService's own class
+     * doc), not a separate write path with its own ledger behaviour.
+     */
+    public function storeManual(Request $request)
+    {
+        $this->authorizeMaster();
+
+        $request->validate([
+            'rows' => 'required|array|min:1|max:200',
+            'rows.*.item_id' => 'required|integer|exists:items,id',
+            'rows.*.opening_stock' => 'nullable|integer|min:0',
+            'rows.*.stock_qty' => 'nullable|integer|min:0',
+            'rows.*.min_qty' => 'nullable|integer|min:0',
+        ]);
+
+        $vesselId = auth()->user()->role->vessel_id;
+
+        // Same rule update() enforces for a single item - a Master can only
+        // set stock for items their own vessel actually carries.
+        $itemIds = collect($request->rows)->pluck('item_id')->unique()->values();
+        $carriedIds = VesselItem::where('vessel_id', $vesselId)->whereIn('item_id', $itemIds)->pluck('item_id');
+        $missingIds = $itemIds->diff($carriedIds);
+
+        if ($missingIds->isNotEmpty()) {
+            return response()->json([
+                'message' => 'Some of these items are not in your vessel\'s catalog - remove them and try again.',
+            ], 422);
+        }
+
+        // Blank means "leave unchanged", same rule the upload follows for a
+        // blank spreadsheet cell - a row with nothing filled in writes nothing.
+        $payload = [];
+        foreach ($request->rows as $row) {
+            $values = [];
+            foreach (['opening_stock', 'stock_qty', 'min_qty'] as $figure) {
+                if (array_key_exists($figure, $row) && $row[$figure] !== null && $row[$figure] !== '') {
+                    $values[$figure] = (int) $row[$figure];
+                }
+            }
+
+            if (! empty($values)) {
+                $payload[] = $values + ['item_id' => (int) $row['item_id']];
+            }
+        }
+
+        if (empty($payload)) {
+            return response()->json(['message' => 'Nothing to save - fill in at least one figure.'], 422);
+        }
+
+        $record = StockImport::create([
+            'vessel_id' => $vesselId,
+            'category_id' => null,
+            'uploaded_by' => auth()->user()->id,
+            'filename' => 'Manual entry',
+            'source' => StockImport::SOURCE_MANUAL,
+            'status' => 'processing',
+        ]);
+
+        $written = $this->stock->bulkSet($vesselId, $payload, auth()->user()->id, $record->id);
+
+        $record->update([
+            'status' => 'completed',
+            'row_count' => count($payload),
+            'updated_count' => $written,
+        ]);
+
+        return response()->json([
+            'message' => "Saved {$written} item(s).",
+            'redirect' => route('stock.history'),
         ]);
     }
 

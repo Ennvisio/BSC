@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\StockConsumption;
+use App\StockMovement;
 use App\VesselItem;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
@@ -11,10 +12,10 @@ use RuntimeException;
 /**
  * The single funnel every stock write goes through.
  *
- * Stock currently lives as a plain balance on vessel_items. Keeping every
- * write behind this service means a full stock_movements ledger ("who changed
- * it, when, why, against which requisition") can be added later by changing
- * only this class - no caller needs to know.
+ * vessel_items.stock_qty is the live balance; stock_movements (see
+ * App\StockMovement) is the ledger behind it - every method below writes
+ * exactly one movement row in the same transaction as the balance change,
+ * so the two can never drift apart. No caller needs to know this happens.
  *
  * Stock is per-vessel ROB (remaining on board) and sparse: a vessel_items row
  * existing means the vessel can order that item, not that it holds any. Rows
@@ -42,44 +43,77 @@ class StockService
      */
     public function setStock(int $vesselId, int $itemId, array $values, ?int $userId = null): VesselItem
     {
-        $row = $this->rowFor($vesselId, $itemId);
+        return DB::transaction(function () use ($vesselId, $itemId, $values, $userId) {
+            $row = $this->rowFor($vesselId, $itemId);
+            $oldStockQty = (int) $row->stock_qty;
+            $oldOpeningStock = $row->opening_stock;
 
-        foreach (self::FIGURES as $column) {
-            if (array_key_exists($column, $values) && $values[$column] !== null) {
-                $row->{$column} = max(0, (int) $values[$column]);
+            foreach (self::FIGURES as $column) {
+                if (array_key_exists($column, $values) && $values[$column] !== null) {
+                    $row->{$column} = max(0, (int) $values[$column]);
+                }
             }
-        }
 
-        $row->stock_updated_at = now();
-        $row->stock_updated_by = $userId;
-        $row->save();
+            $row->stock_updated_at = now();
+            $row->stock_updated_by = $userId;
+            $row->save();
 
-        return $row;
+            // Only stock_qty and opening_stock move the ledger - min_qty is a
+            // threshold, not a quantity that was ever "in" or "out".
+            if (array_key_exists('stock_qty', $values) && $values['stock_qty'] !== null && (int) $row->stock_qty !== $oldStockQty) {
+                $this->recordMovement($vesselId, $itemId, StockMovement::TYPE_ADJUSTMENT, (int) $row->stock_qty - $oldStockQty, (int) $row->stock_qty, $userId, [
+                    'remarks' => 'Manual stock correction.',
+                ]);
+            }
+
+            if (array_key_exists('opening_stock', $values) && $values['opening_stock'] !== null && $row->opening_stock !== $oldOpeningStock) {
+                $this->recordMovement($vesselId, $itemId, StockMovement::TYPE_OPENING, (int) $row->opening_stock, (int) $row->stock_qty, $userId, [
+                    'remarks' => $oldOpeningStock === null
+                        ? 'Opening balance declared.'
+                        : "Opening balance corrected from {$oldOpeningStock}.",
+                ]);
+            }
+
+            return $row;
+        });
     }
 
     /**
      * A confirmed receipt adds to what's on board, and is what makes stock
      * self-maintaining rather than drifting from reality between manual
      * corrections. Also stamps the paper form's "last supply" figures.
+     *
+     * $orderId/$orderItemId are the requisition line this came from, if any -
+     * RoleController::approveRequisition() always has them at the receipt-
+     * confirmation call site, so the ledger row can link straight back to
+     * the requisition that brought this item aboard.
      */
-    public function addFromReceipt(int $vesselId, int $itemId, int $qty, ?int $userId = null, ?CarbonInterface $receivedOn = null): ?VesselItem
+    public function addFromReceipt(int $vesselId, int $itemId, int $qty, ?int $userId = null, ?CarbonInterface $receivedOn = null, ?int $orderId = null, ?int $orderItemId = null): ?VesselItem
     {
         if ($qty <= 0) {
             return null;
         }
 
-        $row = $this->rowFor($vesselId, $itemId);
+        return DB::transaction(function () use ($vesselId, $itemId, $qty, $userId, $receivedOn, $orderId, $orderItemId) {
+            $row = $this->rowFor($vesselId, $itemId);
 
-        // An opening balance that was never loaded is unknown, not zero -
-        // don't invent one retroactively from the first receipt.
-        $row->stock_qty = max(0, (int) $row->stock_qty + $qty);
-        $row->last_supply_qty = $qty;
-        $row->last_supply_date = ($receivedOn ?? now())->toDateString();
-        $row->stock_updated_at = now();
-        $row->stock_updated_by = $userId;
-        $row->save();
+            // An opening balance that was never loaded is unknown, not zero -
+            // don't invent one retroactively from the first receipt.
+            $row->stock_qty = max(0, (int) $row->stock_qty + $qty);
+            $row->last_supply_qty = $qty;
+            $row->last_supply_date = ($receivedOn ?? now())->toDateString();
+            $row->stock_updated_at = now();
+            $row->stock_updated_by = $userId;
+            $row->save();
 
-        return $row;
+            $this->recordMovement($vesselId, $itemId, StockMovement::TYPE_RECEIPT, $qty, (int) $row->stock_qty, $userId, [
+                'moved_on' => ($receivedOn ?? now())->toDateString(),
+                'order_id' => $orderId,
+                'order_item_id' => $orderItemId,
+            ]);
+
+            return $row;
+        });
     }
 
     /**
@@ -125,7 +159,7 @@ class StockService
             $row->stock_updated_by = $userId;
             $row->save();
 
-            return StockConsumption::create([
+            $consumption = StockConsumption::create([
                 'vessel_id' => $vesselId,
                 'item_id' => $itemId,
                 'order_id' => $details['order_id'] ?? null,
@@ -137,6 +171,15 @@ class StockService
                 'remarks' => $details['remarks'] ?? null,
                 'recorded_by' => $userId,
             ]);
+
+            $this->recordMovement($vesselId, $itemId, StockMovement::TYPE_CONSUMPTION, -$qty, (int) $row->stock_qty, $userId, [
+                'moved_on' => $consumption->consumed_on->toDateString(),
+                'order_id' => $details['order_id'] ?? null,
+                'stock_consumption_id' => $consumption->id,
+                'remarks' => $purpose,
+            ]);
+
+            return $consumption;
         });
     }
 
@@ -185,61 +228,118 @@ class StockService
      *
      * Relies on vessel_items' unique (vessel_id, item_id) index.
      *
+     * $stockImportId links every 'adjustment'/'opening' movement this chunk
+     * writes back to the stock_imports row for the upload it came from.
+     *
      * @param  array<int,array{item_id:int,stock_qty?:int,opening_stock?:int,min_qty?:int}>  $rows
      */
-    public function bulkSet(int $vesselId, array $rows, ?int $userId = null): int
+    public function bulkSet(int $vesselId, array $rows, ?int $userId = null, ?int $stockImportId = null): int
     {
         if (empty($rows)) {
             return 0;
         }
 
-        $now = now();
-        $groups = [];
+        return DB::transaction(function () use ($vesselId, $rows, $userId, $stockImportId) {
+            $now = now();
+            $today = $now->toDateString();
 
-        foreach ($rows as $row) {
-            $supplied = array_values(array_filter(
-                self::FIGURES,
-                fn ($column) => array_key_exists($column, $row) && $row[$column] !== null
-            ));
+            // One query for every item this chunk touches, read before the
+            // upsert below overwrites them - the only way to tell "changed"
+            // from "restated the same figure" (skipped, per the class docs)
+            // without a query per row.
+            $itemIds = array_column($rows, 'item_id');
+            $old = VesselItem::where('vessel_id', $vesselId)
+                ->whereIn('item_id', $itemIds)
+                ->get(['item_id', 'stock_qty', 'opening_stock'])
+                ->keyBy('item_id');
 
-            if (empty($supplied)) {
-                continue;
+            $groups = [];
+            $movements = [];
+
+            foreach ($rows as $row) {
+                $supplied = array_values(array_filter(
+                    self::FIGURES,
+                    fn ($column) => array_key_exists($column, $row) && $row[$column] !== null
+                ));
+
+                if (empty($supplied)) {
+                    continue;
+                }
+
+                $itemId = $row['item_id'];
+                $oldRow = $old->get($itemId);
+                $oldStockQty = $oldRow ? (int) $oldRow->stock_qty : 0;
+                $oldOpeningStock = $oldRow?->opening_stock;
+
+                $entry = [
+                    'vessel_id' => $vesselId,
+                    'item_id' => $itemId,
+                    'stock_updated_at' => $now,
+                    'stock_updated_by' => $userId,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+
+                // Every column has to appear in the payload for the INSERT half of
+                // the upsert; the ones this row didn't supply take their default
+                // and are simply left out of the UPDATE list below.
+                foreach (self::FIGURES as $column) {
+                    $entry[$column] = in_array($column, $supplied, true)
+                        ? max(0, (int) $row[$column])
+                        : ($column === 'stock_qty' ? 0 : null);
+                }
+
+                $groups[implode(',', $supplied)][] = $entry;
+
+                // New stock_qty if this row restates it, otherwise whatever
+                // it already was (this row left it alone) - either way, the
+                // real balance the moment this row is written.
+                $newStockQty = in_array('stock_qty', $supplied, true) ? $entry['stock_qty'] : $oldStockQty;
+
+                if (in_array('stock_qty', $supplied, true) && $newStockQty !== $oldStockQty) {
+                    $movements[] = [
+                        'vessel_id' => $vesselId, 'item_id' => $itemId,
+                        'type' => StockMovement::TYPE_ADJUSTMENT,
+                        'qty' => $newStockQty - $oldStockQty, 'balance_after' => $newStockQty,
+                        'moved_on' => $today, 'stock_import_id' => $stockImportId,
+                        'remarks' => 'Bulk stock upload.', 'user_id' => $userId,
+                        'created_at' => $now, 'updated_at' => $now,
+                    ];
+                }
+
+                if (in_array('opening_stock', $supplied, true) && $entry['opening_stock'] !== $oldOpeningStock) {
+                    $movements[] = [
+                        'vessel_id' => $vesselId, 'item_id' => $itemId,
+                        'type' => StockMovement::TYPE_OPENING,
+                        'qty' => $entry['opening_stock'], 'balance_after' => $newStockQty,
+                        'moved_on' => $today, 'stock_import_id' => $stockImportId,
+                        'remarks' => 'Bulk stock upload.', 'user_id' => $userId,
+                        'created_at' => $now, 'updated_at' => $now,
+                    ];
+                }
             }
 
-            $entry = [
-                'vessel_id' => $vesselId,
-                'item_id' => $row['item_id'],
-                'stock_updated_at' => $now,
-                'stock_updated_by' => $userId,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
+            $stamps = ['stock_updated_at', 'stock_updated_by', 'updated_at'];
 
-            // Every column has to appear in the payload for the INSERT half of
-            // the upsert; the ones this row didn't supply take their default
-            // and are simply left out of the UPDATE list below.
-            foreach (self::FIGURES as $column) {
-                $entry[$column] = in_array($column, $supplied, true)
-                    ? max(0, (int) $row[$column])
-                    : ($column === 'stock_qty' ? 0 : null);
+            $written = 0;
+            foreach ($groups as $signature => $entries) {
+                DB::table('vessel_items')->upsert(
+                    $entries,
+                    ['vessel_id', 'item_id'],
+                    array_merge(explode(',', $signature), $stamps)
+                );
+                $written += count($entries);
             }
 
-            $groups[implode(',', $supplied)][] = $entry;
-        }
+            // One insert for the whole chunk's worth of movements, same
+            // reasoning as the upsert above - a per-row insert is what the
+            // chunking exists to avoid.
+            if (! empty($movements)) {
+                DB::table('stock_movements')->insert($movements);
+            }
 
-        $stamps = ['stock_updated_at', 'stock_updated_by', 'updated_at'];
-
-        $written = 0;
-        foreach ($groups as $signature => $entries) {
-            DB::table('vessel_items')->upsert(
-                $entries,
-                ['vessel_id', 'item_id'],
-                array_merge(explode(',', $signature), $stamps)
-            );
-            $written += count($entries);
-        }
-
-        return $written;
+            return $written;
+        });
     }
 
     /**
@@ -259,5 +359,184 @@ class StockService
         }
 
         return $row;
+    }
+
+    /**
+     * Reconstructs the ledger for one vessel from history that predates it:
+     * every item's opening balance, every requisition receipt, every logged
+     * consumption, oldest first - then one reconciliation row per item if
+     * the rebuilt total still doesn't match today's real stock_qty (it
+     * always will the first time something was never captured, e.g. a
+     * receipt confirmed before this table existed, or a stock figure that
+     * was restated directly in the database).
+     *
+     * Idempotent by construction, not by tracking a "this was a backfill"
+     * flag: an opening/receipt/consumption event is only ever inserted when
+     * NOTHING already points at it (no 'opening' movement yet for that item,
+     * no movement with that order_item_id, no movement with that
+     * stock_consumption_id) - a live write after the first backfill already
+     * satisfies that check, and running this again afterwards finds nothing
+     * left to add. The reconciliation row follows the same logic one level
+     * up: it only appears when the rebuilt sum (everything that already
+     * exists, plus whatever this run just added) still disagrees with
+     * stock_qty, so a second run - now that the first run's own
+     * reconciliation row is part of "everything that already exists" -
+     * finds the books already balanced and adds nothing.
+     *
+     * @return array{opening:int,receipt:int,consumption:int,adjustment:int}
+     */
+    public function backfillMovementsForVessel(int $vesselId): array
+    {
+        return DB::transaction(function () use ($vesselId) {
+            $counts = ['opening' => 0, 'receipt' => 0, 'consumption' => 0, 'adjustment' => 0];
+
+            $items = VesselItem::where('vessel_id', $vesselId)->get(['item_id', 'opening_stock', 'stock_qty']);
+
+            if ($items->isEmpty()) {
+                return $counts;
+            }
+
+            $itemIds = $items->pluck('item_id')->all();
+
+            // Everything already in the ledger for this vessel, grouped by
+            // item - both to seed each item's running total and to know
+            // what's already covered.
+            $existing = StockMovement::where('vessel_id', $vesselId)
+                ->whereIn('item_id', $itemIds)
+                ->get(['item_id', 'type', 'qty', 'order_item_id', 'stock_consumption_id'])
+                ->groupBy('item_id');
+
+            // Confirmed receipts: order_items of this vessel's orders that
+            // have actually been received, oldest first.
+            $receipts = DB::table('order_items')
+                ->join('orders', 'orders.id', '=', 'order_items.order_id')
+                ->where('orders.vessel_id', $vesselId)
+                ->whereNotNull('orders.rcv_date')
+                ->whereIn('order_items.item_id', $itemIds)
+                ->orderBy('orders.rcv_date')
+                ->get([
+                    'order_items.id as order_item_id', 'order_items.item_id', 'order_items.order_id',
+                    'order_items.rcv_item_qty', 'order_items.del_item_qty', 'orders.rcv_date',
+                ])
+                ->groupBy('item_id');
+
+            $consumptions = StockConsumption::where('vessel_id', $vesselId)
+                ->whereIn('item_id', $itemIds)
+                ->orderBy('consumed_on')
+                ->get(['id', 'item_id', 'order_id', 'qty', 'consumed_on'])
+                ->groupBy('item_id');
+
+            $now = now();
+            $today = $now->toDateString();
+            $newRows = [];
+
+            foreach ($items as $vesselItem) {
+                $itemId = $vesselItem->item_id;
+                $already = $existing->get($itemId, collect());
+                $coveredOrderItemIds = $already->pluck('order_item_id')->filter()->all();
+                $coveredConsumptionIds = $already->pluck('stock_consumption_id')->filter()->all();
+                $hasOpening = $already->contains('type', StockMovement::TYPE_OPENING);
+
+                $events = [];
+
+                if ($vesselItem->opening_stock !== null && ! $hasOpening) {
+                    $events[] = [
+                        'date' => $today, 'order' => 0, 'type' => StockMovement::TYPE_OPENING,
+                        'qty' => (int) $vesselItem->opening_stock, 'affects_balance' => false,
+                        'remarks' => 'Backfilled from the vessel\'s declared opening balance.',
+                    ];
+                }
+
+                foreach ($receipts->get($itemId, collect()) as $line) {
+                    if (in_array($line->order_item_id, $coveredOrderItemIds, true)) {
+                        continue;
+                    }
+                    $qty = (int) ($line->rcv_item_qty ?? $line->del_item_qty ?? 0);
+                    if ($qty <= 0) {
+                        continue;
+                    }
+                    $events[] = [
+                        'date' => $line->rcv_date, 'order' => 1, 'type' => StockMovement::TYPE_RECEIPT,
+                        'qty' => $qty, 'affects_balance' => true,
+                        'order_id' => $line->order_id, 'order_item_id' => $line->order_item_id,
+                        'remarks' => 'Backfilled from the requisition\'s confirmed receipt.',
+                    ];
+                }
+
+                foreach ($consumptions->get($itemId, collect()) as $row) {
+                    if (in_array($row->id, $coveredConsumptionIds, true)) {
+                        continue;
+                    }
+                    $events[] = [
+                        'date' => $row->consumed_on->toDateString(), 'order' => 1, 'type' => StockMovement::TYPE_CONSUMPTION,
+                        'qty' => -(int) $row->qty, 'affects_balance' => true,
+                        'order_id' => $row->order_id, 'stock_consumption_id' => $row->id,
+                        'remarks' => 'Backfilled from the logged consumption.',
+                    ];
+                }
+
+                // An item with no new events at all can still need its sole
+                // reconciliation row below, so there's nothing to guard here.
+                usort($events, fn ($a, $b) => [$a['date'], $a['order']] <=> [$b['date'], $b['order']]);
+
+                $running = $already->whereIn('type', [StockMovement::TYPE_RECEIPT, StockMovement::TYPE_CONSUMPTION, StockMovement::TYPE_ADJUSTMENT])->sum('qty');
+
+                foreach ($events as $event) {
+                    if ($event['affects_balance']) {
+                        $running += $event['qty'];
+                    }
+
+                    $newRows[] = [
+                        'vessel_id' => $vesselId, 'item_id' => $itemId,
+                        'type' => $event['type'], 'qty' => $event['qty'], 'balance_after' => $running,
+                        'moved_on' => $event['date'],
+                        'order_id' => $event['order_id'] ?? null, 'order_item_id' => $event['order_item_id'] ?? null,
+                        'stock_consumption_id' => $event['stock_consumption_id'] ?? null,
+                        'remarks' => $event['remarks'], 'user_id' => null,
+                        'created_at' => $now, 'updated_at' => $now,
+                    ];
+
+                    $counts[$event['type']]++;
+                }
+
+                $actual = (int) $vesselItem->stock_qty;
+                if ($running !== $actual) {
+                    $newRows[] = [
+                        'vessel_id' => $vesselId, 'item_id' => $itemId,
+                        'type' => StockMovement::TYPE_ADJUSTMENT, 'qty' => $actual - $running, 'balance_after' => $actual,
+                        'moved_on' => $today,
+                        'order_id' => null, 'order_item_id' => null, 'stock_consumption_id' => null,
+                        'remarks' => 'Backfill reconciliation.', 'user_id' => null,
+                        'created_at' => $now, 'updated_at' => $now,
+                    ];
+                    $counts['adjustment']++;
+                }
+            }
+
+            foreach (array_chunk($newRows, 500) as $chunk) {
+                DB::table('stock_movements')->insert($chunk);
+            }
+
+            return $counts;
+        });
+    }
+
+    /**
+     * One ledger row - the only place that writes to stock_movements, so
+     * every caller above gets the same shape. $extra may carry any of
+     * 'order_id', 'order_item_id', 'stock_consumption_id', 'stock_import_id',
+     * 'remarks' or 'moved_on' (defaults to today).
+     */
+    private function recordMovement(int $vesselId, int $itemId, string $type, int $qty, int $balanceAfter, ?int $userId, array $extra = []): StockMovement
+    {
+        return StockMovement::create($extra + [
+            'vessel_id' => $vesselId,
+            'item_id' => $itemId,
+            'type' => $type,
+            'qty' => $qty,
+            'balance_after' => $balanceAfter,
+            'moved_on' => now()->toDateString(),
+            'user_id' => $userId,
+        ]);
     }
 }

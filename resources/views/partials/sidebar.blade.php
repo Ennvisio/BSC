@@ -31,15 +31,14 @@
   @if(auth()->user()->role->role == 'super-admin')
   <a href="{{url('/home/order')}}" class="srd-nav-item {{Route::current()->uri() == 'home/order' ? 'active' : ''}}"><i class="fas fa-list-alt"></i>Requisitions</a>
   @endif
-  <a href="{{url('/catalog/import')}}" class="srd-nav-item {{in_array(Route::current()->uri(), ['catalog/import', 'catalog/import/history']) ? 'active' : ''}}"><i class="fas fa-upload"></i>Catalog Import</a>
-  <a href="{{url('/catalog/browse')}}" class="srd-nav-item {{Route::current()->uri() == 'catalog/browse' ? 'active' : ''}}"><i class="fas fa-th"></i>Browse Catalog</a>
   {{-- GM (SRD) also lands here (this block already covers super-admin/gm-srd/
-       admin) - the SSM roles get the same link further down, where the rest
-       of their own nav lives, so it isn't duplicated for gm-srd. --}}
-  {{-- fa-chart-bar, not fa-clipboard-list: this app loads Font Awesome 5.0.6,
-       and fa-clipboard-list only exists from 5.1 onwards (it renders as
-       nothing). Same trap as fa-tools/fa-boxes elsewhere in this sidebar. --}}
-  <a href="{{ route('stock.report') }}" class="srd-nav-item {{Route::current()->uri() == 'stock/report' ? 'active' : ''}}"><i class="fas fa-chart-bar"></i>Stock Report</a>
+       admin) - the SSM roles get the same group further down, where the rest
+       of their own nav lives, so it isn't duplicated for gm-srd. Read-only
+       ('shore' mode - fleet-wide, no write actions), same as every other
+       fleet-wide role sees. Catalog Import/Browse Catalog live inside this
+       dropdown now, not as standalone links here. --}}
+  <div class="srd-nav-label">Inventory and Stock</div>
+  @include('partials.sidebar-inventory', ['mode' => 'shore'])
   @endif
 
   {{-- Ship side follows the requisition's LIFECYCLE - Pending -> Approved ->
@@ -69,19 +68,14 @@
   @endif
 
   @if(!empty(auth()->user()->role->user_type) && auth()->user()->role->user_type == 'ship')
-  <div class="srd-nav-label">Vessel Catalog</div>
-  <a href="{{url('/catalog/import')}}" class="srd-nav-item {{in_array(Route::current()->uri(), ['catalog/import', 'catalog/import/history']) ? 'active' : ''}}"><i class="fas fa-upload"></i>Catalog Import</a>
-  <a href="{{url('/catalog/browse')}}" class="srd-nav-item {{Route::current()->uri() == 'catalog/browse' ? 'active' : ''}}"><i class="fas fa-th"></i>Browse Catalog</a>
-  {{-- Stock is the Master's to maintain: they're the authority on what is
-       physically in the ship's store. --}}
-  @if(auth()->user()->role->role == 'master')
-  {{-- fa-archive, not fa-boxes: this app loads Font Awesome 5.0.6, and
-       fa-boxes only exists from 5.2 onwards (it renders as nothing). --}}
-  <a href="{{url('/stock/upload')}}" class="srd-nav-item {{in_array(Route::current()->uri(), ['stock/upload', 'stock/history']) ? 'active' : ''}}"><i class="fas fa-archive"></i>Update Stock</a>
-  @endif
+  <div class="srd-nav-label">Inventory and Stock</div>
+  @include('partials.sidebar-inventory', ['mode' => 'ship'])
   {{-- Equipment & maker list is Master/Chief Engineer's own to maintain -
-       what a Shore Repair service requisition line picks from. --}}
+       what a Shore Repair service requisition line picks from. Catalog
+       Import/Browse Catalog live inside the Inventory and Stock dropdown
+       above now, not as standalone links under a separate label here. --}}
   @if(in_array(auth()->user()->role->role, ['master', 'chief-engineer']))
+  <div class="srd-nav-label">Vessel Records</div>
   <a href="{{ route('equipment.index') }}" class="srd-nav-item {{ Route::current()->uri() == 'vessel/equipment' ? 'active' : '' }}"><i class="fas fa-cogs"></i>Equipment List</a>
   {{-- Certificates/Surveys are fleet-wide reference data everywhere else in
        this sidebar (super-admin/GM (SRD)/admin only, see "Fleet Records"
@@ -90,20 +84,7 @@
        scoped so neither can see or touch another vessel's certificates. --}}
   <a href="{{url('/home/certificate')}}" class="srd-nav-item {{Route::current()->uri() == 'home/certificate' ? 'active' : ''}}"><i class="fas fa-certificate"></i>Certificates</a>
   <a href="{{url('/home/survey')}}" class="srd-nav-item {{Route::current()->uri() == 'home/survey' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Surveys</a>
-  {{-- Read-only reporting on top of Update Stock above - Master/Chief
-       Engineer see only their own vessel here (StockReportController locks
-       it), same authority split as everything else in this section. --}}
-  <a href="{{ route('stock.report') }}" class="srd-nav-item {{Route::current()->uri() == 'stock/report' ? 'active' : ''}}"><i class="fas fa-chart-bar"></i>Stock Report</a>
   @endif
-  {{-- Consuming stock is the officers' own to log - chief-officer/second-
-       engineer are the ones actually using items day to day (same two roles
-       who raise item requisitions above), Master keeps the separate
-       "restate the real figure" authority via Update Stock instead. The log
-       itself is visible to every ship role on the vessel for oversight. --}}
-  @if(in_array(auth()->user()->role->role, ['chief-officer', 'second-engineer']))
-  <a href="{{ route('stock-consumption.create') }}" class="srd-nav-item {{ Route::current()->uri() == 'stock/consumption/create' ? 'active' : '' }}"><i class="fas fa-wrench"></i>Log Consumption</a>
-  @endif
-  <a href="{{ route('stock-consumption.index') }}" class="srd-nav-item {{ Route::current()->uri() == 'stock/consumption' ? 'active' : '' }}"><i class="fas fa-list"></i>Consumption Log</a>
   @endif
 
   {{-- Shore side keeps ACTION QUEUES: "Pending" here means "waiting on me",
@@ -122,15 +103,17 @@
   <a href="{{url('/home')}}" class="srd-nav-item {{Route::current()->uri() == 'home' ? 'active' : ''}}"><i class="fas fa-th-large"></i>Dashboard</a>
   @endif
 
-  {{-- Fleet-wide, unlike Master/Chief Engineer's own version of this link -
+  {{-- Fleet-wide, unlike Master/Chief Engineer's own version of this group -
        every SSM role, and every SRD role GM can delegate to, sources/approves
-       against any vessel's stock, not just one (StockReportController's own
+       against any vessel's stock, not just one (App\Support\InventoryGate's
        FLEET_WIDE_ROLES list is the source of truth this has to match). GM
        (SRD) already has this above (this whole block excludes super-admin,
        and gm-srd sits with super-admin up there), so it isn't repeated for
-       them here. --}}
+       them here. Read-only ('shore' mode) - shore never writes to a
+       vessel's stock. --}}
   @if(auth()->user()->role->user_type == 'ssm' || in_array(auth()->user()->role->role, ['dgm-srd', 'agm-srd', 'am-srd', 'superintendent-srd']))
-  <a href="{{ route('stock.report') }}" class="srd-nav-item {{Route::current()->uri() == 'stock/report' ? 'active' : ''}}"><i class="fas fa-chart-bar"></i>Stock Report</a>
+  <div class="srd-nav-label">Inventory and Stock</div>
+  @include('partials.sidebar-inventory', ['mode' => 'shore'])
   @endif
 
   <div class="srd-nav-label">Requisitions</div>

@@ -79,6 +79,15 @@ $(function () {
 	// the server resolves their own vessel on its own (see
 	// CatalogController::resolveVesselId()).
 	var vesselId = '';
+	// A ship user's own vessel, already resolved server-side - the item
+	// stock card link below needs SOME vessel id to point at even though
+	// there's no #catalog-vessel select to read one from in that case.
+	var lockedVesselId = {{ $vessel->id ?? 'null' }};
+
+	function itemStockCardUrl(itemId) {
+		var vid = vesselId || lockedVesselId;
+		return vid ? '{{ url('/inventory/stock') }}/' + itemId + '?vessel_id=' + encodeURIComponent(vid) : null;
+	}
 
 	function esc(value) {
 		return $('<div>').text(value === null || value === undefined ? '' : value).html();
@@ -101,7 +110,17 @@ $(function () {
 		$.getJSON('{{url("/catalog/browse/children")}}/' + (parentId || ''), { category_id: categoryId, vessel_id: vesselId }, function (groups) {
 			if (groups.length === 0) {
 				$('#catalog-groups').html('<p class="text-muted p-3">No sub-categories here — showing its items on the right. &rarr;</p>');
-				loadItems(parentId);
+				if (parentId) {
+					// A leaf folder - its own items live right here.
+					loadItems(parentId);
+				} else {
+					// The category itself has no folders at all - asking
+					// items() for group id '' silently becomes
+					// "item_group_id = ''" (matching nothing, or even 404ing,
+					// since the route requires a {groupId} segment) instead
+					// of the category's own items.
+					loadCategoryItems();
+				}
 				return;
 			}
 
@@ -115,6 +134,9 @@ $(function () {
 			});
 			$('#catalog-groups').html(html);
 			$('#catalog-items-wrapper').html('<p class="text-muted mt-2">Select a category on the left to drill down, or one already showing an items count to see its items here.</p>');
+		}).fail(function () {
+			$('#catalog-groups').html('<p class="text-danger p-2">Could not load folders. Please try again.</p>');
+			$('#catalog-items-wrapper').html('<p class="text-danger p-2">Could not load items. Please try again.</p>');
 		});
 	}
 
@@ -142,59 +164,79 @@ $(function () {
 			+ 'data-original="' + esc(value) + '">' + low;
 	}
 
+	function renderItemsTable(items, emptyMessage) {
+		if (items.length === 0) {
+			$('#catalog-items-wrapper').html('<p class="text-muted">' + emptyMessage + '</p>');
+			return;
+		}
+
+		// Stock is only ever meaningful when one particular vessel is in view
+		// (a ship user's own, or a shore/admin user's chosen one) - the API
+		// only sends it in that case.
+		var hasStock = items.length > 0 && items[0].stock_qty !== undefined;
+		var canEditStock = hasStock && items[0].can_edit_stock;
+		// Which vessels stock an item is fleet information - the API only
+		// sends it when browsing fleet-wide, so the column only exists then.
+		var hasVessels = items.length > 0 && items[0].vessels !== undefined;
+
+		var html = '<div class="table-responsive"><table id="catalog-items-table" class="table table-sm table-bordered" style="width:100%;">'
+			+ '<thead><tr><th>Article #</th><th>Name</th><th>Unit</th>'
+			+ (hasStock ? '<th>Opening Stock</th><th>In Stock</th>' : '')
+			+ '<th>Account #</th><th>Description</th>'
+			+ '<th>Part #</th><th>Drawing #</th><th>HS Code</th><th>Manufacturer</th>'
+			+ (hasVessels ? '<th>Vessels</th>' : '') + '</tr></thead><tbody>';
+		items.forEach(function (i) {
+			var cardUrl = hasStock ? itemStockCardUrl(i.id) : null;
+			var nameCell = cardUrl ? '<a href="' + cardUrl + '">' + esc(i.name) + '</a>' : esc(i.name);
+
+			html += '<tr>'
+				+ '<td>' + esc(i.article_number) + '</td>'
+				+ '<td>' + nameCell + '</td>'
+				+ '<td>' + esc(i.unit) + '</td>'
+				+ (hasStock
+					? '<td class="stock-cell" data-item-id="' + i.id + '">' + stockCellHtml(i, 'opening_stock', canEditStock) + '</td>'
+					+ '<td class="stock-cell" data-item-id="' + i.id + '">' + stockCellHtml(i, 'stock_qty', canEditStock) + '</td>'
+					: '')
+				+ '<td>' + esc(i.account_number) + '</td>'
+				+ '<td>' + esc(i.description) + '</td>'
+				+ '<td>' + esc(i.part_number) + '</td>'
+				+ '<td>' + esc(i.drawing_number) + '</td>'
+				+ '<td>' + esc(i.hs_code) + '</td>'
+				+ '<td>' + esc(i.manufacturer) + '</td>'
+				+ (hasVessels
+					? '<td>' + ((i.vessels || []).map(function (v) { return esc(v.name); }).join(', ')
+						|| '<span class="text-muted">none</span>') + '</td>'
+					: '')
+				+ '</tr>';
+		});
+		html += '</tbody></table></div>';
+
+		if (itemsTable) { itemsTable.destroy(); itemsTable = null; }
+		$('#catalog-items-wrapper').html(html);
+
+		itemsTable = $('#catalog-items-table').DataTable({
+			pageLength: 25,
+			order: [[1, 'asc']]
+		});
+	}
+
 	function loadItems(groupId) {
 		$('#catalog-items-wrapper').html('<p class="text-muted p-2">Loading items…</p>');
 
 		$.getJSON('{{url("/catalog/browse/items")}}/' + groupId, { vessel_id: vesselId }, function (items) {
-			if (items.length === 0) {
-				$('#catalog-items-wrapper').html('<p class="text-muted">No items in this category.</p>');
-				return;
-			}
+			renderItemsTable(items, 'No items in this category.');
+		}).fail(function () {
+			$('#catalog-items-wrapper').html('<p class="text-danger p-2">Could not load items. Please try again.</p>');
+		});
+	}
 
-			// Stock is only ever meaningful for a ship user looking at their own
-			// vessel - the API only sends it in that case.
-			var hasStock = items.length > 0 && items[0].stock_qty !== undefined;
-			var canEditStock = hasStock && items[0].can_edit_stock;
-			// Which vessels stock an item is fleet information - the API only
-			// sends it to shore staff, so the column only exists for them.
-			var hasVessels = items.length > 0 && items[0].vessels !== undefined;
+	function loadCategoryItems() {
+		$('#catalog-items-wrapper').html('<p class="text-muted p-2">Loading items…</p>');
 
-			var html = '<div class="table-responsive"><table id="catalog-items-table" class="table table-sm table-bordered" style="width:100%;">'
-				+ '<thead><tr><th>Article #</th><th>Name</th><th>Unit</th>'
-				+ (hasStock ? '<th>Opening Stock</th><th>In Stock</th>' : '')
-				+ '<th>Account #</th><th>Description</th>'
-				+ '<th>Part #</th><th>Drawing #</th><th>HS Code</th><th>Manufacturer</th>'
-				+ (hasVessels ? '<th>Vessels</th>' : '') + '</tr></thead><tbody>';
-			items.forEach(function (i) {
-				html += '<tr>'
-					+ '<td>' + esc(i.article_number) + '</td>'
-					+ '<td>' + esc(i.name) + '</td>'
-					+ '<td>' + esc(i.unit) + '</td>'
-					+ (hasStock
-						? '<td class="stock-cell" data-item-id="' + i.id + '">' + stockCellHtml(i, 'opening_stock', canEditStock) + '</td>'
-						+ '<td class="stock-cell" data-item-id="' + i.id + '">' + stockCellHtml(i, 'stock_qty', canEditStock) + '</td>'
-						: '')
-					+ '<td>' + esc(i.account_number) + '</td>'
-					+ '<td>' + esc(i.description) + '</td>'
-					+ '<td>' + esc(i.part_number) + '</td>'
-					+ '<td>' + esc(i.drawing_number) + '</td>'
-					+ '<td>' + esc(i.hs_code) + '</td>'
-					+ '<td>' + esc(i.manufacturer) + '</td>'
-					+ (hasVessels
-						? '<td>' + ((i.vessels || []).map(function (v) { return esc(v.name); }).join(', ')
-							|| '<span class="text-muted">none</span>') + '</td>'
-						: '')
-					+ '</tr>';
-			});
-			html += '</tbody></table></div>';
-
-			if (itemsTable) { itemsTable.destroy(); itemsTable = null; }
-			$('#catalog-items-wrapper').html(html);
-
-			itemsTable = $('#catalog-items-table').DataTable({
-				pageLength: 25,
-				order: [[1, 'asc']]
-			});
+		$.getJSON('{{url("/catalog/browse/category-items")}}/' + categoryId, { vessel_id: vesselId }, function (items) {
+			renderItemsTable(items, vesselId ? 'No items in this category for this vessel.' : 'No items in this category.');
+		}).fail(function () {
+			$('#catalog-items-wrapper').html('<p class="text-danger p-2">Could not load items. Please try again.</p>');
 		});
 	}
 

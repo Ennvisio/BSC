@@ -2,10 +2,8 @@
 
 namespace App\Imports;
 
-use App\Item;
-use App\ItemGroup;
+use App\Services\CatalogService;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
@@ -26,13 +24,18 @@ use Maatwebsite\Excel\Concerns\WithHeadingRow;
  * Each chunk is processed as one batch: item_groups resolution is
  * in-memory (only genuinely new folders cause an insert), then the whole
  * chunk's items are written with a single upsert() and the whole chunk's
- * vessel links with a single insertOrIgnore() - not one query per row.
+ * vessel links with a single insertOrIgnore() - not one query per row. The
+ * group-path resolution and the upsert/link mechanics themselves live in
+ * CatalogService, shared with manual single-item entry
+ * (ItemImportController's "Add item manually" tab) so neither path can
+ * drift from the other's behaviour.
  */
 class ItemCatalogImport implements ToCollection, WithChunkReading, WithHeadingRow
 {
     private int $vesselId;
     private int $categoryId;
     private string $uploadedByName;
+    private CatalogService $catalog;
 
     /** @var array<string,int> "{categoryId}|{parentId}|{name}" => item_groups.id, loaded once */
     private array $groupMap = [];
@@ -43,15 +46,13 @@ class ItemCatalogImport implements ToCollection, WithChunkReading, WithHeadingRo
     /** @var array<int,string> */
     public array $errors = [];
 
-    public function __construct(int $vesselId, int $categoryId, string $uploadedByName)
+    public function __construct(int $vesselId, int $categoryId, string $uploadedByName, ?CatalogService $catalog = null)
     {
         $this->vesselId = $vesselId;
         $this->categoryId = $categoryId;
         $this->uploadedByName = $uploadedByName;
-
-        foreach (ItemGroup::all(['id', 'category_id', 'parent_id', 'name']) as $group) {
-            $this->groupMap[$this->groupKey($group->category_id, $group->parent_id, $group->name)] = $group->id;
-        }
+        $this->catalog = $catalog ?? new CatalogService;
+        $this->groupMap = $this->catalog->loadGroupMap();
     }
 
     public function chunkSize(): int
@@ -79,27 +80,8 @@ class ItemCatalogImport implements ToCollection, WithChunkReading, WithHeadingRo
             return;
         }
 
-        // One upsert for the whole chunk. impa_code is deliberately left out
-        // of the update-columns list: it's only ever set on the initial
-        // INSERT branch (placeholder '-'), never overwritten on re-import.
-        Item::upsert(
-            $prepared,
-            ['article_number'],
-            ['item_group_id', 'category_id', 'name', 'unit', 'account_number', 'part_number',
-                'drawing_number', 'hs_code', 'manufacturer', 'description', 'updated_at']
-        );
-
-        $itemIds = Item::whereIn('article_number', array_column($prepared, 'article_number'))
-            ->pluck('id');
-
-        DB::table('vessel_items')->insertOrIgnore(
-            $itemIds->map(fn ($id) => [
-                'vessel_id' => $this->vesselId,
-                'item_id' => $id,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ])->all()
-        );
+        $itemIds = $this->catalog->upsertItems($prepared);
+        $this->catalog->linkVesselToItems($this->vesselId, $itemIds->values());
 
         $this->importedCount += count($prepared);
     }
@@ -125,7 +107,7 @@ class ItemCatalogImport implements ToCollection, WithChunkReading, WithHeadingRo
 
         return [
             'article_number' => $articleNumber,
-            'item_group_id' => $this->resolveGroupPath($segments),
+            'item_group_id' => $this->catalog->resolveGroupPath($segments, $this->categoryId, $this->groupMap),
             'category_id' => $this->categoryId,
             'name' => $itemName,
             'unit' => trim((string) ($row['unit_code'] ?? '')) ?: 'PC',
@@ -141,54 +123,6 @@ class ItemCatalogImport implements ToCollection, WithChunkReading, WithHeadingRo
             'created_at' => $now,
             'updated_at' => $now,
         ];
-    }
-
-    /**
-     * Walk every segment of the path, finding-or-creating each item_groups
-     * node against the in-memory map (populated once in the constructor,
-     * updated immediately on every insert so later rows - in this chunk or
-     * any later one - reuse it instead of re-querying the database).
-     */
-    private function resolveGroupPath(array $segments): int
-    {
-        $parentId = null;
-        $parentPath = '';
-        $groupId = null;
-
-        foreach ($segments as $name) {
-            $key = $this->groupKey($this->categoryId, $parentId, $name);
-
-            if (isset($this->groupMap[$key])) {
-                $groupId = $this->groupMap[$key];
-            } else {
-                $path = $parentPath === '' ? $name : $parentPath.' -> '.$name;
-                $group = ItemGroup::create([
-                    'category_id' => $this->categoryId,
-                    'parent_id' => $parentId,
-                    'name' => $name,
-                    'path' => $path,
-                ]);
-                $groupId = $group->id;
-                $this->groupMap[$key] = $groupId;
-            }
-
-            $parentId = $groupId;
-            $parentPath = $parentPath === '' ? $name : $parentPath.' -> '.$name;
-        }
-
-        return $groupId;
-    }
-
-    /**
-     * item_groups.name uses a case-insensitive collation (utf8mb4_unicode_ci),
-     * so MySQL's unique index treats "AND" and "and" as the same value - the
-     * in-memory map has to match that or it'll attempt a real duplicate INSERT
-     * (see e.g. "Electrodes for Nickel, Nickel-Alloys AND/and Nickel-Alloy
-     * Steels" appearing both ways across one real spreadsheet).
-     */
-    private function groupKey(int $categoryId, ?int $parentId, string $name): string
-    {
-        return $categoryId.'|'.($parentId ?? 'root').'|'.mb_strtolower($name);
     }
 
     private function nullableCell(Collection $row, string $key): ?string
