@@ -175,8 +175,9 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
   Route::get('/catalog/browse/category-items/{categoryId}', 'CatalogController@categoryItems')->name('catalog.browse.categoryItems');
   Route::get('/catalog/browse/search', 'CatalogController@search')->name('catalog.browse.search');
 
-  // Vessel stock (ROB). Every route here is Master-only - enforced in the
-  // controller, since this app has no role middleware.
+  // Vessel stock (ROB). Master, Chief Officer and Second Engineer, except
+  // stock.update (Browse Catalog's inline edit), which is Master-only -
+  // enforced in the controller, since this app has no role middleware.
   Route::get('/stock/upload', 'StockController@create')->name('stock.upload.form');
   Route::get('/stock/template', 'StockController@template')->name('stock.template');
   Route::post('/stock/upload', 'StockController@store')->name('stock.upload.store');

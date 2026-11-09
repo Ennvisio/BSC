@@ -164,9 +164,13 @@
 						<td>{{!empty($vessel_cert->vessel->name)?$vessel_cert->vessel->name:''}}</td>
 						@endif
 						<td class="tdfile">
-							<button type="button" class="cert_file btn btn-info btn-sm" data-toggle="modal" data-target="#fileShowModal" data-file="{{url('/')}}/{{!empty($vessel_cert->cert_copy)?$vessel_cert->cert_copy:''}}" data-name="{{ $vessel_cert->title }}">
+							@if(!empty($vessel_cert->cert_copy))
+							<button type="button" class="cert_file btn btn-info btn-sm" data-toggle="modal" data-target="#fileShowModal" data-file="{{url('/')}}/{{$vessel_cert->cert_copy}}" data-name="{{ $vessel_cert->title }}">
 								<i class="fas fa-eye"></i> Show File
 							</button>
+							@else
+							<span class="text-muted">No file</span>
+							@endif
 						</td>
 						<td class="action">
 							<button class="btn btn-info btn-sm edit-certificate" data-id="{{$vessel_cert->id}}" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>
@@ -290,7 +294,7 @@
 					</div>
 					<div class="row justify-content-center form-group">
 						<div class="col-md-3">
-							<label for="Certificate_Copy">Certificate Copy: </label>
+							<label for="Certificate_Copy">Certificate Copy (optional): </label>
 						</div>
 						<div class="col-md-7">
 							<div class="row justify-content-center">

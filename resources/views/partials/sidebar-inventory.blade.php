@@ -9,8 +9,9 @@
 	logging. Takes $mode:
 	  'ship'  - every ship role sees Current Stock; Stock Report stays
 	            Master/Chief Engineer only (unchanged, not widened); Update
-	            Stock is Master-only; Log Consumption is chief-officer/
-	            second-engineer only; Consumption Log is every ship role.
+	            Stock is Master/chief-officer/second-engineer; Log Consumption
+	            is chief-officer/second-engineer only; Consumption Log is
+	            every ship role.
 	  'shore' - read-only only (Current Stock + Stock Report) - shore never
 	            writes to a vessel's stock. Used both by the fleet-wide SRD/
 	            SSM roles and by super-admin/GM (SRD) up in the admin block,
@@ -36,7 +37,7 @@
 		@endif
 		<a href="{{ url('/catalog/import') }}" class="srd-nav-item {{ $link(['catalog/import', 'catalog/import/history']) }}"><i class="fas fa-upload"></i>Catalog Import</a>
 		@if($mode === 'ship')
-		@if($role === 'master')
+		@if(in_array($role, ['master', 'chief-officer', 'second-engineer']))
 		<a href="{{ url('/stock/upload') }}" class="srd-nav-item {{ $link(['stock/upload', 'stock/history']) }}"><i class="fas fa-archive"></i>Update Stock</a>
 		@endif
 		@if(in_array($role, ['chief-officer', 'second-engineer']))

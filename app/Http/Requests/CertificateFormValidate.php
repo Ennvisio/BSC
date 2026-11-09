@@ -31,7 +31,7 @@ class CertificateFormValidate extends FormRequest
            'Certificate_Expire_Date'=>['nullable', 'date'],
            'validity_years'=>['nullable', 'integer', 'min:1', 'max:50'],
            'is_permanent'=>['nullable', 'boolean'],
-           'Certificate_Copy'=>'required|mimes:pdf|max:10000'
+           'Certificate_Copy'=>'nullable|mimes:pdf|max:10000'
        ];
    }
 

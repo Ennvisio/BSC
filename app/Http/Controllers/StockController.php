@@ -14,22 +14,25 @@ use Maatwebsite\Excel\Facades\Excel;
 /**
  * Per-vessel stock (ROB) maintenance.
  *
- * Both manual routes in here are Master-only. Stock is a statement about what
- * is physically in the ship's store, so the authority for it sits with the
- * Master on board - not with shore staff, who can't see the store, and not
- * with the officers who raise requisitions against it.
+ * Stock is a statement about what is physically in the ship's store, so the
+ * authority for it sits on board, never with shore staff, who can't see the
+ * store. The Update Stock screens (upload and manual entry) are open to the
+ * Master, Chief Officer and Second Engineer; the inline correction on Browse
+ * Catalog (update()) stays Master-only.
  *
  * The third way stock moves - confirmed receipts topping it up - is automatic
  * and lives in RoleController@approveRequisition.
  */
 class StockController extends Controller
 {
+    private const STOCK_EDITOR_ROLES = ['master', 'chief-officer', 'second-engineer'];
+
     private StockService $stock;
 
     public function __construct(StockService $stock)
     {
         // Auth is wired per-controller in this app, not on the route groups.
-        // The Master-only checks below all read auth()->user()->role, which
+        // The role checks below all read auth()->user()->role, which
         // fatals rather than redirecting if a guest ever gets this far.
         $this->middleware('auth');
 
@@ -38,7 +41,7 @@ class StockController extends Controller
 
     public function create()
     {
-        $this->authorizeMaster();
+        $this->authorizeStockEditor();
 
         return view('layouts.stock-upload', [
             'vessel' => auth()->user()->role->vessel,
@@ -52,7 +55,7 @@ class StockController extends Controller
      */
     public function template(Request $request)
     {
-        $this->authorizeMaster();
+        $this->authorizeStockEditor();
 
         $request->validate(['category_id' => 'required|exists:categories,id']);
 
@@ -67,7 +70,7 @@ class StockController extends Controller
 
     public function store(Request $request)
     {
-        $this->authorizeMaster();
+        $this->authorizeStockEditor();
 
         // Same reasoning as the catalog import: a large file's parsing alone
         // can outrun PHP's default 30s limit.
@@ -78,8 +81,8 @@ class StockController extends Controller
             'stock_file' => 'required|file|mimes:xlsx,xls,csv',
         ]);
 
-        // The vessel always comes from the Master's own role, never the
-        // request - a Master can only ever state their own ship's stock.
+        // The vessel always comes from the officer's own role, never the
+        // request - they can only ever state their own ship's stock.
         $vesselId = auth()->user()->role->vessel_id;
         $file = $request->file('stock_file');
 
@@ -128,7 +131,7 @@ class StockController extends Controller
 
     public function history()
     {
-        $this->authorizeMaster();
+        $this->authorizeStockEditor();
 
         $imports = StockImport::with(['category', 'uploadedBy'])
             ->where('vessel_id', auth()->user()->role->vessel_id)
@@ -200,7 +203,7 @@ class StockController extends Controller
      */
     public function searchItems(Request $request)
     {
-        $this->authorizeMaster();
+        $this->authorizeStockEditor();
 
         $term = trim((string) $request->query('q'));
         $vesselId = auth()->user()->role->vessel_id;
@@ -241,7 +244,7 @@ class StockController extends Controller
      */
     public function storeManual(Request $request)
     {
-        $this->authorizeMaster();
+        $this->authorizeStockEditor();
 
         $request->validate([
             'rows' => 'required|array|min:1|max:200',
@@ -253,8 +256,8 @@ class StockController extends Controller
 
         $vesselId = auth()->user()->role->vessel_id;
 
-        // Same rule update() enforces for a single item - a Master can only
-        // set stock for items their own vessel actually carries.
+        // Same rule update() enforces for a single item - stock can only be
+        // set for items the officer's own vessel actually carries.
         $itemIds = collect($request->rows)->pluck('item_id')->unique()->values();
         $carriedIds = VesselItem::where('vessel_id', $vesselId)->whereIn('item_id', $itemIds)->pluck('item_id');
         $missingIds = $itemIds->diff($carriedIds);
@@ -324,8 +327,13 @@ class StockController extends Controller
             && ! empty(auth()->user()->role->vessel_id);
     }
 
-    private function authorizeMaster(): void
+    private function authorizeStockEditor(): void
     {
-        abort_unless($this->isMaster(), 403, 'Only the Master can maintain vessel stock.');
+        abort_unless(
+            in_array(auth()->user()->role->role ?? null, self::STOCK_EDITOR_ROLES, true)
+                && ! empty(auth()->user()->role->vessel_id),
+            403,
+            'Only the Master, Chief Officer or Second Engineer can maintain vessel stock.'
+        );
     }
 }

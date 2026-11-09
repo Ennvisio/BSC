@@ -92,9 +92,13 @@
 									<td>{{!empty($vessel_certificate->exp_date)?$vessel_certificate->exp_date:''}}</td>
 									<td>{{!empty($vessel_certificate->vessel->name)?$vessel_certificate->vessel->name:''}}</td>
 									<td class="tdfile">
-										<button type="button" class="cert_file btn btn-info" data-toggle="modal" data-target="#fileShowModal" data-file="{{url('/')}}/{{!empty($vessel_certificate->cert_copy)?$vessel_certificate->cert_copy:''}}" data-name="{{!empty($vessel_certificate->name)?$vessel_certificate->name:''}}"> 
+										@if(!empty($vessel_certificate->cert_copy))
+										<button type="button" class="cert_file btn btn-info" data-toggle="modal" data-target="#fileShowModal" data-file="{{url('/')}}/{{$vessel_certificate->cert_copy}}" data-name="{{!empty($vessel_certificate->name)?$vessel_certificate->name:''}}"> 
 											<i class="fas fa-eye"></i> Show File
 										</button>
+										@else
+										<span class="text-muted">No file</span>
+										@endif
 									</td>
 									<td class="action">
 										<button class="btn btn-info restore" data-id="{{$vessel_certificate->id}}" data-type="certificate"><i class="fas fa-undo"></i></button>

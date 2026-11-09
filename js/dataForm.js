@@ -321,7 +321,7 @@ $(document).on('click','.edit-certificate',function(e){
       // Date/validity show-hide for the record actually being edited,
       // not just whatever the form happened to load with.
       $('#certificate_edit_form .cert-permanent').trigger('change');
-      $('#certificate_edit_form iframe#prev_image1exist').attr('src',res[1]+'/'+res[0]['cert_copy']);
+      $('#certificate_edit_form iframe#prev_image1exist').attr('src',res[0]['cert_copy'] ? res[1]+'/'+res[0]['cert_copy'] : '');
       $('#certificate_edit_form .Cert_Id').val(res[0]['id'])
     },
     error: function(errors)

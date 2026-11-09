@@ -5,6 +5,7 @@ namespace Tests\Feature\ManualEntry;
 use App\StockImport;
 use App\StockMovement;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\BuildsRequisitionSchema;
 use Tests\TestCase;
 
@@ -109,6 +110,40 @@ class ManualStockEntryTest extends TestCase
         ])->assertStatus(403);
 
         $this->assertSame(0, StockMovement::count());
+    }
+
+    #[DataProvider('stockOfficerRoles')]
+    public function test_chief_officer_and_second_engineer_can_use_update_stock(string $role): void
+    {
+        $category = $this->makeCategory();
+        $item = $this->makeItem($category->id);
+        $this->carryItem($item->id);
+        $officer = $this->makeUser($role, $this->vesselId);
+
+        $this->actingAs($officer)->get('/stock/upload')->assertOk();
+        $this->actingAs($officer)->get('/stock/history')->assertOk();
+        $this->actingAs($officer)->postJson('/stock/manual', [
+            'rows' => [['item_id' => $item->id, 'stock_qty' => 5]],
+        ])->assertOk();
+
+        $this->assertSame(5, (int) DB::table('vessel_items')->where('item_id', $item->id)->value('stock_qty'));
+    }
+
+    #[DataProvider('stockOfficerRoles')]
+    public function test_browse_catalog_inline_edit_stays_master_only(string $role): void
+    {
+        $category = $this->makeCategory();
+        $item = $this->makeItem($category->id);
+        $this->carryItem($item->id);
+
+        $this->actingAs($this->makeUser($role, $this->vesselId))->postJson('/stock/update', [
+            'item_id' => $item->id, 'stock_qty' => 5,
+        ])->assertStatus(403);
+    }
+
+    public static function stockOfficerRoles(): array
+    {
+        return [['chief-officer'], ['second-engineer']];
     }
 
     public function test_an_item_not_in_the_vessels_catalog_is_rejected(): void
