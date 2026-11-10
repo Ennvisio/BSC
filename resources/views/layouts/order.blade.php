@@ -24,6 +24,11 @@ position: absolute;
 @isset($stats)
 @include('partials.requisition-stat-cards')
 @endisset
+{{-- SSM roles and GM (SRD)'s delegates get the same fleet overview as GM
+	 (SRD)'s own dashboard - HomeController::fleetOverviewData(). --}}
+@isset($certificateReport)
+@include('partials.fleet-overview')
+@endisset
 {{-- The dashboard (HomeController@index, $stats passed) is stat cards only -
 	 no list underneath. Every other page reusing this view (Pending/
 	 Approved/My Approvals) never passes $stats, so they're unaffected. --}}
@@ -271,3 +276,8 @@ position: absolute;
 @include('pdf.logo-base64')
 <!-- logo-base64 for pdf page -->
 @endsection
+@isset($certificateReport)
+@section('home-js')
+@include('partials.fleet-overview-scripts')
+@endsection
+@endisset

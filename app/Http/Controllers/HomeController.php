@@ -120,9 +120,8 @@ class HomeController extends Controller
       $stats = $this->requisitionDashboardStats();
       $items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
       $categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
-      $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
 
-      return view('layouts.order', compact('items', 'categories', 'vessels', 'stats'));
+      return view('layouts.order', compact('items', 'categories', 'stats') + $this->fleetOverviewData());
     }
     // GM (SRD)'s four named delegates: each reviews only what GM actually
     // delegated to them (RoleController::pendingRequisition()'s dgm-srd/
@@ -135,16 +134,11 @@ class HomeController extends Controller
       $serviceStats = app(ServiceRequisitionApprovalController::class)->stats();
       $items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
       $categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
-      $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
 
-      return view('layouts.order', compact('items', 'categories', 'vessels', 'stats', 'serviceStats'));
+      return view('layouts.order', compact('items', 'categories', 'stats', 'serviceStats') + $this->fleetOverviewData());
     }
     elseif(!empty(auth()->user()->role->role && auth()->user()->role->user_type=='srd')||!empty(auth()->user()->role->role && auth()->user()->role->role=='super-admin')){
-      $surveys=Survey::where('status',true)->orderBy('name','asc')->get();
       $certificates=Certificate::orderBy('created_at','desc')->where('status',true)->get();
-      $vessel_certificates=VesselCertificate::orderBy('created_at','desc')->where('status',true)->get();
-      $vessel_surveys=VesselSurvey::orderBy('created_at','desc')->where('status',true)->get();
-      $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
 
       // GM (SRD) is the only remaining srd-family role reaching this branch
       // with a personal seat in the approval chain - Technical/Marine
@@ -167,17 +161,33 @@ class HomeController extends Controller
         }
       }
 
-      // Vessel summary + per-category expansion, built from each vessel's
-      // own certificates rather than the legacy fixed certificate-type list
-      // (see App\CertificateValidityReport for why that grid no longer fits).
-      $certificateReport = \App\CertificateValidityReport::forVessels($vessels);
-
-      return view('home',compact('surveys','certificates','vessels','stats','serviceStats','overview','certificateReport'));
+      return view('home', compact('certificates','stats','serviceStats','overview') + $this->fleetOverviewData());
     }
 
     // Nothing above claimed this account (a role with no department). Say so
     // rather than returning nothing, which the browser shows as a blank page.
     abort(403, 'This account has no user type set. Ask an administrator to edit the user and choose Ship, SSM or SRD.');
+  }
+
+  /**
+   * The fleet overview every shore SRD/SSM dashboard shows (Fleet cards,
+   * Validity of Certificates, Survey Report - partials.fleet-overview).
+   * Certificates/Surveys only link through for the roles allowed to open
+   * those pages (authorizeFleetRecords), so nobody gets a card that 403s.
+   */
+  private function fleetOverviewData(): array
+  {
+    $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
+
+    return [
+      'vessels' => $vessels,
+      'surveys' => Survey::with('vesselSurveys')->where('status', true)->orderBy('name', 'asc')->get(),
+      // Vessel summary + per-category expansion, built from each vessel's
+      // own certificates rather than the legacy fixed certificate-type list
+      // (see App\CertificateValidityReport for why that grid no longer fits).
+      'certificateReport' => \App\CertificateValidityReport::forVessels($vessels),
+      'fleetRecordsLinks' => $this->isFleetRecordsAdmin(),
+    ];
   }
 
   /**
