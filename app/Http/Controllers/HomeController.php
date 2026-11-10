@@ -217,7 +217,8 @@ class HomeController extends Controller
   }
   /**
    * Certificates/Surveys are fleet-wide reference data, reachable two ways:
-   * super-admin/GM (SRD)/admin manage the whole fleet (any vessel, plus the
+   * super-admin/admin and every SRD/SSM role (GM (SRD) included) manage the
+   * whole fleet (any vessel, plus the
    * certificate TYPE catalog itself - category/validity/permanent); a
    * vessel's own Master/Chief Engineer see and add records for their OWN
    * vessel only, never another one and never the type catalog (that stays
@@ -226,7 +227,8 @@ class HomeController extends Controller
    */
   private function isFleetRecordsAdmin(): bool
   {
-    return in_array(auth()->user()->role->role ?? null, ['super-admin', 'gm-srd', 'admin'], true);
+    return in_array(auth()->user()->role->role ?? null, ['super-admin', 'admin'], true)
+      || in_array(auth()->user()->role->user_type ?? null, ['srd', 'ssm'], true);
   }
 
   private function isVesselRecordsManager(): bool

@@ -75,8 +75,8 @@ class FleetOverviewDashboardTest extends TestCase
     public static function shoreRoles(): array
     {
         return [
-            'SSM' => ['am-ssm', false],
-            'SRD delegate' => ['dgm-srd', false],
+            'SSM' => ['am-ssm', true],
+            'SRD delegate' => ['dgm-srd', true],
             'GM (SRD)' => ['gm-srd', true],
             'super-admin' => ['super-admin', true],
         ];
@@ -93,11 +93,33 @@ class FleetOverviewDashboardTest extends TestCase
             ->assertSee('Certificates')
             ->assertSee('Load Line');
 
-        // Certificates/Surveys pages 403 for anyone but the fleet records
-        // admins, so only they get a card that links there.
         $linksRecords
             ? $response->assertSee(url('/home/certificate'), false)
             : $response->assertDontSee('href="'.url('/home/certificate').'"', false);
+    }
+
+    public static function srdSsmRoles(): array
+    {
+        return [['am-ssm'], ['superintendent-ssm'], ['dgm-srd'], ['technical-superintendent'], ['gm-srd']];
+    }
+
+    #[DataProvider('srdSsmRoles')]
+    public function test_srd_and_ssm_get_fleet_records_and_categories_menu(string $role): void
+    {
+        $user = $this->makeUser($role);
+        $html = $this->actingAs($user)->get('/home')->assertOk()->getContent();
+
+        foreach (['/home/certificate', '/home/survey', '/home/vessel', '/home/category'] as $path) {
+            $this->assertSame(1, substr_count($html, 'href="'.url($path).'" class="srd-nav-item'), "$role sidebar: $path");
+        }
+
+        $this->actingAs($user)->get('/home/certificate')->assertOk()->assertSee('Load Line');
+        $this->actingAs($user)->get('/home/survey')->assertOk();
+    }
+
+    public function test_ship_crew_still_cannot_open_fleet_certificates(): void
+    {
+        $this->actingAs($this->makeUser('chief-officer', $this->vesselId))->get('/home/certificate')->assertForbidden();
     }
 
     public function test_ship_dashboard_does_not_show_it(): void
