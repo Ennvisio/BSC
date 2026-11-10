@@ -21,11 +21,12 @@
   <a href="{{url('/home/survey')}}" class="srd-nav-item {{Route::current()->uri() == 'home/survey' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Surveys<span class="srd-nav-count">{{ \App\Survey::where('status',true)->count() }}</span></a>
   <a href="{{url('/home/vessel')}}" class="srd-nav-item {{Route::current()->uri() == 'home/vessel' ? 'active' : ''}}"><i class="fas fa-ship"></i>Vessels<span class="srd-nav-count">{{ \App\Vessel::where('status',true)->count() }}</span></a>
 
-  <div class="srd-nav-label">Stores</div>
-  {{-- Categories is super-admin/GM (SRD) here (the other SRD/SSM roles get it
-       further down); Items is no longer surfaced anywhere - the catalog is
-       browsed through Browse Catalog instead. --}}
-  @if(in_array(auth()->user()->role->role, ['super-admin', 'gm-srd']))
+  {{-- Super-admin's Requisitions section (Categories + the all-fleet list) -
+       SRD/SSM roles (GM (SRD) included) get Categories in their own
+       Requisitions section further down. Items is no longer surfaced
+       anywhere - the catalog is browsed through Browse Catalog. --}}
+  @if(auth()->user()->role->role == 'super-admin')
+  <div class="srd-nav-label">Requisitions</div>
   <a href="{{url('/home/category')}}" class="srd-nav-item {{Route::current()->uri() == 'home/category' ? 'active' : ''}}"><i class="fas fa-th"></i>Categories<span class="srd-nav-count">{{ \App\Category::where('status',true)->count() }}</span></a>
   @endif
   {{-- The all-fleet requisition list (/home/order) is a super-admin menu item. --}}
@@ -104,18 +105,15 @@
   <a href="{{url('/home')}}" class="srd-nav-item {{Route::current()->uri() == 'home' ? 'active' : ''}}"><i class="fas fa-th-large"></i>Dashboard</a>
   @endif
 
-  {{-- Same Fleet Records and Categories links super-admin/GM (SRD) get above,
-       for every other SRD and SSM role (HomeController::isFleetRecordsAdmin
-       lets them manage certificates/surveys fleet-wide). GM (SRD) is
-       excluded here only because it already has them in that block. --}}
+  {{-- Same Fleet Records links super-admin/GM (SRD) get above, for every
+       other SRD and SSM role (HomeController::isFleetRecordsAdmin lets them
+       manage certificates/surveys fleet-wide). GM (SRD) is excluded here
+       only because it already has them in that block. --}}
   @if(in_array(auth()->user()->role->user_type, ['srd', 'ssm']) && auth()->user()->role->role != 'gm-srd')
   <div class="srd-nav-label">Fleet Records</div>
   <a href="{{url('/home/certificate')}}" class="srd-nav-item {{Route::current()->uri() == 'home/certificate' ? 'active' : ''}}"><i class="fas fa-certificate"></i>Certificates<span class="srd-nav-count">{{ \App\VesselCertificate::where('status',true)->count() }}</span></a>
   <a href="{{url('/home/survey')}}" class="srd-nav-item {{Route::current()->uri() == 'home/survey' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Surveys<span class="srd-nav-count">{{ \App\Survey::where('status',true)->count() }}</span></a>
   <a href="{{url('/home/vessel')}}" class="srd-nav-item {{Route::current()->uri() == 'home/vessel' ? 'active' : ''}}"><i class="fas fa-ship"></i>Vessels<span class="srd-nav-count">{{ \App\Vessel::where('status',true)->count() }}</span></a>
-
-  <div class="srd-nav-label">Stores</div>
-  <a href="{{url('/home/category')}}" class="srd-nav-item {{Route::current()->uri() == 'home/category' ? 'active' : ''}}"><i class="fas fa-th"></i>Categories<span class="srd-nav-count">{{ \App\Category::where('status',true)->count() }}</span></a>
   @endif
 
   {{-- Fleet-wide, unlike Master/Chief Engineer's own version of this group -
@@ -132,6 +130,11 @@
   @endif
 
   <div class="srd-nav-label">Requisitions</div>
+  {{-- Every SRD/SSM role (GM (SRD) included) - super-admin has its own
+       Requisitions section with Categories up top. --}}
+  @if(in_array(auth()->user()->role->user_type, ['srd', 'ssm']))
+  <a href="{{url('/home/category')}}" class="srd-nav-item {{Route::current()->uri() == 'home/category' ? 'active' : ''}}"><i class="fas fa-th"></i>Categories<span class="srd-nav-count">{{ \App\Category::where('status',true)->count() }}</span></a>
+  @endif
   @include('partials.sidebar-item-requisition', ['mode' => 'shore'])
   {{-- Service requisitions stop at SRD level, so only GM (SRD) and its four
        delegates ever act on one - the SSM roles would see a list they can

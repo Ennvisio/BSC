@@ -113,8 +113,24 @@ class FleetOverviewDashboardTest extends TestCase
             $this->assertSame(1, substr_count($html, 'href="'.url($path).'" class="srd-nav-item'), "$role sidebar: $path");
         }
 
+        // Categories sits under Requisitions, and there's no Stores section.
+        $this->assertStringNotContainsString('<div class="srd-nav-label">Stores</div>', $html);
+        $requisitions = strpos($html, '<div class="srd-nav-label">Requisitions</div>');
+        $this->assertNotFalse($requisitions);
+        $this->assertGreaterThan($requisitions, strpos($html, 'href="'.url('/home/category').'" class="srd-nav-item'));
+
         $this->actingAs($user)->get('/home/certificate')->assertOk()->assertSee('Load Line');
         $this->actingAs($user)->get('/home/survey')->assertOk();
+    }
+
+    public function test_super_admin_has_categories_under_requisitions_not_stores(): void
+    {
+        $html = $this->actingAs($this->makeUser('super-admin'))->get('/home')->assertOk()->getContent();
+
+        $this->assertStringNotContainsString('<div class="srd-nav-label">Stores</div>', $html);
+        $requisitions = strpos($html, '<div class="srd-nav-label">Requisitions</div>');
+        $this->assertNotFalse($requisitions);
+        $this->assertGreaterThan($requisitions, strpos($html, 'href="'.url('/home/category').'" class="srd-nav-item'));
     }
 
     public function test_ship_crew_still_cannot_open_fleet_certificates(): void
