@@ -40,6 +40,7 @@ trait BuildsRequisitionSchema
             // for the nav badges, for the roles these tests act as.
             '2019_02_11_091238_create_surveys_table.php',
             '2019_04_23_092447_create_vessel_certificates_table.php',
+            '2026_09_23_110000_create_certificate_categories_table.php',
             '2019_02_14_041739_create_categories_table.php',
             '2019_02_14_041843_create_items_table.php',
             '2019_02_14_041855_create_orders_table.php',

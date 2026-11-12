@@ -152,6 +152,7 @@
   <div class="srd-nav-label">Admin</div>
   <a href="{{url('/home/user')}}" class="srd-nav-item {{Route::current()->uri() == 'home/user' ? 'active' : ''}}"><i class="fas fa-user"></i>Users</a>
   <a href="{{url('/home/trash')}}" class="srd-nav-item {{Route::current()->uri() == 'home/trash' ? 'active' : ''}}"><i class="fas fa-trash-alt"></i>Trash</a>
+  <a href="{{ route('get.certificate-categories') }}" class="srd-nav-item {{Route::current()->uri() == 'home/certificate-category' ? 'active' : ''}}"><i class="fas fa-tags"></i>Certificate Categories<span class="srd-nav-count">{{ \App\CertificateCategory::where('status',true)->count() }}</span></a>
   @endif
 
   @if(!empty(auth()->user()->role->role) && auth()->user()->role->role=='super-admin')

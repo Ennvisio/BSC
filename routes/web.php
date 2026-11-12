@@ -19,6 +19,7 @@ Route::post('/certificate/update', 'HomeController@updateOneCertificate')->name(
 Route::post('/certificate/delete', 'HomeController@deleteOneCertificate')->name('delete.one.certificate');
 // Certificate categories - super-admin's list, picked from when a vessel's
 // Master/Chief Engineer records a certificate of their own.
+Route::get('/home/certificate-category', 'HomeController@getCertificateCategories')->name('get.certificate-categories');
 Route::post('/certificate-category/store', 'HomeController@storeCertificateCategory')->name('store.certificate-category');
 Route::post('/certificate-category/update', 'HomeController@updateCertificateCategory')->name('update.certificate-category');
 Route::post('/certificate-category/delete', 'HomeController@deleteCertificateCategory')->name('delete.certificate-category');

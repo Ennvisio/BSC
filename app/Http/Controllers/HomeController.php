@@ -337,10 +337,9 @@ class HomeController extends Controller
     $this->authorizeFleetRecords();
 
     // The list Master/Chief Engineer choose from when recording a
-    // certificate. Maintained by super-admin only - see
-    // storeCertificateCategory below.
+    // certificate. Maintained on its own Admin page - see
+    // getCertificateCategories below.
     $categories = CertificateCategory::where('status', true)->orderBy('name')->get();
-    $categoriesManageable = $this->isFleetRecordsAdmin();
 
     if ($this->isVesselRecordsManager()) {
       $vessel_certificates = VesselCertificate::with('category')->where('status', true)
@@ -350,14 +349,13 @@ class HomeController extends Controller
       return view('layouts.certificate', [
         'categories' => $categories, 'vessel_certificates' => $vessel_certificates,
         'vessels' => null, 'lockedVessel' => auth()->user()->role->vessel,
-        'categoriesManageable' => $categoriesManageable,
       ]);
     }
 
     $vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
     $vessel_certificates = VesselCertificate::with('category')->orderBy('created_at', 'desc')->where('status', true)->get();
 
-    return view('layouts.certificate', compact('categories', 'vessels', 'vessel_certificates', 'categoriesManageable'))
+    return view('layouts.certificate', compact('categories', 'vessels', 'vessel_certificates'))
       ->with('lockedVessel', null);
   }
   public function certificateStore(CertificateFormValidate $request)
@@ -480,6 +478,15 @@ private function expiryDateFor(Request $request, bool $isPermanent): ?string
  * own list (isFleetRecordsAdmin): a vessel's Master/Chief Engineer picks
  * from it when recording a certificate, but never adds to it.
  */
+public function getCertificateCategories()
+{
+  abort_unless($this->isFleetRecordsAdmin(), 403);
+
+  $categories = CertificateCategory::where('status', true)->orderBy('name')->get();
+
+  return view('layouts.certificate-category', compact('categories'));
+}
+
 public function storeCertificateCategory(CertificateCategoryFormValidate $request)
 {
   abort_unless($this->isFleetRecordsAdmin(), 403);
@@ -1790,17 +1797,15 @@ public function searchCertificate(Request $r)
 
   $vessel_certificates=VesselCertificate::with('category')->orderBy('created_at','desc')->where('status',true)->where('vessel_id',$shipId)->get();
  $categories=CertificateCategory::where('status',true)->orderBy('name')->get();
- $categoriesManageable = $this->isFleetRecordsAdmin();
 
  if ($this->isVesselRecordsManager()) {
    return view('layouts.certificate', [
      'vessel_certificates' => $vessel_certificates, 'categories' => $categories,
      'vessels' => null, 'lockedVessel' => auth()->user()->role->vessel,
-     'categoriesManageable' => $categoriesManageable,
    ]);
  }
 
  $vessels=Vessel::orderBy('created_at','desc')->where('status',true)->get();
- return view('layouts.certificate',compact('vessel_certificates','vessels','categories','categoriesManageable'))->with('ship_id',$r->ship_id)->with('lockedVessel', null);
+ return view('layouts.certificate',compact('vessel_certificates','vessels','categories'))->with('ship_id',$r->ship_id)->with('lockedVessel', null);
 }
 }

@@ -42,6 +42,7 @@ class CertificateCopyOptionalTest extends TestCase
             $t->boolean('status')->default(true);
             $t->timestamps();
         });
+        Schema::dropIfExists('certificate_categories');
         Schema::create('certificate_categories', function (Blueprint $t) {
             $t->id();
             $t->string('name');

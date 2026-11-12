@@ -49,6 +49,7 @@ class FleetOverviewDashboardTest extends TestCase
             $t->timestamps();
         });
         foreach (['certificates', 'certificate_categories'] as $table) {
+            Schema::dropIfExists($table);
             Schema::create($table, function (Blueprint $t) {
                 $t->id();
                 $t->string('name');
@@ -131,6 +132,36 @@ class FleetOverviewDashboardTest extends TestCase
         $requisitions = strpos($html, '<div class="srd-nav-label">Requisitions</div>');
         $this->assertNotFalse($requisitions);
         $this->assertGreaterThan($requisitions, strpos($html, 'href="'.url('/home/category').'" class="srd-nav-item'));
+    }
+
+    #[DataProvider('adminMenuRoles')]
+    public function test_certificate_categories_live_on_their_own_admin_page(string $role): void
+    {
+        DB::table('certificate_categories')->insert(['name' => 'Statutory Certificates', 'status' => true]);
+        $user = $this->makeUser($role);
+
+        $html = $this->actingAs($user)->get('/home')->assertOk()->getContent();
+        $admin = strpos($html, '<div class="srd-nav-label">Admin</div>');
+        $this->assertNotFalse($admin);
+        $this->assertGreaterThan($admin, strpos($html, 'href="'.route('get.certificate-categories').'" class="srd-nav-item'));
+
+        $this->actingAs($user)->get('/home/certificate-category')->assertOk()
+            ->assertSee('Certificate Categories')
+            ->assertSee('Statutory Certificates');
+
+        // No longer a section on the Certificates page itself.
+        $this->actingAs($user)->get('/home/certificate')->assertOk()
+            ->assertDontSee('id="cert-category-table"', false);
+    }
+
+    public static function adminMenuRoles(): array
+    {
+        return [['super-admin'], ['gm-srd']];
+    }
+
+    public function test_ship_crew_cannot_open_certificate_categories(): void
+    {
+        $this->actingAs($this->makeUser('master', $this->vesselId))->get('/home/certificate-category')->assertForbidden();
     }
 
     public function test_ship_crew_still_cannot_open_fleet_certificates(): void
