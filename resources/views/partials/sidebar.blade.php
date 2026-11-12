@@ -29,9 +29,11 @@
   <div class="srd-nav-label">Requisitions</div>
   <a href="{{url('/home/category')}}" class="srd-nav-item {{Route::current()->uri() == 'home/category' ? 'active' : ''}}"><i class="fas fa-th"></i>Categories<span class="srd-nav-count">{{ \App\Category::where('status',true)->count() }}</span></a>
   @endif
-  {{-- The all-fleet requisition list (/home/order) is a super-admin menu item. --}}
+  {{-- The all-fleet item and service requisition lists are super-admin menu
+       items - same lists the dashboard's overview cards open. --}}
   @if(auth()->user()->role->role == 'super-admin')
-  <a href="{{url('/home/order')}}" class="srd-nav-item {{Route::current()->uri() == 'home/order' ? 'active' : ''}}"><i class="fas fa-list-alt"></i>Requisitions</a>
+  <a href="{{url('/home/order')}}" class="srd-nav-item {{Route::current()->uri() == 'home/order' ? 'active' : ''}}"><i class="fas fa-list-alt"></i>Item Requisitions</a>
+  <a href="{{ route('service-requisition.index') }}" class="srd-nav-item {{Route::current()->uri() == 'service-requisitions' ? 'active' : ''}}"><i class="fas fa-wrench"></i>Service Requisitions</a>
   @endif
   {{-- GM (SRD) also lands here (this block already covers super-admin/gm-srd/
        admin) - the SSM roles get the same group further down, where the rest

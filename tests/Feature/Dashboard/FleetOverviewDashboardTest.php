@@ -134,6 +134,19 @@ class FleetOverviewDashboardTest extends TestCase
         $this->assertGreaterThan($requisitions, strpos($html, 'href="'.url('/home/category').'" class="srd-nav-item'));
     }
 
+    public function test_super_admin_menu_has_item_and_service_requisitions(): void
+    {
+        $admin = $this->makeUser('super-admin');
+        $html = $this->actingAs($admin)->get('/home')->assertOk()->getContent();
+
+        $this->assertStringContainsString('href="'.url('/home/order').'" class="srd-nav-item ">', $html);
+        $this->assertStringContainsString('Item Requisitions</a>', $html);
+        $this->assertStringContainsString('href="'.route('service-requisition.index').'" class="srd-nav-item ">', $html);
+        $this->assertStringContainsString('Service Requisitions</a>', $html);
+
+        $this->actingAs($admin)->get(route('service-requisition.index'))->assertOk();
+    }
+
     #[DataProvider('adminMenuRoles')]
     public function test_certificate_categories_live_on_their_own_admin_page(string $role): void
     {
