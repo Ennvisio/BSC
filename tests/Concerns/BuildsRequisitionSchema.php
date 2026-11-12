@@ -51,6 +51,7 @@ trait BuildsRequisitionSchema
             '2026_08_26_184703_create_vessel_items_table.php',
             '2026_08_26_184704_create_item_imports_table.php',
             '2026_08_28_162629_add_account_number_to_items_table.php',
+            '2026_11_10_100000_allow_repeated_article_numbers_on_items.php',
             '2026_09_04_200600_add_is_catalog_to_categories_table.php',
             '2026_09_04_200601_add_category_id_to_item_groups_table.php',
             '2026_09_04_200601_add_category_id_to_item_imports_table.php',

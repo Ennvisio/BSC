@@ -21,6 +21,11 @@ use Maatwebsite\Excel\Concerns\WithHeadingRow;
  * column, never from the path itself (two items can share the same
  * leaf folder - see e.g. "BEANS KIDNEY" holding two different items).
  *
+ * An item is identified by Article Number + Item Path + Item Name, not by
+ * Article Number alone: spreadsheets reuse one manufacturer part code for
+ * several parts (see CatalogService::itemKey()). Rows that repeat all three
+ * are the same item and are merged.
+ *
  * Each chunk is processed as one batch: item_groups resolution is
  * in-memory (only genuinely new folders cause an insert), then the whole
  * chunk's items are written with a single upsert() and the whole chunk's

@@ -37,18 +37,25 @@ class StockTemplateExport implements FromQuery, WithHeadings, WithMapping, WithS
     public function query(): Builder
     {
         return Item::query()
-            ->select('items.id', 'items.name', 'items.article_number', 'items.unit')
+            ->select('items.id', 'items.name', 'items.article_number', 'items.unit', 'item_groups.path as group_path')
             ->join('vessel_items', 'vessel_items.item_id', '=', 'items.id')
+            ->leftJoin('item_groups', 'item_groups.id', '=', 'items.item_group_id')
             ->addSelect('vessel_items.stock_qty', 'vessel_items.opening_stock', 'vessel_items.min_qty')
             ->where('vessel_items.vessel_id', $this->vesselId)
             ->where('items.category_id', $this->categoryId)
             ->where('items.status', true)
-            ->orderBy('items.name');
+            ->orderBy('items.name')
+            ->orderBy('items.id');
     }
 
+    /**
+     * Item Group sits next to Item Name on purpose: an article number can be
+     * shared by several items, and VesselStockImport uses name + group to tell
+     * them apart (see its class comment).
+     */
     public function headings(): array
     {
-        return ['Article Number', 'Item Name', 'Unit', 'Opening Stock', 'Stock Qty', 'Minimum Qty'];
+        return ['Article Number', 'Item Name', 'Item Group', 'Unit', 'Opening Stock', 'Stock Qty', 'Minimum Qty'];
     }
 
     public function map($item): array
@@ -56,6 +63,7 @@ class StockTemplateExport implements FromQuery, WithHeadings, WithMapping, WithS
         return [
             $item->article_number,
             $item->name,
+            $item->group_path,
             $item->unit,
             $item->opening_stock,
             $item->stock_qty ?? 0,

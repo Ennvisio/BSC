@@ -101,6 +101,7 @@ trait BuildsPmsSchema
             $t->string('name');
             $t->string('unit');
             $t->string('article_number')->nullable();
+            $t->string('item_key', 40)->nullable()->unique();
             $t->string('part_number')->nullable();
             $t->string('drawing_number')->nullable();
             $t->string('manufacturer')->nullable();

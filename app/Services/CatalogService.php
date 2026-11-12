@@ -87,13 +87,26 @@ class CatalogService
     }
 
     /**
+     * The identity of a catalog item: article number + item group + name,
+     * lower-cased (the DB collations are case-insensitive, so "Valve" and
+     * "VALVE" are the same item). The article number alone is NOT unique -
+     * spreadsheets reuse one manufacturer part code for several parts, and
+     * the same code appears in several ship-type files.
+     */
+    public static function itemKey(string $articleNumber, ?int $itemGroupId, string $name): string
+    {
+        return sha1(mb_strtolower(trim($articleNumber)).'|'.(int) $itemGroupId.'|'.mb_strtolower(trim($name)));
+    }
+
+    /**
      * One upsert for a whole batch of prepared item rows (a chunked
      * import's 500 at a time) or a single one (manual entry) - the same
-     * match-by-article_number, don't-overwrite-impa_code-on-reimport rule
-     * either way. Each row must already carry every column below.
+     * match-by-item_key, don't-overwrite-impa_code-on-reimport rule either
+     * way. Each row must already carry every column below except item_key,
+     * which is derived here so every entry path computes it identically.
      *
      * @param  array<int,array>  $rows
-     * @return \Illuminate\Support\Collection<string,int>  article_number => items.id
+     * @return \Illuminate\Support\Collection<string,int>  item_key => items.id
      */
     public function upsertItems(array $rows): Collection
     {
@@ -101,23 +114,29 @@ class CatalogService
             return collect();
         }
 
+        foreach ($rows as &$row) {
+            $row['item_key'] = self::itemKey((string) $row['article_number'], $row['item_group_id'] ?? null, (string) $row['name']);
+        }
+        unset($row);
+
         // impa_code is deliberately left out of the update-columns list:
         // it's only ever set on the initial INSERT branch (placeholder
         // '-'), never overwritten on re-import/re-entry.
         Item::upsert(
             $rows,
-            ['article_number'],
-            ['item_group_id', 'category_id', 'name', 'unit', 'account_number', 'part_number',
+            ['item_key'],
+            ['article_number', 'item_group_id', 'category_id', 'name', 'unit', 'account_number', 'part_number',
                 'drawing_number', 'hs_code', 'manufacturer', 'description', 'updated_at']
         );
 
-        return Item::whereIn('article_number', array_column($rows, 'article_number'))
-            ->pluck('id', 'article_number');
+        return Item::whereIn('item_key', array_column($rows, 'item_key'))
+            ->pluck('id', 'item_key');
     }
 
     /**
-     * Create or update one item by article_number and return it - the
-     * manual-entry convenience wrapper around upsertItems() above.
+     * Create or update one item (matched on article number + group + name)
+     * and return it - the manual-entry convenience wrapper around
+     * upsertItems() above.
      *
      * @param  array{item_group_id:int,category_id:int,name:string,unit?:?string,account_number?:?string,part_number?:?string,drawing_number?:?string,hs_code?:?string,manufacturer?:?string,description?:?string}  $attributes
      */
@@ -140,7 +159,7 @@ class CatalogService
 
         $ids = $this->upsertItems([$row]);
 
-        return Item::findOrFail($ids[$articleNumber]);
+        return Item::findOrFail($ids->first());
     }
 
     /**
