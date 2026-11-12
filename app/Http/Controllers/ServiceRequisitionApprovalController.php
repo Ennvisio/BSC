@@ -7,6 +7,7 @@ use App\Role;
 use App\ServiceProcurementStage;
 use App\ServiceRequisition;
 use App\User;
+use App\Vessel;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -59,6 +60,9 @@ class ServiceRequisitionApprovalController extends Controller
         $status = in_array(request()->query('status'), \App\Order::OVERVIEW_STATUSES, true) ? request()->query('status') : null;
         $query->overviewStatus($status);
 
+        $filters = $this->listFilters(request());
+        $this->applyListFilters($query, $filters);
+
         $requisitions = $query->get();
 
         return view('layouts.service-requisition-index', [
@@ -72,7 +76,57 @@ class ServiceRequisitionApprovalController extends Controller
                 ? 'Approved Service Requisitions (awaiting confirmation)'
                 : ($status ? ucfirst($status).' Service Requisitions' : null),
             'showRejection' => $status === 'rejected',
-        ]);
+        ] + $this->filterViewData($filters));
+    }
+
+    /**
+     * The Vessel / Type / date filter above every service requisition list -
+     * shore roles only, like the item requisition list's own filter
+     * (HomeController@getOrder); a ship user's lists are already their one
+     * vessel's. Dates match on the requisition date: both given = that range,
+     * inclusive; one given = that exact day.
+     */
+    private function listFilters(Request $request): array
+    {
+        if ((auth()->user()->role->user_type ?? null) === 'ship') {
+            return [];
+        }
+
+        $date = fn ($v) => is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : null;
+        $type = (string) $request->query('service_type');
+
+        return [
+            'ship_id' => ctype_digit((string) $request->query('ship_id')) ? (int) $request->query('ship_id') : null,
+            'service_type' => isset(ServiceRequisitionController::TYPES[$type]) ? $type : null,
+            'from_date' => $date($request->query('from_date')),
+            'end_date' => $date($request->query('end_date')),
+        ];
+    }
+
+    private function applyListFilters($query, array $filters): void
+    {
+        $from = $filters['from_date'] ?? null;
+        $end = $filters['end_date'] ?? null;
+
+        $query->when($filters['ship_id'] ?? null, fn ($q, $id) => $q->where('vessel_id', $id))
+            ->when($filters['service_type'] ?? null, fn ($q, $type) => $q->where('service_type', $type))
+            ->when($from && $end, fn ($q) => $q->whereBetween('req_date', [$from, $end]))
+            ->when($from && ! $end, fn ($q) => $q->whereDate('req_date', $from))
+            ->when($end && ! $from, fn ($q) => $q->whereDate('req_date', $end));
+    }
+
+    /** What the filter panel needs; nothing for a ship user, who never sees it. */
+    private function filterViewData(array $filters): array
+    {
+        if ((auth()->user()->role->user_type ?? null) === 'ship') {
+            return [];
+        }
+
+        return [
+            'filters' => $filters,
+            'filterVessels' => Vessel::where('status', true)->orderBy('name')->get(),
+            'serviceTypes' => ServiceRequisitionController::TYPES,
+        ];
     }
 
     /** Service requisitions not yet received on board. */
@@ -222,6 +276,9 @@ class ServiceRequisitionApprovalController extends Controller
             $query->where('vessel_id', $vesselId);
         }
 
+        $filters = $this->listFilters(request());
+        $this->applyListFilters($query, $filters);
+
         $extra = [];
         if ($paged) {
             $q = trim((string) request()->query('q'));
@@ -245,7 +302,7 @@ class ServiceRequisitionApprovalController extends Controller
             'listTitle' => $title,
             'emptyText' => $emptyText,
             'showRejection' => $title === 'Rejected Service Requisitions',
-        ] + $extra);
+        ] + $extra + $this->filterViewData($filters));
     }
 
     /**

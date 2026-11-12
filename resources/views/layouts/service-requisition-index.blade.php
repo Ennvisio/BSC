@@ -16,7 +16,71 @@
 			@endif
 
 			@php $serverPaged = $requisitions instanceof \Illuminate\Pagination\LengthAwarePaginator; @endphp
-			@if($serverPaged)@include('partials.server-list-controls', ['orders' => $requisitions, 'position' => 'top', 'q' => $q ?? '', 'perPage' => $perPageChoice ?? '15'])@endif
+			@isset($filters)
+			@php
+				$activeFilters = array_filter($filters);
+				$shipName = !empty($filters['ship_id']) ? optional($filterVessels->firstWhere('id', $filters['ship_id']))->name : null;
+				$found = $serverPaged ? $requisitions->total() : count($requisitions);
+			@endphp
+			{{-- Same panel as the item requisition list. A GET to this same list,
+				 so the dashboard's ?status=, the text search and "Show entries"
+				 all ride along with it. Dates match on the requisition date: both
+				 given = that range, inclusive; one given = that exact day. --}}
+			<form id="service_search_form" class="req-filter" method="get" action="{{ url()->current() }}">
+				@if(request()->filled('status'))<input type="hidden" name="status" value="{{ request()->query('status') }}">@endif
+				@if(!empty($q))<input type="hidden" name="q" value="{{ $q }}">@endif
+				@if(!empty($perPageChoice) && $perPageChoice !== '15')<input type="hidden" name="per_page" value="{{ $perPageChoice }}">@endif
+				<div class="req-filter-fields">
+					<div class="req-filter-field">
+						<label for="srv_ship_id">Vessel</label>
+						<select name="ship_id" class="form-control" id="srv_ship_id">
+							<option value="">All vessels</option>
+							@foreach($filterVessels as $vessel)
+							<option value="{{ $vessel->id }}" {{ ($filters['ship_id'] ?? null) == $vessel->id ? 'selected' : '' }}>{{ $vessel->name }}</option>
+							@endforeach
+						</select>
+					</div>
+					<div class="req-filter-field">
+						<label for="srv_service_type">Type</label>
+						<select name="service_type" class="form-control" id="srv_service_type">
+							<option value="">All types</option>
+							@foreach($serviceTypes as $value => $label)
+							<option value="{{ $value }}" {{ ($filters['service_type'] ?? null) === $value ? 'selected' : '' }}>{{ $label }}</option>
+							@endforeach
+						</select>
+					</div>
+					<div class="req-filter-field req-filter-date">
+						<label for="srv_from_date">From date</label>
+						<div class="req-filter-input">
+							<input type="text" id="srv_from_date" class="form-control date" value="{{ $filters['from_date'] ?? '' }}" name="from_date" placeholder="YYYY-MM-DD" autocomplete="off">
+						</div>
+					</div>
+					<div class="req-filter-field req-filter-date">
+						<label for="srv_end_date">To date</label>
+						<div class="req-filter-input">
+							<input type="text" id="srv_end_date" class="form-control date" value="{{ $filters['end_date'] ?? '' }}" name="end_date" placeholder="YYYY-MM-DD" autocomplete="off">
+						</div>
+					</div>
+					<div class="req-filter-actions">
+						<button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Search</button>
+						@if($activeFilters)
+						<a href="{{ url()->current() }}{{ request()->filled('status') ? '?status='.urlencode(request()->query('status')) : '' }}" class="btn btn-outline-secondary">Clear</a>
+						@endif
+					</div>
+				</div>
+				@if($activeFilters)
+				<div class="req-filter-summary">
+					<strong>{{ $found }}</strong> {{ $found === 1 ? 'requisition' : 'requisitions' }} found
+					@if($shipName)<span class="req-chip">{{ $shipName }}</span>@endif
+					@if(!empty($filters['service_type']))<span class="req-chip">{{ $serviceTypes[$filters['service_type']] }}</span>@endif
+					@if(!empty($filters['from_date']) && !empty($filters['end_date']))<span class="req-chip">{{ $filters['from_date'] }} &rarr; {{ $filters['end_date'] }}</span>
+					@elseif(!empty($filters['from_date']) || !empty($filters['end_date']))<span class="req-chip">on {{ $filters['from_date'] ?: $filters['end_date'] }}</span>@endif
+				</div>
+				@endif
+			</form>
+			@include('partials.req-filter-styles')
+			@endisset
+			@if($serverPaged)@include('partials.server-list-controls', ['orders' => $requisitions, 'position' => 'top', 'q' => $q ?? '', 'perPage' => $perPageChoice ?? '15', 'keep' => array_filter(($filters ?? []) + ['status' => request()->query('status')])])@endif
 			{{-- data-server-paginated: paged and searched by the server, so DataTables
 				 keeps its hands off paging/search/sort (see print-pdf-custom.js). --}}
 			<table id="example" class="table table-bordered dt-responsive" style="width:100%;" @if($serverPaged) data-server-paginated="1" @endif>
