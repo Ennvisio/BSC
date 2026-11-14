@@ -34,6 +34,9 @@
 						Drawing Number, HS Code, Manufacturer. Re-uploading the same file is safe — items are matched
 						by Article Number and updated, not duplicated.
 					</p>
+					<p>
+						<a href="{{ route('catalog.import.sample') }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-download"></i> Download demo sheet</a>
+					</p>
 
 					<form action="{{url('/catalog/import')}}" method="POST" enctype="multipart/form-data">
 						@csrf

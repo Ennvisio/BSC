@@ -20,7 +20,7 @@
                     <div class="srd-stat-icon is-indigo"><i class="fas fa-certificate"></i></div>
                     <div class="srd-stat-body">
                         <div class="srd-stat-label">Certificates</div>
-                        <div class="srd-stat-value"><span class="count">{{\App\Certificate::where('status',true)->get()->count()}}</span></div>
+                        <div class="srd-stat-value"><span class="count">{{\App\VesselCertificate::where('status',true)->count()}}</span></div>
                     </div>
                 </div>
             @if(!empty($fleetRecordsLinks))
@@ -35,7 +35,7 @@
                     <div class="srd-stat-icon is-blue"><i class="fas fa-clipboard"></i></div>
                     <div class="srd-stat-body">
                         <div class="srd-stat-label">Surveys</div>
-                        <div class="srd-stat-value"><span class="count">{{\App\Survey::where('status',true)->get()->count()}}</span></div>
+                        <div class="srd-stat-value"><span class="count">{{\App\VesselSurvey::where('status',true)->count()}}</span></div>
                     </div>
                 </div>
             @if(!empty($fleetRecordsLinks))
@@ -174,13 +174,20 @@
                                 </thead>
                                 <tbody>
                                     @foreach($row['groups'] as $categoryName => $certs)
-                                    <tr class="cv-category-row"><td colspan="4">{{ $categoryName }}</td></tr>
+                                    {{-- Collapsed by default; click toggles this category's rows (see fleet-overview-scripts). --}}
+                                    <tr class="cv-category-row" data-cat="{{ $loop->index }}" title="Click to show/hide">
+                                        <td colspan="4">
+                                            <i class="fas fa-chevron-right cv-cat-chevron"></i>
+                                            {{ $categoryName }}
+                                            <span class="badge badge-secondary cv-cat-count">{{ count($certs) }}</span>
+                                        </td>
+                                    </tr>
                                     @foreach($certs as $cert)
                                     @php
                                         $status = $cert->validityStatus();
                                         $days = $cert->daysUntilExpiry();
                                     @endphp
-                                    <tr>
+                                    <tr class="cv-cert-row" data-cat="{{ $loop->parent->index }}" style="display:none;">
                                         <td>{{ $cert->title }}</td>
                                         <td>{{ $cert->issue_date ? \Carbon\Carbon::parse($cert->issue_date)->format('d M Y') : '—' }}</td>
                                         <td class="{{ $cert->is_permanent ? '' : \App\ExpiryHelper::cssClass($cert->exp_date) }}">
@@ -364,4 +371,9 @@
         background: #eef2f2; font-size: 11.5px; font-weight: 700; letter-spacing: .04em;
         text-transform: uppercase; color: #4c5958; padding: 5px 8px;
     }
+    .cv-table .cv-category-row { cursor: pointer; }
+    .cv-table .cv-category-row:hover td { background: #e3ebeb; }
+    .cv-table .cv-cat-chevron { width: 12px; margin-right: 6px; color: #6b7a82; transition: transform .15s ease; }
+    .cv-table .cv-category-row.cv-cat-open .cv-cat-chevron { transform: rotate(90deg); }
+    .cv-table .cv-cat-count { font-size: 11px; margin-left: 6px; letter-spacing: 0; }
 </style>

@@ -108,6 +108,12 @@ class ItemImportController extends Controller
         return redirect('/catalog/import/history')->with('message', $data);
     }
 
+    /** Demo sheet with the expected columns and a few example rows. */
+    public function sample()
+    {
+        return Excel::download(new \App\Exports\ItemCatalogSampleExport, 'catalog-import-sample.xlsx');
+    }
+
     public function history()
     {
         $imports = ItemImport::with(['vessel', 'category', 'uploadedBy'])

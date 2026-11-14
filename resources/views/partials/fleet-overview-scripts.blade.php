@@ -25,5 +25,15 @@
             $detail.toggle(open);
             $row.toggleClass('cv-open', open);
         });
+
+        // Category toggle inside an expanded vessel: shows/hides that
+        // category's certificate rows (same class-based state as above).
+        $(document).on('click', '.cv-category-row', function () {
+            var $row = $(this);
+            var open = !$row.hasClass('cv-cat-open');
+
+            $row.toggleClass('cv-cat-open', open);
+            $row.nextAll('.cv-cert-row[data-cat="' + $row.data('cat') + '"]').toggle(open);
+        });
     })(jQuery);
 </script>

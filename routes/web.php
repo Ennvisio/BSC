@@ -165,6 +165,7 @@ Route::post('/attachments/upload', 'AttachmentController@uploadToLibrary')->name
 
   Route::get('/catalog/import', 'ItemImportController@create')->name('catalog.import.form');
   Route::post('/catalog/import', 'ItemImportController@store')->name('catalog.import.store');
+  Route::get('/catalog/import/sample', 'ItemImportController@sample')->name('catalog.import.sample');
   Route::get('/catalog/import/history', 'ItemImportController@history')->name('catalog.import.history');
   // "Add item manually" tab - a single catalog item by hand, no spreadsheet.
   Route::get('/catalog/import/check-article', 'ItemImportController@checkArticleNumber')->name('catalog.import.check-article');
