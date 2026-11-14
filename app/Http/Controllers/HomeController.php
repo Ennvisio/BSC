@@ -204,7 +204,9 @@ class HomeController extends Controller
    */
   private function requisitionDashboardStats(): array
   {
-    $roleController = app(RoleController::class);
+    // withoutLookups(): these lists are only counted here, so skip the
+    // Item/Category/Vessel catalog loads each one does for its view.
+    $roleController = app(RoleController::class)->withoutLookups();
 
     return [
       'pending_action' => $roleController->pendingRequisition()->getData()['orders']->count(),
@@ -784,7 +786,7 @@ public function storeOrder(Request $request)
   $counter=0;
   $cat=Category::findOrFail($request->Category_Name);
   $counter=Order::where('vessel_id',auth()->user()->role->vessel->id)
-  ->whereYear('req_date',Carbon::now()->year)->where('ord_status',true)->get()->count();
+  ->whereYear('req_date',Carbon::now()->year)->where('ord_status',true)->count();
   $counter+=1;
   if($counter<10)
   {

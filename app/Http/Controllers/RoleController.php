@@ -20,6 +20,23 @@ use App\Role;
 
 class RoleController extends Controller
 {
+	/** When true, the Item/Category/Vessel lists some pages load for their
+	 * view are skipped (empty collection) - for callers that only count the
+	 * returned orders, e.g. the dashboard stat cards. */
+	private bool $skipLookups = false;
+
+	public function withoutLookups(): static
+	{
+		$this->skipLookups = true;
+
+		return $this;
+	}
+
+	private function lookup(\Closure $query)
+	{
+		return $this->skipLookups ? collect() : $query();
+	}
+
 	/**
 	 * Same guard HomeController applies. Auth is wired per-controller in this
 	 * app rather than on the route groups, so without this every approval
@@ -268,18 +285,18 @@ class RoleController extends Controller
 			$orders = collect();
 		}
 
-		$items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
-		$categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
-		$vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
+		$items = $this->lookup(fn () => Item::orderBy('created_at', 'desc')->where('status', true)->get());
+		$categories = $this->lookup(fn () => Category::orderBy('created_at', 'desc')->where('status', true)->get());
+		$vessels = $this->lookup(fn () => Vessel::orderBy('created_at', 'desc')->where('status', true)->get());
 
 		return view('layouts.order', compact('orders', 'items', 'categories', 'vessels', 'listTitle'));
 	}
 
 	public function pendingRequisition()
 	{
-		$items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
-		$categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
-		$vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
+		$items = $this->lookup(fn () => Item::orderBy('created_at', 'desc')->where('status', true)->get());
+		$categories = $this->lookup(fn () => Category::orderBy('created_at', 'desc')->where('status', true)->get());
+		$vessels = $this->lookup(fn () => Vessel::orderBy('created_at', 'desc')->where('status', true)->get());
 		$drafts = collect();
 		if (auth()->user()->role->user_type == 'ship') {
 			// Ship side tracks a requisition's LIFECYCLE rather than running an
@@ -494,9 +511,9 @@ class RoleController extends Controller
 	}
 	public function approvedRequisition()
 	{
-		$items = Item::orderBy('created_at', 'desc')->where('status', true)->get();
-		$categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
-		$vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
+		$items = $this->lookup(fn () => Item::orderBy('created_at', 'desc')->where('status', true)->get());
+		$categories = $this->lookup(fn () => Category::orderBy('created_at', 'desc')->where('status', true)->get());
+		$vessels = $this->lookup(fn () => Vessel::orderBy('created_at', 'desc')->where('status', true)->get());
 		$drafts = collect();
 
 		// Ship side: "Approved" means SSM has taken the final action. That's

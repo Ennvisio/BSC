@@ -1,39 +1,66 @@
 {{-- Behaviour for partials.fleet-overview - include inside the page's own
-     @section('home-js'). --}}
+     @section('home-js'). Plain DOM, no jQuery dependency: this runs as soon
+     as the page's section is reached, and a missing/late jQuery must not
+     take the expand/collapse toggles down with it. Capture-phase listeners
+     on document, so the theme/DataTables scripts can't cut a click off and
+     the Zoom modal's copy of the table works too (it's inserted later). --}}
 <script>
-    (function($){
+    (function () {
         "use strict";
 
-        $('.bsc-zoom').on('click',function(){
-            var header = $(this).parents('.card-header').find('.pptitle').html();
-            var content = $(this).parents('.card').find('.card-body').html();
+        function setRowsDisplay(rows, open) {
+            rows.forEach(function (r) { r.style.display = open ? 'table-row' : 'none'; });
+        }
 
-            $('#summary-table-modal').find('.modal-title').html(header);
-            $('#summary-table-modal').find('#summary-table-wrapper').html(content);
-        })
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest) { return; }
 
-        // Delegated rather than bound per row: the Zoom button above copies
-        // this table's HTML into the modal, and the copy has to expand too.
-        $(document).on('click', '.cv-vessel-row:not(.cv-empty)', function () {
-            var $row = $(this);
-            var $detail = $row.closest('tbody').find('.cv-detail-row[data-vessel="' + $row.data('vessel') + '"]');
+            // Vessel row -> its certificate detail table.
             // State lives on the row's own class, not :visible - that reads
             // layout, which is wrong for a table inside a container that isn't
             // shown yet (the Zoom modal while it animates open).
-            var open = !$row.hasClass('cv-open');
+            var vesselRow = e.target.closest('.cv-vessel-row:not(.cv-empty)');
+            if (vesselRow) {
+                var open = !vesselRow.classList.contains('cv-open');
+                vesselRow.classList.toggle('cv-open', open);
 
-            $detail.toggle(open);
-            $row.toggleClass('cv-open', open);
-        });
+                var vesselId = vesselRow.getAttribute('data-vessel');
+                var details = Array.prototype.filter.call(
+                    vesselRow.parentNode.querySelectorAll('.cv-detail-row'),
+                    function (d) { return d.getAttribute('data-vessel') === vesselId; }
+                );
+                setRowsDisplay(details, open);
+                return;
+            }
 
-        // Category toggle inside an expanded vessel: shows/hides that
-        // category's certificate rows (same class-based state as above).
-        $(document).on('click', '.cv-category-row', function () {
-            var $row = $(this);
-            var open = !$row.hasClass('cv-cat-open');
+            // Category row inside an expanded vessel -> that category's
+            // certificates (the rows after it, up to the next category).
+            var catRow = e.target.closest('.cv-category-row');
+            if (catRow) {
+                var catOpen = !catRow.classList.contains('cv-cat-open');
+                catRow.classList.toggle('cv-cat-open', catOpen);
 
-            $row.toggleClass('cv-cat-open', open);
-            $row.nextAll('.cv-cert-row[data-cat="' + $row.data('cat') + '"]').toggle(open);
-        });
-    })(jQuery);
+                var certs = [];
+                for (var next = catRow.nextElementSibling; next && !next.classList.contains('cv-category-row'); next = next.nextElementSibling) {
+                    if (next.classList.contains('cv-cert-row')) { certs.push(next); }
+                }
+                setRowsDisplay(certs, catOpen);
+                return;
+            }
+
+            // Zoom: copy the card's table into the modal (Bootstrap opens it
+            // through the button's own data-toggle).
+            var zoom = e.target.closest('.bsc-zoom');
+            if (zoom) {
+                var card = zoom.closest('.card');
+                var title = card.querySelector('.card-header .pptitle');
+                var body = card.querySelector('.card-body');
+                var modal = document.getElementById('summary-table-modal');
+                if (!modal || !body) { return; }
+
+                modal.querySelector('.modal-title').innerHTML = title ? title.innerHTML : '';
+                modal.querySelector('#summary-table-wrapper').innerHTML = body.innerHTML;
+            }
+        }, true);
+    })();
 </script>

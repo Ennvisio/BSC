@@ -20,7 +20,7 @@
                     <div class="srd-stat-icon is-indigo"><i class="fas fa-certificate"></i></div>
                     <div class="srd-stat-body">
                         <div class="srd-stat-label">Certificates</div>
-                        <div class="srd-stat-value"><span class="count">{{\App\VesselCertificate::where('status',true)->count()}}</span></div>
+                        <div class="srd-stat-value"><span class="count">{{\App\Support\NavCounts::get('certificates')}}</span></div>
                     </div>
                 </div>
             @if(!empty($fleetRecordsLinks))
@@ -35,7 +35,7 @@
                     <div class="srd-stat-icon is-blue"><i class="fas fa-clipboard"></i></div>
                     <div class="srd-stat-body">
                         <div class="srd-stat-label">Surveys</div>
-                        <div class="srd-stat-value"><span class="count">{{\App\VesselSurvey::where('status',true)->count()}}</span></div>
+                        <div class="srd-stat-value"><span class="count">{{\App\Support\NavCounts::get('surveys')}}</span></div>
                     </div>
                 </div>
             @if(!empty($fleetRecordsLinks))
@@ -48,7 +48,7 @@
                     <div class="srd-stat-icon is-pink"><i class="fas fa-ship"></i></div>
                     <div class="srd-stat-body">
                         <div class="srd-stat-label">Vessels</div>
-                        <div class="srd-stat-value"><span class="count">{{\App\Vessel::where('status',true)->get()->count()}}</span></div>
+                        <div class="srd-stat-value"><span class="count">{{\App\Support\NavCounts::get('vessels')}}</span></div>
                     </div>
                 </div>
             </a>
@@ -59,7 +59,7 @@
                     <div class="srd-stat-icon is-amber"><i class="fas fa-th"></i></div>
                     <div class="srd-stat-body">
                         <div class="srd-stat-label">Categories</div>
-                        <div class="srd-stat-value"><span class="count">{{\App\Category::where('status',true)->get()->count()}}</span></div>
+                        <div class="srd-stat-value"><span class="count">{{\App\Support\NavCounts::get('categories')}}</span></div>
                     </div>
                 </div>
             </a>
@@ -70,7 +70,7 @@
                     <div class="srd-stat-icon is-teal"><i class="fas fa-cubes"></i></div>
                     <div class="srd-stat-body">
                         <div class="srd-stat-label">Items</div>
-                        <div class="srd-stat-value"><span class="count">{{\App\Item::where('status',true)->get()->count()}}</span></div>
+                        <div class="srd-stat-value"><span class="count">{{\App\Support\NavCounts::get('items')}}</span></div>
                     </div>
                 </div>
             </a>
@@ -84,7 +84,7 @@
                     <div class="srd-stat-icon is-green"><i class="fas fa-truck"></i></div>
                     <div class="srd-stat-body">
                         <div class="srd-stat-label">Delivered</div>
-                        <div class="srd-stat-value"><span class="count">{{\App\Order::where('ord_status',true)->where('status','delivered')->get()->count()}}</span></div>
+                        <div class="srd-stat-value"><span class="count">{{\App\Order::where('ord_status',true)->where('status','delivered')->count()}}</span></div>
                     </div>
                 </div>
             </a>
@@ -95,7 +95,7 @@
                     <div class="srd-stat-icon is-indigo"><i class="fas fa-inbox"></i></div>
                     <div class="srd-stat-body">
                         <div class="srd-stat-label">Received</div>
-                        <div class="srd-stat-value"><span class="count">{{\App\Order::where('ord_status',true)->where('status','received')->get()->count()}}</span></div>
+                        <div class="srd-stat-value"><span class="count">{{\App\Order::where('ord_status',true)->where('status','received')->count()}}</span></div>
                     </div>
                 </div>
             </a>
@@ -371,7 +371,7 @@
         background: #eef2f2; font-size: 11.5px; font-weight: 700; letter-spacing: .04em;
         text-transform: uppercase; color: #4c5958; padding: 5px 8px;
     }
-    .cv-table .cv-category-row { cursor: pointer; }
+    .cv-table .cv-category-row { cursor: pointer; user-select: none; }
     .cv-table .cv-category-row:hover td { background: #e3ebeb; }
     .cv-table .cv-cat-chevron { width: 12px; margin-right: 6px; color: #6b7a82; transition: transform .15s ease; }
     .cv-table .cv-category-row.cv-cat-open .cv-cat-chevron { transform: rotate(90deg); }

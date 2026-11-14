@@ -17,9 +17,9 @@
   <a href="{{url('/home')}}" class="srd-nav-item {{Route::current()->uri() == 'home' ? 'active' : ''}}"><i class="fas fa-th-large"></i>Dashboard</a>
 
   <div class="srd-nav-label">Fleet Records</div>
-  <a href="{{url('/home/certificate')}}" class="srd-nav-item {{Route::current()->uri() == 'home/certificate' ? 'active' : ''}}"><i class="fas fa-certificate"></i>Certificates<span class="srd-nav-count">{{ \App\VesselCertificate::where('status',true)->count() }}</span></a>
-  <a href="{{url('/home/survey')}}" class="srd-nav-item {{Route::current()->uri() == 'home/survey' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Surveys<span class="srd-nav-count">{{ \App\VesselSurvey::where('status',true)->count() }}</span></a>
-  <a href="{{url('/home/vessel')}}" class="srd-nav-item {{Route::current()->uri() == 'home/vessel' ? 'active' : ''}}"><i class="fas fa-ship"></i>Vessels<span class="srd-nav-count">{{ \App\Vessel::where('status',true)->count() }}</span></a>
+  <a href="{{url('/home/certificate')}}" class="srd-nav-item {{Route::current()->uri() == 'home/certificate' ? 'active' : ''}}"><i class="fas fa-certificate"></i>Certificates<span class="srd-nav-count">{{ \App\Support\NavCounts::get('certificates') }}</span></a>
+  <a href="{{url('/home/survey')}}" class="srd-nav-item {{Route::current()->uri() == 'home/survey' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Surveys<span class="srd-nav-count">{{ \App\Support\NavCounts::get('surveys') }}</span></a>
+  <a href="{{url('/home/vessel')}}" class="srd-nav-item {{Route::current()->uri() == 'home/vessel' ? 'active' : ''}}"><i class="fas fa-ship"></i>Vessels<span class="srd-nav-count">{{ \App\Support\NavCounts::get('vessels') }}</span></a>
 
   {{-- Super-admin's Requisitions section (Categories + the all-fleet list) -
        SRD/SSM roles (GM (SRD) included) get Categories in their own
@@ -27,7 +27,7 @@
        anywhere - the catalog is browsed through Browse Catalog. --}}
   @if(auth()->user()->role->role == 'super-admin')
   <div class="srd-nav-label">Requisitions</div>
-  <a href="{{url('/home/category')}}" class="srd-nav-item {{Route::current()->uri() == 'home/category' ? 'active' : ''}}"><i class="fas fa-th"></i>Categories<span class="srd-nav-count">{{ \App\Category::where('status',true)->count() }}</span></a>
+  <a href="{{url('/home/category')}}" class="srd-nav-item {{Route::current()->uri() == 'home/category' ? 'active' : ''}}"><i class="fas fa-th"></i>Categories<span class="srd-nav-count">{{ \App\Support\NavCounts::get('categories') }}</span></a>
   @endif
   {{-- The all-fleet item and service requisition lists are super-admin menu
        items - same lists the dashboard's overview cards open. --}}
@@ -113,9 +113,9 @@
        only because it already has them in that block. --}}
   @if(in_array(auth()->user()->role->user_type, ['srd', 'ssm']) && auth()->user()->role->role != 'gm-srd')
   <div class="srd-nav-label">Fleet Records</div>
-  <a href="{{url('/home/certificate')}}" class="srd-nav-item {{Route::current()->uri() == 'home/certificate' ? 'active' : ''}}"><i class="fas fa-certificate"></i>Certificates<span class="srd-nav-count">{{ \App\VesselCertificate::where('status',true)->count() }}</span></a>
-  <a href="{{url('/home/survey')}}" class="srd-nav-item {{Route::current()->uri() == 'home/survey' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Surveys<span class="srd-nav-count">{{ \App\VesselSurvey::where('status',true)->count() }}</span></a>
-  <a href="{{url('/home/vessel')}}" class="srd-nav-item {{Route::current()->uri() == 'home/vessel' ? 'active' : ''}}"><i class="fas fa-ship"></i>Vessels<span class="srd-nav-count">{{ \App\Vessel::where('status',true)->count() }}</span></a>
+  <a href="{{url('/home/certificate')}}" class="srd-nav-item {{Route::current()->uri() == 'home/certificate' ? 'active' : ''}}"><i class="fas fa-certificate"></i>Certificates<span class="srd-nav-count">{{ \App\Support\NavCounts::get('certificates') }}</span></a>
+  <a href="{{url('/home/survey')}}" class="srd-nav-item {{Route::current()->uri() == 'home/survey' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Surveys<span class="srd-nav-count">{{ \App\Support\NavCounts::get('surveys') }}</span></a>
+  <a href="{{url('/home/vessel')}}" class="srd-nav-item {{Route::current()->uri() == 'home/vessel' ? 'active' : ''}}"><i class="fas fa-ship"></i>Vessels<span class="srd-nav-count">{{ \App\Support\NavCounts::get('vessels') }}</span></a>
   @endif
 
   {{-- Fleet-wide, unlike Master/Chief Engineer's own version of this group -
@@ -135,7 +135,7 @@
   {{-- Every SRD/SSM role (GM (SRD) included) - super-admin has its own
        Requisitions section with Categories up top. --}}
   @if(in_array(auth()->user()->role->user_type, ['srd', 'ssm']))
-  <a href="{{url('/home/category')}}" class="srd-nav-item {{Route::current()->uri() == 'home/category' ? 'active' : ''}}"><i class="fas fa-th"></i>Categories<span class="srd-nav-count">{{ \App\Category::where('status',true)->count() }}</span></a>
+  <a href="{{url('/home/category')}}" class="srd-nav-item {{Route::current()->uri() == 'home/category' ? 'active' : ''}}"><i class="fas fa-th"></i>Categories<span class="srd-nav-count">{{ \App\Support\NavCounts::get('categories') }}</span></a>
   @endif
   @include('partials.sidebar-item-requisition', ['mode' => 'shore'])
   {{-- Service requisitions stop at SRD level, so only GM (SRD) and its four
@@ -154,11 +154,11 @@
   <div class="srd-nav-label">Admin</div>
   <a href="{{url('/home/user')}}" class="srd-nav-item {{Route::current()->uri() == 'home/user' ? 'active' : ''}}"><i class="fas fa-user"></i>Users</a>
   <a href="{{url('/home/trash')}}" class="srd-nav-item {{Route::current()->uri() == 'home/trash' ? 'active' : ''}}"><i class="fas fa-trash-alt"></i>Trash</a>
-  <a href="{{ route('get.certificate-categories') }}" class="srd-nav-item {{Route::current()->uri() == 'home/certificate-category' ? 'active' : ''}}"><i class="fas fa-tags"></i>Certificate Categories<span class="srd-nav-count">{{ \App\CertificateCategory::where('status',true)->count() }}</span></a>
+  <a href="{{ route('get.certificate-categories') }}" class="srd-nav-item {{Route::current()->uri() == 'home/certificate-category' ? 'active' : ''}}"><i class="fas fa-tags"></i>Certificate Categories<span class="srd-nav-count">{{ \App\Support\NavCounts::get('certificate_categories') }}</span></a>
   @endif
 
   @if(!empty(auth()->user()->role->role) && auth()->user()->role->role=='super-admin')
-  <a href="{{url('/home/budget-group')}}" class="srd-nav-item {{Route::current()->uri() == 'home/budget-group' ? 'active' : ''}}"><i class="fas fa-money-bill-alt"></i>Budget Groups<span class="srd-nav-count">{{ \App\BudgetGroup::where('status',true)->count() }}</span></a>
+  <a href="{{url('/home/budget-group')}}" class="srd-nav-item {{Route::current()->uri() == 'home/budget-group' ? 'active' : ''}}"><i class="fas fa-money-bill-alt"></i>Budget Groups<span class="srd-nav-count">{{ \App\Support\NavCounts::get('budget_groups') }}</span></a>
   @endif
 
   <div class="srd-sidebar-foot">
