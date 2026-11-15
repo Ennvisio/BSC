@@ -20,6 +20,10 @@
   <a href="{{url('/home/certificate')}}" class="srd-nav-item {{Route::current()->uri() == 'home/certificate' ? 'active' : ''}}"><i class="fas fa-certificate"></i>Certificates<span class="srd-nav-count">{{ \App\Support\NavCounts::get('certificates') }}</span></a>
   <a href="{{url('/home/survey')}}" class="srd-nav-item {{Route::current()->uri() == 'home/survey' ? 'active' : ''}}"><i class="fas fa-clipboard"></i>Surveys<span class="srd-nav-count">{{ \App\Support\NavCounts::get('surveys') }}</span></a>
   <a href="{{url('/home/vessel')}}" class="srd-nav-item {{Route::current()->uri() == 'home/vessel' ? 'active' : ''}}"><i class="fas fa-ship"></i>Vessels<span class="srd-nav-count">{{ \App\Support\NavCounts::get('vessels') }}</span></a>
+  @if(auth()->user()->role->role == 'super-admin')
+  {{-- Super-admin maintains any vessel's equipment & maker list (it has a vessel picker). --}}
+  <a href="{{ route('equipment.index') }}" class="srd-nav-item {{ Route::current()->uri() == 'vessel/equipment' ? 'active' : '' }}"><i class="fas fa-cogs"></i>Service Equipment List</a>
+  @endif
 
   {{-- Super-admin's Requisitions section (Categories + the all-fleet list) -
        SRD/SSM roles (GM (SRD) included) get Categories in their own
@@ -78,9 +82,14 @@
        what a Shore Repair service requisition line picks from. Catalog
        Import/Browse Catalog live inside the Inventory and Stock dropdown
        above now, not as standalone links under a separate label here. --}}
-  @if(in_array(auth()->user()->role->role, ['master', 'chief-engineer']))
   <div class="srd-nav-label">Vessel Records</div>
-  <a href="{{ route('equipment.index') }}" class="srd-nav-item {{ Route::current()->uri() == 'vessel/equipment' ? 'active' : '' }}"><i class="fas fa-cogs"></i>Equipment List</a>
+  <a href="{{ route('equipment.index') }}" class="srd-nav-item {{ Route::current()->uri() == 'vessel/equipment' ? 'active' : '' }}"><i class="fas fa-cogs"></i>Service Equipment List</a>
+  {{-- Fleet-wide shared lists, maintained here by every ship-level role as
+       well as by super-admin (HomeController::canManageBudgetGroups and the
+       certificate-category actions) - an edit applies to every vessel. --}}
+  <a href="{{url('/home/budget-group')}}" class="srd-nav-item {{Route::current()->uri() == 'home/budget-group' ? 'active' : ''}}"><i class="fas fa-money-bill-alt"></i>Budget Groups<span class="srd-nav-count">{{ \App\Support\NavCounts::get('budget_groups') }}</span></a>
+  <a href="{{ route('get.certificate-categories') }}" class="srd-nav-item {{Route::current()->uri() == 'home/certificate-category' ? 'active' : ''}}"><i class="fas fa-tags"></i>Certificate Categories<span class="srd-nav-count">{{ \App\Support\NavCounts::get('certificate_categories') }}</span></a>
+  @if(in_array(auth()->user()->role->role, ['master', 'chief-engineer']))
   {{-- Certificates/Surveys are fleet-wide reference data everywhere else in
        this sidebar (super-admin/GM (SRD)/admin only, see "Fleet Records"
        above) - but a vessel's own Master/Chief Engineer also see and add

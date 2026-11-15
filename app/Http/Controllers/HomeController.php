@@ -208,10 +208,14 @@ class HomeController extends Controller
     // Item/Category/Vessel catalog loads each one does for its view.
     $roleController = app(RoleController::class)->withoutLookups();
 
+    // The lists are paginators now; a page's ->count() is its row count, so
+    // read the total (a plain collection - a role with no queue - just counts).
+    $total = fn ($orders) => $orders instanceof \Illuminate\Pagination\LengthAwarePaginator ? $orders->total() : $orders->count();
+
     return [
-      'pending_action' => $roleController->pendingRequisition()->getData()['orders']->count(),
-      'my_approvals' => $roleController->myApprovals()->getData()['orders']->count(),
-      'approved' => $roleController->approvedRequisition()->getData()['orders']->count(),
+      'pending_action' => $total($roleController->pendingRequisition()->getData()['orders']),
+      'my_approvals' => $total($roleController->myApprovals()->getData()['orders']),
+      'approved' => $total($roleController->approvedRequisition()->getData()['orders']),
       // Fleet-wide, not per-officer - matches what /received/requisition
       // itself shows the shore side (HomeController@rcvReqForAll).
       'received' => Order::where('ord_status', true)->where('status', 'received')->count(),
@@ -231,6 +235,15 @@ class HomeController extends Controller
   {
     return in_array(auth()->user()->role->role ?? null, ['super-admin', 'admin'], true)
       || in_array(auth()->user()->role->user_type ?? null, ['srd', 'ssm'], true);
+  }
+
+  /** Any ship-level role (Master, Chief Engineer, Chief Officer, Second
+   * Engineer, Operator) tied to a vessel. Wider than isVesselRecordsManager(),
+   * which stays Master/Chief Engineer for certificate and survey records. */
+  private function isShipCrew(): bool
+  {
+    return (auth()->user()->role->user_type ?? null) === 'ship'
+      && ! empty(auth()->user()->role->vessel_id);
   }
 
   private function isVesselRecordsManager(): bool
@@ -476,13 +489,13 @@ private function expiryDateFor(Request $request, bool $isPermanent): ?string
 
 /**
  * Certificate CATEGORY management - the sections of the TEC-04 Certificate
- * Checklist that each vessel's certificates are filed under. Super-admin's
- * own list (isFleetRecordsAdmin): a vessel's Master/Chief Engineer picks
- * from it when recording a certificate, but never adds to it.
+ * Checklist that each vessel's certificates are filed under. One fleet-wide
+ * list, maintained by the fleet records admins and also by any ship-level
+ * role (isShipCrew) - an edit applies to every vessel, since the list is shared.
  */
 public function getCertificateCategories()
 {
-  abort_unless($this->isFleetRecordsAdmin(), 403);
+  abort_unless($this->isFleetRecordsAdmin() || $this->isShipCrew(), 403);
 
   $categories = CertificateCategory::where('status', true)->orderBy('name')->get();
 
@@ -491,7 +504,7 @@ public function getCertificateCategories()
 
 public function storeCertificateCategory(CertificateCategoryFormValidate $request)
 {
-  abort_unless($this->isFleetRecordsAdmin(), 403);
+  abort_unless($this->isFleetRecordsAdmin() || $this->isShipCrew(), 403);
 
   $category = new CertificateCategory;
   $category->name = trim($request->name);
@@ -504,7 +517,7 @@ public function storeCertificateCategory(CertificateCategoryFormValidate $reques
 
 public function updateCertificateCategory(CertificateCategoryFormValidate $request)
 {
-  abort_unless($this->isFleetRecordsAdmin(), 403);
+  abort_unless($this->isFleetRecordsAdmin() || $this->isShipCrew(), 403);
 
   $category = CertificateCategory::findOrFail($request->category_id);
   $category->name = trim($request->name);
@@ -516,7 +529,7 @@ public function updateCertificateCategory(CertificateCategoryFormValidate $reque
 
 public function deleteCertificateCategory(Request $request)
 {
-  abort_unless($this->isFleetRecordsAdmin(), 403);
+  abort_unless($this->isFleetRecordsAdmin() || $this->isShipCrew(), 403);
 
   $category = CertificateCategory::findOrFail($request->id);
 
@@ -571,13 +584,19 @@ public function deleteCategory(Request $request){
   $data ="Requested Category has been deleted successfully!";
   return array($data);
 }
+/** Budget Groups: super-admin, plus any ship-level role.
+ * One fleet-wide list - an edit applies to every vessel. */
+private function canManageBudgetGroups(): bool
+{
+  return (auth()->user()->role->role ?? null) === 'super-admin' || $this->isShipCrew();
+}
 public function getBudgetGroup(){
-  abort_unless(auth()->user()->role->role === 'super-admin', 403);
+  abort_unless($this->canManageBudgetGroups(), 403);
   $budgetGroups=BudgetGroup::orderBy('created_at','desc')->where('status',true)->get();
   return view('layouts.budget-group',compact('budgetGroups'));
 }
 public function storeBudgetGroup(BudgetGroupFormValidate $request){
- abort_unless(auth()->user()->role->role === 'super-admin', 403);
+ abort_unless($this->canManageBudgetGroups(), 403);
  $budgetGroup = new BudgetGroup;
  $budgetGroup->name=$request->name;
  $budgetGroup->kind=$request->kind ?: BudgetGroup::KIND_ITEM;
@@ -589,7 +608,7 @@ public function storeBudgetGroup(BudgetGroupFormValidate $request){
  return array($data,$budgetGroup);
 }
 public function updateBudgetGroup(BudgetGroupFormValidate $request){
- abort_unless(auth()->user()->role->role === 'super-admin', 403);
+ abort_unless($this->canManageBudgetGroups(), 403);
  $budgetGroup = BudgetGroup::findOrFail($request->BudgetGroup_Id);
  $budgetGroup->name=$request->name;
  $budgetGroup->kind=$request->kind ?: $budgetGroup->kind;
@@ -599,7 +618,7 @@ public function updateBudgetGroup(BudgetGroupFormValidate $request){
  return array($data,$budgetGroup);
 }
 public function deleteBudgetGroup(Request $request){
-  abort_unless(auth()->user()->role->role === 'super-admin', 403);
+  abort_unless($this->canManageBudgetGroups(), 403);
   $budgetGroup =BudgetGroup::findOrFail($request->id);
   $budgetGroup->status = false;
   $budgetGroup->update();
@@ -1696,24 +1715,29 @@ public function deliverReqForAll(){
   $categories =Category::orderBy('created_at','desc')->where('status',true)->get();
   $vessels =Vessel::orderBy('created_at','desc')->where('status',true)->get();
 
+  // Paged, searched and filtered on the server like the other requisition lists.
+  $roleController = app(RoleController::class);
+
   if(auth()->user()->role->user_type=='ship'){
-    $orders = app(RoleController::class)->shipTrackingScope()
-      ->where('status', 'delivered')
-      ->orderBy('updated_at', 'desc')
-      ->get();
+    $orders = $roleController->pageOrders(
+      $roleController->shipTrackingScope()
+        ->where('status', 'delivered')
+        ->orderBy('updated_at', 'desc')
+    );
     $drafts = collect();
     $listTitle = 'Delivered Requisitions';
 
-    return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle'));
+    return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle') + $roleController->listViewData());
   }
 
   // Shore side sees the whole fleet's delivered requisitions.
-  $orders = Order::where('ord_status', true)
-    ->where('status', 'delivered')
-    ->orderBy('updated_at', 'desc')
-    ->get();
+  $orders = $roleController->pageOrders(
+    Order::where('ord_status', true)
+      ->where('status', 'delivered')
+      ->orderBy('updated_at', 'desc')
+  );
 
-  return view('layouts.order',compact('orders','items','categories','vessels'));
+  return view('layouts.order',compact('orders','items','categories','vessels') + $roleController->listViewData());
 }
 /**
  * Delivered/Received - the closed loop: Master or Chief Engineer has

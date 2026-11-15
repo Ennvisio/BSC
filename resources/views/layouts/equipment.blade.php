@@ -3,7 +3,7 @@
 <div class="col-lg-6 col-xl-12">
 	<div class="card">
 		<div class="card-header pv-card-hader">
-			<strong class="pptitle">Equipment &amp; Maker List &mdash; {{ auth()->user()->role->vessel->name ?? '' }}</strong>
+			<strong class="pptitle">Equipment &amp; Maker List &mdash; {{ $vessel->name ?? '' }}</strong>
 			<div class="right-buttons">
 				<button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#add-equipment-modal"><i class="fas fa-plus-square"></i> Add Equipment</button>
 				<button type="button" class="btn btn-sm btn-info" data-toggle="modal" data-target="#upload-equipment-modal"><i class="fas fa-upload"></i> Upload Sheet</button>
@@ -12,6 +12,20 @@
 		<div class="card-body">
 			@if(session('message'))
 			<div class="alert alert-info">{{ session('message') }}</div>
+			@endif
+
+			{{-- Super-admin maintains any vessel's list: pick the vessel here and
+				 every action below (add, edit, remove, download, upload) applies to it.
+				 Ship-level users never see this - they are locked to their own vessel. --}}
+			@if(!empty($vessels))
+			<form method="get" action="{{ route('equipment.index') }}" class="form-inline mb-3">
+				<label for="equipment-vessel" class="mr-2"><strong>Vessel</strong></label>
+				<select name="vessel_id" id="equipment-vessel" class="form-control mr-2" onchange="this.form.submit()">
+					@foreach($vessels as $v)
+					<option value="{{ $v->id }}" {{ optional($vessel)->id == $v->id ? 'selected' : '' }}>{{ $v->name }}</option>
+					@endforeach
+				</select>
+			</form>
 			@endif
 
 			<table id="equipment-table" class="table table-bordered dt-responsive" style="width:100%;">
@@ -47,6 +61,7 @@
 		<div class="modal-content">
 			<form id="add-equipment-form">
 				@csrf
+				@if(!empty($vessels))<input type="hidden" name="vessel_id" value="{{ optional($vessel)->id }}">@endif
 				<div class="modal-header justify-content-between" style="background:#579eb9; color:#fff;">
 					<legend class="modal-title text-center"><i class="fab fa-wpforms"></i> &nbsp; Add Equipment</legend>
 					<button type="button" class="close" data-dismiss="modal" style="color:#fff;">&times;</button>
@@ -76,6 +91,7 @@
 			<form id="edit-equipment-form">
 				@csrf
 				<input type="hidden" name="id">
+				@if(!empty($vessels))<input type="hidden" name="vessel_id" value="{{ optional($vessel)->id }}">@endif
 				<div class="modal-header justify-content-between" style="background:#579eb9; color:#fff;">
 					<legend class="modal-title text-center"><i class="fab fa-wpforms"></i> &nbsp; Edit Equipment</legend>
 					<button type="button" class="close" data-dismiss="modal" style="color:#fff;">&times;</button>
@@ -108,14 +124,15 @@
 			</div>
 			<div class="modal-body">
 				<p class="text-muted small">
-					Download the current list, edit it, and upload it back &mdash; a name already on your list
+					Download the current list, edit it, and upload it back &mdash; a name already on the list
 					is updated (its Maker replaced), not duplicated. A blank Maker cell clears that equipment's
 					maker, since there's no "leave alone" reading for a name/maker sheet the way there is for a
 					stock count.
 				</p>
-				<a href="{{ route('equipment.template') }}" class="btn btn-sm btn-info mb-3"><i class="fas fa-download"></i> Download Current List</a>
+				<a href="{{ route('equipment.template', !empty($vessels) ? ['vessel_id' => optional($vessel)->id] : []) }}" class="btn btn-sm btn-info mb-3"><i class="fas fa-download"></i> Download Current List</a>
 				<form action="{{ route('equipment.upload') }}" method="POST" enctype="multipart/form-data">
 					@csrf
+					@if(!empty($vessels))<input type="hidden" name="vessel_id" value="{{ optional($vessel)->id }}">@endif
 					<div class="form-group">
 						<label>Filled-in sheet (.xlsx, .xls, .csv)</label>
 						<input type="file" name="equipment_file" class="form-control-file" accept=".xlsx,.xls,.csv" required>
@@ -169,7 +186,7 @@ $(function () {
 			confirmButtonText: 'Yes, remove it',
 		}).then(function (result) {
 			if (!(result === true || (result && result.value))) { return; }
-			$.post('{{ url("/vessel/equipment/delete") }}', { _token: '{{ csrf_token() }}', id: id })
+			$.post('{{ url("/vessel/equipment/delete") }}', { _token: '{{ csrf_token() }}', id: id, vessel_id: '{{ !empty($vessels) ? optional($vessel)->id : '' }}' })
 				.done(function () { $('#equipment-table').DataTable().row(row).remove().draw(); })
 				.fail(function (xhr) {
 					toastr.error((xhr.responseJSON && xhr.responseJSON.message) || 'Something went wrong.');

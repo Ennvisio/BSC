@@ -20,6 +20,8 @@ use App\Role;
 
 class RoleController extends Controller
 {
+	use \App\Http\Controllers\Concerns\PaginatesRequisitionLists;
+
 	/** When true, the Item/Category/Vessel lists some pages load for their
 	 * view are skipped (empty collection) - for callers that only count the
 	 * returned orders, e.g. the dashboard stat cards. */
@@ -30,6 +32,89 @@ class RoleController extends Controller
 		$this->skipLookups = true;
 
 		return $this;
+	}
+
+	/** What the requisition list views need besides $orders (search text, page
+	 * size, filters) - filled in by pageOrders(). */
+	private array $listState = [];
+
+	/**
+	 * Pages one requisition list on the server: the query is searched
+	 * (?q=), filtered (vessel/category/dates, for the roles that see every
+	 * vessel), eager-loaded and cut to one page (?per_page=, ?page=) in the
+	 * database - the same shape as All Requisitions (HomeController@getOrder).
+	 *
+	 * When only counting (withoutLookups(), the dashboard cards) it skips all
+	 * that and returns a one-row paginator; read ->total() off it.
+	 */
+	public function pageOrders($query)
+	{
+		if ($this->skipLookups) {
+			return $query->paginate(1);
+		}
+
+		$request = request();
+		$q = trim((string) $request->query('q'));
+		$perPageChoice = $this->requisitionPerPage($request);
+
+		// Only roles with no vessel of their own get the filter panel.
+		$filterable = empty(auth()->user()->role->vessel_id);
+		$ship_id = $filterable ? $request->query('ship_id') : null;
+		$cat_id = $filterable ? $request->query('cat_id') : null;
+		$from_date = $filterable ? ($request->query('from_date') ?: null) : null;
+		$end_date = $filterable ? ($request->query('end_date') ?: null) : null;
+
+		$query->when($ship_id, fn ($w, $id) => $w->where('vessel_id', $id))
+			->when($cat_id, fn ($w, $id) => $w->where('category_id', $id))
+			->when($from_date && $end_date, fn ($w) => $w->whereBetween('req_date', [$from_date, $end_date]))
+			->when($from_date && ! $end_date, fn ($w) => $w->whereDate('req_date', $from_date))
+			->when($end_date && ! $from_date, fn ($w) => $w->whereDate('req_date', $end_date));
+
+		$orders = $this->paginateRequisitions(
+			$this->searchOrders($query, $q)
+				->with(['category', 'vessel', 'creator', 'orderItems:id,order_id,item_qty,del_item_qty,rcv_item_qty']),
+			$perPageChoice
+		);
+
+		// A stale ?page= past the end (a result set that shrank) lands on the last page.
+		if ($orders->isEmpty() && $orders->currentPage() > 1) {
+			throw new \Illuminate\Http\Exceptions\HttpResponseException(redirect($orders->url($orders->lastPage())));
+		}
+
+		$this->listState = [
+			'q' => $q,
+			'perPageChoice' => $perPageChoice,
+			'ship_id' => $ship_id,
+			'cat_id' => $cat_id,
+			'from_date' => $from_date,
+			'end_date' => $end_date,
+			'category' => $cat_id ? Category::find($cat_id) : null,
+		];
+
+		return $orders;
+	}
+
+	/** Merge into the list view's data after pageOrders(). */
+	public function listViewData(): array
+	{
+		return $this->listState;
+	}
+
+	/** Free-text search across req. no, port, category, vessel and creator (all pages). */
+	private function searchOrders($query, string $q)
+	{
+		if ($q === '') {
+			return $query;
+		}
+		$like = $this->likeTerm($q);
+
+		return $query->where(function ($w) use ($like) {
+			$w->where('req_no', 'like', $like)
+				->orWhere('port_name', 'like', $like)
+				->orWhereHas('category', fn ($c) => $c->where('name', 'like', $like))
+				->orWhereHas('vessel', fn ($v) => $v->where('name', 'like', $like))
+				->orWhereHas('creator', fn ($u) => $u->where('name', 'like', $like));
+		});
 	}
 
 	private function lookup(\Closure $query)
@@ -186,11 +271,11 @@ class RoleController extends Controller
 	public function rejectedRequisition()
 	{
 		if (auth()->user()->role->user_type == 'ship') {
-			$orders = $this->shipTrackingScope(true)->orderBy('updated_at', 'desc')->get();
+			$orders = $this->pageOrders($this->shipTrackingScope(true)->orderBy('updated_at', 'desc'));
 			$drafts = collect();
 			$listTitle = 'Rejected Requisitions';
 
-			return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle'));
+			return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle') + $this->listViewData());
 		}
 
 		$shipRoles = array_keys(array_filter(Role::TYPE_BY_ROLE, fn ($type) => $type === 'ship'));
@@ -199,15 +284,14 @@ class RoleController extends Controller
 		$categories = Category::orderBy('created_at', 'desc')->where('status', true)->get();
 		$vessels = Vessel::orderBy('created_at', 'desc')->where('status', true)->get();
 
-		$orders = Order::where('ord_status', true)
+		$orders = $this->pageOrders(Order::where('ord_status', true)
 			->where('status', 'rejected')
 			->whereNotIn('rejected_by_role', $shipRoles)
-			->orderBy('rejected_at', 'desc')
-			->get();
+			->orderBy('rejected_at', 'desc'));
 
 		$listTitle = 'Rejected Requisitions';
 
-		return view('layouts.order', compact('items', 'categories', 'vessels', 'orders', 'listTitle'));
+		return view('layouts.order', compact('items', 'categories', 'vessels', 'orders', 'listTitle') + $this->listViewData());
 	}
 
 	public function myApprovals()
@@ -238,15 +322,14 @@ class RoleController extends Controller
 		if (in_array($role, ['master', 'chief-engineer'], true)) {
 			$column = $role === 'master' ? 'master_app' : 'chief_eng_app';
 
-			$orders = $inProgress(Order::where('ord_status', true))
+			$orders = $this->pageOrders($inProgress(Order::where('ord_status', true))
 				->where('vessel_id', auth()->user()->role->vessel_id)
 				->whereHas('orderApproval', fn ($q) => $q->where($column, $userId))
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 
 			$drafts = collect();
 
-			return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle'));
+			return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle') + $this->listViewData());
 		}
 
 		// Shore side: not vessel-scoped, one column per role except GM (SRD),
@@ -265,7 +348,7 @@ class RoleController extends Controller
 		];
 
 		if ($role === 'gm-srd') {
-			$orders = $inProgress(Order::where('ord_status', true))
+			$orders = $this->pageOrders($inProgress(Order::where('ord_status', true))
 				->whereHas('orderApproval', function ($q) use ($userId) {
 					$q->where('gm_app', $userId)
 						->orWhere('forwarded_to_dgm_srd', $userId)
@@ -273,14 +356,12 @@ class RoleController extends Controller
 						->orWhere('forwarded_to_am_by_agm_srd', $userId)
 						->orWhere('forwarded_to_superintendent_srd', $userId);
 				})
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 		} elseif (array_key_exists($role, $shoreColumns)) {
 			$column = $shoreColumns[$role];
-			$orders = $inProgress(Order::where('ord_status', true))
+			$orders = $this->pageOrders($inProgress(Order::where('ord_status', true))
 				->whereHas('orderApproval', fn ($q) => $q->where($column, $userId))
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 		} else {
 			$orders = collect();
 		}
@@ -289,7 +370,7 @@ class RoleController extends Controller
 		$categories = $this->lookup(fn () => Category::orderBy('created_at', 'desc')->where('status', true)->get());
 		$vessels = $this->lookup(fn () => Vessel::orderBy('created_at', 'desc')->where('status', true)->get());
 
-		return view('layouts.order', compact('orders', 'items', 'categories', 'vessels', 'listTitle'));
+		return view('layouts.order', compact('orders', 'items', 'categories', 'vessels', 'listTitle') + $this->listViewData());
 	}
 
 	public function pendingRequisition()
@@ -314,14 +395,13 @@ class RoleController extends Controller
 
 			// Pending: submitted and still moving through the chain - anything
 			// that hasn't reached SSM's final action yet.
-			$orders = $this->shipTrackingScope()
+			$orders = $this->pageOrders($this->shipTrackingScope()
 				->whereNotIn('status', ['draft', 'delivered', 'received'])
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 
 			$listTitle = 'Pending Requisitions';
 
-			return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle'));
+			return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle') + $this->listViewData());
 		} else {
 			// The four SRD delegate roles share one shape: only orders GM
 			// actually delegated to that role, that this specific person hasn't
@@ -331,7 +411,7 @@ class RoleController extends Controller
 			// to visible-to-everyone-in-that-role rather than stranding it.
 			if (auth()->user()->role->role == 'am-srd') {
 				$userId = auth()->user()->id;
-				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+				$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					->whereHas('orderApproval', function ($q) use ($userId) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
@@ -344,8 +424,7 @@ class RoleController extends Controller
 							})
 							->where('ast_m_app', '=', null);
 					})
-					->orderBy('updated_at', 'desc')
-					->get();
+					->orderBy('updated_at', 'desc'));
 			} elseif (auth()->user()->role->role == 'agm-srd') {
 				// (This previously carried an orWhere() for the old "AM sends it
 				// back up to AGM" hop - AGM no longer forwards to AM at all, and
@@ -354,7 +433,7 @@ class RoleController extends Controller
 				// engineer approved it", so AGM was seeing effectively every
 				// order.)
 				$userId = auth()->user()->id;
-				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+				$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					->whereHas('orderApproval', function ($q) use ($userId) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
@@ -368,11 +447,10 @@ class RoleController extends Controller
 							->where('gm_app', '=', null)
 							->where('agm_app', '=', null);
 					})
-					->orderBy('updated_at', 'desc')
-					->get();
+					->orderBy('updated_at', 'desc'));
 			} elseif (auth()->user()->role->role == 'dgm-srd') {
 				$userId = auth()->user()->id;
-				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+				$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					->whereHas('orderApproval', function ($q) use ($userId) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
@@ -385,11 +463,10 @@ class RoleController extends Controller
 							})
 							->where('dgm_srd_app', '=', null);
 					})
-					->orderBy('updated_at', 'desc')
-					->get();
+					->orderBy('updated_at', 'desc'));
 			} elseif (auth()->user()->role->role == 'superintendent-srd') {
 				$userId = auth()->user()->id;
-				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+				$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					->whereHas('orderApproval', function ($q) use ($userId) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
@@ -402,10 +479,9 @@ class RoleController extends Controller
 							})
 							->where('superintendent_srd_app', '=', null);
 					})
-					->orderBy('updated_at', 'desc')
-					->get();
+					->orderBy('updated_at', 'desc'));
 			} elseif (auth()->user()->role->role == 'gm-srd') {
-				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+				$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					->whereHas('orderApproval', function ($q) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
@@ -428,10 +504,9 @@ class RoleController extends Controller
 								});
 							});
 					})
-					->orderBy('updated_at', 'desc')
-					->get();
+					->orderBy('updated_at', 'desc'));
 			} elseif (auth()->user()->role->role == 'dgm-ssm') {
-				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+				$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					->whereHas('orderApproval', function ($q) {
 						$q->where(function ($query) {
 							$query->where('master_app', '!=', null)
@@ -440,8 +515,7 @@ class RoleController extends Controller
 							->where('gm_app', '!=', null)
 							->where('dgm_app_ssm', '=', null);
 					})
-					->orderBy('updated_at', 'desc')
-					->get();
+					->orderBy('updated_at', 'desc'));
 			}
 			// SSM final action. DGM (SSM) assigns the requisition to one named
 			// officer, so all three roles share the same queue definition:
@@ -454,7 +528,7 @@ class RoleController extends Controller
 					$query->where('assigned_to_ssm', $userId)->orWhereNull('assigned_to_ssm');
 				};
 
-				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+				$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					->where(function ($outer) use ($assignedToMe) {
 						// In procurement, the stage alone says whose turn it
 						// is - and it comes BACK to this queue after the ship
@@ -483,15 +557,14 @@ class RoleController extends Controller
 									});
 							});
 					})
-					->orderBy('updated_at', 'desc')
-					->get();
+					->orderBy('updated_at', 'desc'));
 			}
 			// Technical/Marine Superintendent: standing, cross-vessel visibility
 			// at any stage - every active requisition not yet fully closed,
 			// regardless of which role currently holds it. Purely informational
 			// (see approveRequisition()) - never gates the normal chain.
 			elseif (auth()->user()->role->role == 'technical-superintendent' || auth()->user()->role->role == 'marine-superintendent') {
-				$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+				$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 					// "Not yet closed" used to be status != 'received'. Once a
 					// requisition is in procurement that's no longer the end of
 					// it: 'received' means the goods are on board, with Invoice
@@ -503,10 +576,9 @@ class RoleController extends Controller
 									->where('procurement_stage', '!=', ProcurementStage::CLOSED);
 							});
 					})
-					->orderBy('updated_at', 'desc')
-					->get();
+					->orderBy('updated_at', 'desc'));
 			}
-			return view('layouts.order', compact('orders', 'items', 'categories', 'vessels'));
+			return view('layouts.order', compact('orders', 'items', 'categories', 'vessels') + $this->listViewData());
 		}
 	}
 	public function approvedRequisition()
@@ -522,18 +594,17 @@ class RoleController extends Controller
 		// bucket keys off that. Drafts belong on Pending only, so none are
 		// loaded here.
 		if (auth()->user()->role->user_type == 'ship') {
-			$orders = $this->shipTrackingScope()
+			$orders = $this->pageOrders($this->shipTrackingScope()
 				->where('status', 'delivered')
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 
 			$listTitle = 'Approved Requisitions';
 
-			return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle'));
+			return view('layouts.ship-home', compact('orders', 'drafts', 'listTitle') + $this->listViewData());
 		}
 
 		if (auth()->user()->role->role == 'am-srd') {
-			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+			$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -542,11 +613,10 @@ class RoleController extends Controller
 						->where('forwarded_to_am_by_agm_srd', '!=', null)
 						->where('ast_m_app', '!=', null);
 				})
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 		}
 		elseif (auth()->user()->role->role == 'agm-srd') {
-			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+			$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -555,11 +625,10 @@ class RoleController extends Controller
 						->where('forwarded_to_agm_by_gm_srd', '!=', null)
 						->where('agm_app', '!=', null);
 				})
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 		}
 		elseif (auth()->user()->role->role == 'dgm-srd') {
-			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+			$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -568,11 +637,10 @@ class RoleController extends Controller
 						->where('forwarded_to_dgm_srd', '!=', null)
 						->where('dgm_srd_app', '!=', null);
 				})
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 		}
 		elseif (auth()->user()->role->role == 'superintendent-srd') {
-			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+			$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -581,11 +649,10 @@ class RoleController extends Controller
 						->where('forwarded_to_superintendent_srd', '!=', null)
 						->where('superintendent_srd_app', '!=', null);
 				})
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 		}
 		elseif (auth()->user()->role->role == 'gm-srd') {
-			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+			$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -593,11 +660,10 @@ class RoleController extends Controller
 					})
 						->where('gm_app', '!=', null);
 				})
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 		}
 		elseif (auth()->user()->role->role == 'dgm-ssm') {
-			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+			$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -606,11 +672,10 @@ class RoleController extends Controller
 						->where('gm_app', '!=', null)
 						->where('dgm_app_ssm', '!=', null);
 				})
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 		}
 		elseif (auth()->user()->role->role == 'agm-ssm') {
-			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+			$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -620,11 +685,10 @@ class RoleController extends Controller
 						->where('dgm_app_ssm', '!=', null)
 						->where('agm_app_ssm', '!=', null);
 				})
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 		}
 		elseif (auth()->user()->role->role == 'am-ssm') {
-			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+			$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -634,11 +698,10 @@ class RoleController extends Controller
 						->where('dgm_app_ssm', '!=', null)
 						->where('am_app_ssm', '!=', null);
 				})
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 		}
 		elseif (auth()->user()->role->role == 'superintendent-ssm') {
-			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+			$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where(function ($query) {
 						$query->where('master_app', '!=', null)
@@ -648,27 +711,24 @@ class RoleController extends Controller
 						->where('dgm_app_ssm', '!=', null)
 						->where('superintendent_ssm_app', '!=', null);
 				})
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 		}
 		elseif (auth()->user()->role->role == 'technical-superintendent') {
-			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+			$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where('tech_superintendent_app', '!=', null);
 				})
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 		}
 		elseif (auth()->user()->role->role == 'marine-superintendent') {
-			$orders = Order::where('ord_status', true)->where('status', '!=', 'rejected')
+			$orders = $this->pageOrders(Order::where('ord_status', true)->where('status', '!=', 'rejected')
 				->whereHas('orderApproval', function ($q) {
 					$q->where('marine_superintendent_app', '!=', null);
 				})
-				->orderBy('updated_at', 'desc')
-				->get();
+				->orderBy('updated_at', 'desc'));
 		}
 		// Ship users returned above; everything reaching here is shore side.
-		return view('layouts.order', compact('orders', 'items', 'categories', 'vessels'));
+		return view('layouts.order', compact('orders', 'items', 'categories', 'vessels') + $this->listViewData());
 	}
 	public function approveRequisition(Request $req)
 	{

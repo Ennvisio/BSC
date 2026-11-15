@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Imports\VesselEquipmentImport;
 use App\Exports\EquipmentTemplateExport;
+use App\Vessel;
 use App\VesselEquipment;
 use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
@@ -12,10 +13,11 @@ use Maatwebsite\Excel\Facades\Excel;
  * A vessel's own Equipment & Maker List - what a Shore Repair service
  * requisition line points at (see ServiceRequisitionController@searchEquipment).
  *
- * Master/Chief Engineer only, and only for their own vessel - the same
+ * Ship-level roles maintain their own vessel's list - the same
  * vessel-is-the-authority reasoning StockController already applies to stock
- * (they're the ones who actually know what's fitted and who made it), widened
- * to Chief Engineer as well since a lot of this list is engine-room kit.
+ * (the crew are the ones who actually know what's fitted and who made it).
+ * Super-admin can maintain any vessel's list: they pick the vessel (vessel_id)
+ * and every action below then applies to that vessel only.
  */
 class EquipmentController extends Controller
 {
@@ -24,15 +26,29 @@ class EquipmentController extends Controller
         $this->middleware('auth');
     }
 
-    public function index()
+    public function index(Request $request)
     {
         $this->authorizeManager();
 
-        $equipment = VesselEquipment::where('vessel_id', auth()->user()->role->vessel_id)
+        // Super-admin picks a vessel (the first one until they choose);
+        // everyone else is locked to their own.
+        $vessels = null;
+        if ($this->isSuperAdmin()) {
+            $vessels = Vessel::where('status', true)->orderBy('name')->get();
+            if (! $request->filled('vessel_id') && $vessels->isNotEmpty()) {
+                $request->merge(['vessel_id' => $vessels->first()->id]);
+            }
+        }
+
+        $vesselId = $this->vesselId($request);
+        $vessel = Vessel::find($vesselId);
+
+        $equipment = VesselEquipment::where('vessel_id', $vesselId)
+            ->where('status', true)
             ->orderBy('name')
             ->get();
 
-        return view('layouts.equipment', compact('equipment'));
+        return view('layouts.equipment', compact('equipment', 'vessel', 'vessels'));
     }
 
     /** Manual add of one row. */
@@ -45,14 +61,14 @@ class EquipmentController extends Controller
             'maker' => 'nullable|string|max:255',
         ]);
 
-        $vesselId = auth()->user()->role->vessel_id;
+        $vesselId = $this->vesselId($request);
 
         $exists = VesselEquipment::where('vessel_id', $vesselId)
             ->where('name', trim($request->name))
             ->exists();
 
         if ($exists) {
-            return response()->json(['message' => 'This equipment is already on your list.'], 422);
+            return response()->json(['message' => 'This equipment is already on the list.'], 422);
         }
 
         VesselEquipment::create([
@@ -76,7 +92,7 @@ class EquipmentController extends Controller
             'maker' => 'nullable|string|max:255',
         ]);
 
-        $vesselId = auth()->user()->role->vessel_id;
+        $vesselId = $this->vesselId($request);
         $equipment = VesselEquipment::where('id', $request->id)->where('vessel_id', $vesselId)->firstOrFail();
 
         $duplicate = VesselEquipment::where('vessel_id', $vesselId)
@@ -101,7 +117,7 @@ class EquipmentController extends Controller
     {
         $this->authorizeManager();
 
-        $vesselId = auth()->user()->role->vessel_id;
+        $vesselId = $this->vesselId($request);
         $equipment = VesselEquipment::where('id', $request->id)->where('vessel_id', $vesselId)->first();
 
         if (! $equipment) {
@@ -114,14 +130,14 @@ class EquipmentController extends Controller
         // way items do (see the vessel_items/items orphan cleanup earlier).
         $equipment->update(['status' => false, 'updated_by' => auth()->id()]);
 
-        return response()->json(['message' => 'Equipment removed from your list.']);
+        return response()->json(['message' => 'Equipment removed from the list.']);
     }
 
-    public function template()
+    public function template(Request $request)
     {
         $this->authorizeManager();
 
-        $vessel = auth()->user()->role->vessel;
+        $vessel = Vessel::findOrFail($this->vesselId($request));
         $filename = 'equipment-'.str_replace(' ', '-', strtolower($vessel->name)).'.xlsx';
 
         return Excel::download(new EquipmentTemplateExport($vessel->id), $filename);
@@ -137,7 +153,7 @@ class EquipmentController extends Controller
             'equipment_file' => 'required|file|mimes:xlsx,xls,csv',
         ]);
 
-        $vesselId = auth()->user()->role->vessel_id;
+        $vesselId = $this->vesselId($request);
         $import = new VesselEquipmentImport($vesselId, auth()->id());
 
         Excel::import($import, $request->file('equipment_file'));
@@ -150,17 +166,40 @@ class EquipmentController extends Controller
             $message .= ' First error: '.($import->errors[0] ?? '');
         }
 
-        return redirect()->route('equipment.index')->with('message', $message);
+        return redirect()->route('equipment.index', $this->isSuperAdmin() ? ['vessel_id' => $vesselId] : [])->with('message', $message);
+    }
+
+    private function isSuperAdmin(): bool
+    {
+        return (auth()->user()->role->role ?? null) === 'super-admin';
+    }
+
+    /**
+     * Which vessel this request is about: a ship-level user's own, always;
+     * super-admin's is the one they chose (vessel_id), which has to exist.
+     */
+    private function vesselId(Request $request): int
+    {
+        if ($this->isSuperAdmin()) {
+            $id = (int) $request->input('vessel_id');
+            abort_unless($id > 0 && Vessel::whereKey($id)->exists(), 422, 'Choose a vessel first.');
+
+            return $id;
+        }
+
+        return (int) auth()->user()->role->vessel_id;
     }
 
     private function isManager(): bool
     {
-        return in_array(auth()->user()->role->role ?? null, ['master', 'chief-engineer'], true)
+        // Any ship-level role with a vessel (Master, Chief Engineer, Chief
+        // Officer, Second Engineer, Operator) - always scoped to their own vessel.
+        return (auth()->user()->role->user_type ?? null) === 'ship'
             && ! empty(auth()->user()->role->vessel_id);
     }
 
     private function authorizeManager(): void
     {
-        abort_unless($this->isManager(), 403, 'Only the Master or Chief Engineer can maintain the equipment list.');
+        abort_unless($this->isSuperAdmin() || $this->isManager(), 403, 'Only super-admin or a vessel\'s own crew can maintain an equipment list.');
     }
 }
