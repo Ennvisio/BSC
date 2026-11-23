@@ -13,7 +13,10 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'mysql'),
+    // DB_CONNECTION always wins, so an existing cloud .env is unaffected.
+    // Without it, a vessel server (APP_MODE=vessel) uses its own local
+    // 'vessel' connection and everything else uses 'mysql', as before.
+    'default' => env('DB_CONNECTION', strtolower(trim((string) env('APP_MODE', 'cloud'))) === 'vessel' ? 'vessel' : 'mysql'),
 
     /*
     |--------------------------------------------------------------------------
@@ -48,6 +51,30 @@ return [
             'username' => env('DB_USERNAME', 'forge'),
             'password' => env('DB_PASSWORD', ''),
             'unix_socket' => env('DB_SOCKET', ''),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+        ],
+
+        /*
+        | The onboard database of a vessel server (APP_MODE=vessel). It is a
+        | separate connection with its own VESSEL_DB_* variables so it can
+        | never silently pick up cloud credentials. MySQL listens on the
+        | loopback address only: LAN clients reach the data through the web
+        | application, never directly. `php artisan navisuite:status` warns
+        | when the host is not local.
+        */
+        'vessel' => [
+            'driver' => 'mysql',
+            'host' => env('VESSEL_DB_HOST', '127.0.0.1'),
+            'port' => env('VESSEL_DB_PORT', '3306'),
+            'database' => env('VESSEL_DB_DATABASE', 'navisuite'),
+            'username' => env('VESSEL_DB_USERNAME', 'navisuite'),
+            'password' => env('VESSEL_DB_PASSWORD', ''),
+            'unix_socket' => env('VESSEL_DB_SOCKET', ''),
             'charset' => 'utf8mb4',
             'collation' => 'utf8mb4_unicode_ci',
             'prefix' => '',

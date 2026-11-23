@@ -124,8 +124,11 @@ window.PmsJobDef = (function () {
 			reset(res.component);
 			saveUrl = showUrl + '/' + def.id + '/update';
 			$('#pms-jd-title').text(res.can_edit ? 'Edit Job' : 'Job Definition');
-			$('#jd-active-wrap').removeClass('pms-hidden');
 			fill(def);
+			// PD-72: vessel users cannot deactivate an active job. The box
+			// stays hidden and ticked, so the form still sends is_active=1.
+			// An inactive job is shown, so it can be reactivated.
+			$('#jd-active-wrap').toggleClass('pms-hidden', !!def.is_active && !res.can_deactivate);
 			setKind(!!def.is_single);
 			$.each(def.intervals, function (_, iv) { addInterval(iv.every, iv.period); });
 			if (!def.is_single && !def.intervals.length) { addInterval('', 'Month'); }

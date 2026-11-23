@@ -184,8 +184,10 @@
 									<label class="custom-control-label" for="pc-class">Class relevant</label>
 								</div>
 								<div class="custom-control custom-checkbox">
-									<input type="checkbox" class="custom-control-input" id="pc-inactive" name="is_inactive" value="1">
+									{{-- PD-73: only the office sets this; vessel users see it, disabled (a disabled box is not sent). --}}
+									<input type="checkbox" class="custom-control-input" id="pc-inactive" name="is_inactive" value="1" @unless($canSetInactive) disabled data-office-only="1" @endunless>
 									<label class="custom-control-label" for="pc-inactive">Inactive</label>
+									@unless($canSetInactive)<small class="text-muted d-block" id="pc-inactive-note">Set by the office only.</small>@endunless
 								</div>
 							</div>
 						</div>

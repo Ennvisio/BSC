@@ -62,7 +62,14 @@ trait PmsAccess
     protected function canEditPmsVessel(int $vesselId): bool
     {
         if ($this->pmsRole() === 'super-admin') {
-            return true;
+            // Once a vessel runs its own server, its PMS records are kept on
+            // board; the office copy is read-only apart from approving jobs
+            // (roadmap Q2). Edits here would never reach the vessel.
+            $mode = app(\App\Support\AppMode::class);
+
+            return ! ($mode->isCloud()
+                && config('navisuite.cloud.lock_offline_vessels', true)
+                && $mode->vesselIsOfflineEnabled($vesselId));
         }
 
         return $this->pmsIsShip()

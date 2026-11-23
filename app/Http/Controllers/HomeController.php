@@ -391,11 +391,14 @@ class HomeController extends Controller
     $certificate->exp_date=$this->expiryDateFor($request, $certificate->is_permanent);
     $certificate->created_by=auth()->user()->id;
     if($request->hasFile('Certificate_Copy')){
-     $name = 'images/cert_copy/'.time() . '.' . $request->Certificate_Copy->getClientOriginalExtension();
-     $request->Certificate_Copy->move(base_path('images/cert_copy'), $name);
+     // Random name, extension from the content (Checkpoint 7).
+     $name = \App\Support\Files\SafeUpload::storePublic($request->Certificate_Copy, 'cert_copy', ['application/pdf'], 'Certificate_Copy');
      $certificate->cert_copy=$name;
    }
    $certificate->save();
+   if ($certificate->cert_copy) {
+     $this->recordCertificateCopy($certificate, $certificate->cert_copy);
+   }
    $newcertificate=VesselCertificate::with('vessel')->with('category')->where('id',$certificate->id)->first();
    $data ="New Vessel Certificate has been added successfully.";
    return array($data,$newcertificate,url('/'));
@@ -411,7 +414,55 @@ class HomeController extends Controller
     abort(404);
   }
 
-  return array($vessel_certificate, url('/'));
+  // PD-62: every copy, newest first, so earlier ones can still be opened.
+  // The current one is the certificate's own copy.
+  $copies = $vessel_certificate
+    ? \Illuminate\Support\Facades\DB::table('vessel_certificate_copies')->where('vessel_certificate_id', $vessel_certificate->id)
+        ->orderByRaw('uploaded_at IS NULL')->orderByDesc('uploaded_at')->orderByDesc('id')->get(['path', 'uploaded_at'])
+        ->map(function ($copy) use ($vessel_certificate) { $copy->current = $copy->path === $vessel_certificate->cert_copy; return $copy; })
+    : collect();
+
+  return array($vessel_certificate, url('/'), $copies);
+}
+
+/**
+ * PD-62: records $path as a copy of $certificate. A copy uploaded before
+ * the history began is added first, with no uploader, so it is listed too.
+ *
+ * Each record is an immutable historical record (it travels between
+ * servers, config/sync.php): written once, with who uploaded it, when, and
+ * the file's checksum and size, and never changed. Which copy is current
+ * is the certificate's own cert_copy; replaced_at is no longer written.
+ */
+private function recordCertificateCopy(VesselCertificate $certificate, string $path, ?string $previous = null): void
+{
+  $copies = \Illuminate\Support\Facades\DB::table('vessel_certificate_copies');
+  $now = now();
+  $listed = fn (string $p) => (clone $copies)->where('vessel_certificate_id', $certificate->id)->where('path', $p)->exists();
+
+  if ($previous && $previous !== $path && ! $listed($previous)) {
+    (clone $copies)->insert([
+      'vessel_certificate_id' => $certificate->id, 'path' => $previous, 'uploaded_by' => null, 'uploaded_at' => null,
+      'created_at' => $now, 'updated_at' => $now,
+    ] + $this->certificateFileFacts($previous));
+  }
+
+  if (! $listed($path)) {
+    (clone $copies)->insert([
+      'vessel_certificate_id' => $certificate->id, 'path' => $path, 'uploaded_by' => auth()->id(), 'uploaded_at' => $now,
+      'created_at' => $now, 'updated_at' => $now,
+    ] + $this->certificateFileFacts($path));
+  }
+}
+
+/** The stored file's checksum and size, so every server can check its copy. */
+private function certificateFileFacts(string $path): array
+{
+  $file = rtrim((string) config('filesystems.disks.public_images.root'), '/\\').DIRECTORY_SEPARATOR.$path;
+
+  return is_file($file)
+    ? ['sha256' => hash_file('sha256', $file), 'file_size' => filesize($file)]
+    : ['sha256' => null, 'file_size' => null];
 }
 public function updateOneCertificate(CertificateEditFormVal $request)
 {
@@ -431,14 +482,22 @@ public function updateOneCertificate(CertificateEditFormVal $request)
   $certificate->validity_years=$certificate->is_permanent ? null : $request->validity_years;
   $certificate->exp_date=$this->expiryDateFor($request, $certificate->is_permanent);
   $certificate->vessel_id=$this->isVesselRecordsManager() ? auth()->user()->role->vessel_id : $request->Vessel_Name;
+  $newCopy = null;
   if($request->hasFile('Certificate_Copy')){
-   \File::delete('images/cert_copy/' . basename($certificate->cert_copy));
-   $name = 'images/cert_copy/'.time() . '.' . $request->Certificate_Copy->getClientOriginalExtension();
-   $request->Certificate_Copy->move(base_path('images/cert_copy'), $name);
-   $certificate->cert_copy=$name;
+   // PD-62 (approved 2026-11-23): the previous copy is kept, not deleted;
+   // every copy is listed in vessel_certificate_copies.
+   // Random name, extension from the content (Checkpoint 7).
+   $newCopy = \App\Support\Files\SafeUpload::storePublic($request->Certificate_Copy, 'cert_copy', ['application/pdf'], 'Certificate_Copy');
+ }
+ $previousCopy = $certificate->cert_copy;
+ if ($newCopy !== null) {
+   $certificate->cert_copy=$newCopy;
  }
  $certificate->updated_by=auth()->user()->id;
  $certificate->update();
+ if ($newCopy !== null) {
+   $this->recordCertificateCopy($certificate, $newCopy, $previousCopy);
+ }
  $newcertificate=VesselCertificate::with('vessel')->with('category')->where('id',$certificate->id)->first();
  $data ="Requested Vessel Certificate has been updated successfully.";
  return array($data,$newcertificate,url('/'));
@@ -557,7 +616,13 @@ public function getCategory(){
   $categories=Category::orderBy('created_at','desc')->where('status',true)->get();
   return view('layouts.category',compact('categories'));
 }
+/** PD-71 B (approved 2026-11-23): only a Superadmin maintains requisition categories. */
+private function authorizeCategoryMaintenance(): void
+{
+  abort_unless($this->isSuperAdmin(), 403, 'Only a Superadmin can maintain requisition categories.');
+}
 public function storeCategory(CategoryFormValidate $request){
+ $this->authorizeCategoryMaintenance();
  $category = new Category;
  $category->name=$request->name;
  $category->symbol=$request->symbol;
@@ -569,6 +634,7 @@ public function storeCategory(CategoryFormValidate $request){
  return array($data,$category);
 }
 public function updateCategory(CategoryFormValidate $request){
+ $this->authorizeCategoryMaintenance();
  $category = Category::findOrFail($request->Category_Id);
  $category->name=$request->name;
  $category->symbol=$request->symbol;
@@ -578,6 +644,7 @@ public function updateCategory(CategoryFormValidate $request){
  return array($data,$category);
 }
 public function deleteCategory(Request $request){
+  $this->authorizeCategoryMaintenance();
   $category =Category::findOrFail($request->id);
   $category->status = false;
   $category->update();
@@ -1377,18 +1444,27 @@ if($r->type == 'certificate'){
   return response()->json(['url' => route('get.certificate')]);
 }
 if($r->type == 'order'){
-  $order = Order::find($r->id);
+  $order = Order::findOrFail($r->id);
+  // An unsubmitted draft also has ord_status false, so it is listed in the
+  // trash, but it was never retired: restoring it would make it a live
+  // requisition without a number or an approval record, skipping
+  // submission. Its author finishes and submits it from the requisition
+  // screens. (This branch used to fail on an undefined $certificate, after
+  // already reactivating the vessel and category.)
+  if($order->status === 'draft' || empty($order->req_no)){
+    return response()->json(['message' => 'This is an unsubmitted draft, not a retired requisition. Its author finishes and submits it from the requisition screens; it cannot be restored from the trash.'], 422);
+  }
   $vessel = Vessel::find($order->vessel_id);
   $category = Category::find($order->category_id);
-  if(!$vessel->status){
+  if($vessel && !$vessel->status){
     $this->restoreVessel($vessel->id);
   }
-  if(!$category->status){
+  if($category && !$category->status){
     $category->status  = true;
     $category->update();
   }
-  $certificate->status  = true;
-  $certificate->update();
+  $order->ord_status = true;
+  $order->update();
   return response()->json(['url' => route('get.all.order')]);
 }
 if($r->type == 'item'){
@@ -1417,45 +1493,61 @@ if($r->type == 'vessel'){
 }
 return response()->json(['error' => 'Please try again.']);
 }
+/**
+ * The trash's permanent delete. PD-60 (approved 2026-11-23): refused while
+ * anything refers to the record, and for any record of a vessel that runs
+ * its own server; the record then stays retired in the trash
+ * (App\Support\TrashGuard).
+ *
+ * The trash lists vessel surveys and vessel certificates, and restores them
+ * by those ids; this used to delete the survey type and the certificate
+ * name with the same id instead (App\Survey, App\Certificate), fleet-wide
+ * records the row on screen was not. It now deletes the row on screen.
+ */
 public function permanentDelete(Request $r){
- if($r->type == 'survey'){
-  $servey = Survey::find($r->id);   
-  $delete = $servey->delete();
-}
-if($r->type == 'certificate'){
-  $certificate = Certificate::find($r->id);   
-  $delete = $certificate->delete();
-}
-if($r->type == 'order'){
-  $order = Order::find($r->id);   
-  $delete = $order->delete();
-}
-if($r->type == 'item'){
-  $item = Item::find($r->id);   
-  $delete = $item->delete();
-}
-if($r->type == 'category'){
-  $category = Category::find($r->id);   
-  $delete = $category->delete();
-}
-if($r->type == 'vessel'){
-  $vessel = Vessel::find($r->id);   
-  $delete = $vessel->delete();
-}
-if(!$delete){
-  return response()->json(['deleted' => false]);
-}
-return response()->json(['deleted' => true]);
+  $type = (string) $r->type;
+  $id = (int) $r->id;
+
+  $refusal = app(\App\Support\TrashGuard::class)->refusal($type, $id);
+  if ($refusal !== null) {
+    return response()->json(['deleted' => false, 'message' => $refusal], 422);
+  }
+
+  $model = \App\Support\TrashGuard::TYPES[$type][0];
+  $delete = (bool) $model::whereKey($id)->delete();
+
+  return response()->json(['deleted' => $delete]);
 }
 /**
  * Muntasir - End
  */
+/**
+ * ADR-004: vessel users get no user administration rights at all, so every
+ * user screen and action is refused to ship roles. Only a Superadmin blocks
+ * a user or sets another user's password (ADR-004), and only a Superadmin
+ * creates users or changes a user's role (PD-71 A, approved 2026-11-23).
+ * Other office roles who see the Users screen (gm-srd) may still correct a
+ * user's name and e-mail address.
+ */
+private function refuseVesselUserAdministration(): void
+{
+  abort_if(\App\Support\DeletionPolicy::isVesselUser(auth()->user()), 403, 'Vessel users cannot administer user accounts.');
+}
+
+private function isSuperAdmin(): bool
+{
+  return (auth()->user()->role->role ?? null) === 'super-admin';
+}
+
 public function getUser(){
+ $this->refuseVesselUserAdministration();
  $data['vessels']=Vessel::orderBy('updated_at','desc')->where('status',true)->get();
  $data['roles']=Role::where('role','!=','super-admin')->where('status',true)->orderBy('created_at','desc')->get();
  return view('layouts.user',compact('data'));
 }
 public function storeUser(UserFormVal $request){
+  $this->refuseVesselUserAdministration();
+  abort_unless($this->isSuperAdmin(), 403, 'Only a Superadmin can create users.');
 
   $user= new User;
   $user->name= $request->User_Name;
@@ -1484,6 +1576,9 @@ public function storeUser(UserFormVal $request){
 }
 
 public function deleteUser(Request $req){
+  // "Delete user" blocks the account (status false); nothing is removed.
+  $this->refuseVesselUserAdministration();
+  abort_unless($this->isSuperAdmin(), 403, 'Only a Superadmin can block a user.');
   $user=User::findOrFail($req->id);
   $user->status=false;
   $user->update();
@@ -1494,13 +1589,26 @@ public function deleteUser(Request $req){
   return array($data);
 }
 public function getOneUser($id){
+  $this->refuseVesselUserAdministration();
   $user = User::findOrFail($id);
   $role = Role::findOrFail($user->role->id);
   $vessel_name = !empty($role->vessel->name)?$role->vessel->name:'';
   return array ($user, $role, $vessel_name);
 }
 public function updateOneUser(updateUserFormVal $request){
+  $this->refuseVesselUserAdministration();
+  abort_if($request->filled('password') && ! $this->isSuperAdmin(), 403, 'Only a Superadmin can change another user\'s password.');
   $user = User::findOrFail($request->user_id);
+  // PD-71 A (approved 2026-11-23): only a Superadmin changes a user's role.
+  // The role record also holds the vessel the role is for, so moving a user
+  // to another vessel counts as a role change.
+  if (! $this->isSuperAdmin()) {
+    $current = $user->role;
+    $newVessel = $request->Vessel_Name != 0 ? (int) $request->Vessel_Name : null;
+    $roleChanged = ($current->role ?? null) !== $request->User_Role
+      || ($current->vessel_id ? (int) $current->vessel_id : null) !== $newVessel;
+    abort_if($roleChanged, 403, 'Only a Superadmin can change a user\'s role or vessel.');
+  }
   $user->email=$request->email;
   $user->name=$request->User_Name;
   if ($request->filled('password')) {
@@ -1681,14 +1789,12 @@ public function changeFile(Request $request){
   $updated=[];
 
   if($request->hasFile('photo')){
-    $name ='images/userphoto/'. time() . '.' . $request->photo->getClientOriginalExtension();
-    $request->photo->move(base_path('images/userphoto'), $name);
+    $name = \App\Support\Files\SafeUpload::storePublic($request->photo, 'userphoto', ['image/jpeg', 'image/png', 'image/gif'], 'photo');
     $user->photo = $name;
     $updated[]='Photo';
   }
   if($request->hasFile('signature')){
-    $name ='images/signature/'. time() . '.' . $request->signature->getClientOriginalExtension();
-    $request->signature->move(base_path('images/signature'), $name);
+    $name = \App\Support\Files\SafeUpload::storePublic($request->signature, 'signature', ['image/jpeg', 'image/png', 'image/gif'], 'signature');
     $user->sign = $name;
     $updated[]='Signature';
   }

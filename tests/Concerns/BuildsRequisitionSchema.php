@@ -39,6 +39,7 @@ trait BuildsRequisitionSchema
             // partials.sidebar (every admin-master page) queries their counts
             // for the nav badges, for the roles these tests act as.
             '2019_02_11_091238_create_surveys_table.php',
+            '2019_04_23_092421_create_vessel_surveys_table.php',
             '2019_04_23_092447_create_vessel_certificates_table.php',
             '2026_09_23_110000_create_certificate_categories_table.php',
             '2019_02_14_041739_create_categories_table.php',
@@ -90,6 +91,8 @@ trait BuildsRequisitionSchema
             '2026_09_18_090100_create_attachment_stock_consumption_table.php',
             '2026_11_03_100000_create_stock_movements_table.php',
             '2026_11_04_100000_add_source_to_stock_imports_table.php',
+            // PD-61: hidden files are left out of the library.
+            '2026_11_26_110000_add_hidden_columns_to_attachments_table.php',
         ];
 
         Artisan::call('migrate', [

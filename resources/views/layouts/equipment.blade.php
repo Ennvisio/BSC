@@ -4,14 +4,19 @@
 	<div class="card">
 		<div class="card-header pv-card-hader">
 			<strong class="pptitle">Equipment &amp; Maker List &mdash; {{ $vessel->name ?? '' }}</strong>
+			@unless($locked ?? false)
 			<div class="right-buttons">
 				<button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#add-equipment-modal"><i class="fas fa-plus-square"></i> Add Equipment</button>
 				<button type="button" class="btn btn-sm btn-info" data-toggle="modal" data-target="#upload-equipment-modal"><i class="fas fa-upload"></i> Upload Sheet</button>
 			</div>
+			@endunless
 		</div>
 		<div class="card-body">
 			@if(session('message'))
 			<div class="alert alert-info">{{ session('message') }}</div>
+			@endif
+			@if($locked ?? false)
+			<div class="alert alert-warning equipment-locked">This vessel uses its own onboard NaviSuite server, so its equipment list is changed there. The office copy is read-only.</div>
 			@endif
 
 			{{-- Super-admin maintains any vessel's list: pick the vessel here and
@@ -42,8 +47,10 @@
 						<td class="eq-name">{{ $e->name }}</td>
 						<td class="eq-maker">{{ $e->maker ?: '—' }}</td>
 						<td class="action">
+							@unless($locked ?? false)
 							<button class="btn btn-info edit-equipment" data-id="{{ $e->id }}" data-name="{{ $e->name }}" data-maker="{{ $e->maker }}" data-toggle="modal" data-target="#edit-equipment-modal"><i class="fas fa-edit"></i></button>
 							<button class="btn btn-danger delete-equipment" data-id="{{ $e->id }}"><i class="fas fa-trash-alt"></i></button>
+							@endunless
 						</td>
 					</tr>
 					@empty

@@ -1,0 +1,11 @@
+{
+  "about": "Pinned runtime downloads for NaviSuite-Server-Setup.exe. Filled by prepare-runtime.ps1 -Pin after the downloads were checked against the publishers' checksums; every later build must use exactly these files.",
+  "components": {
+    "apache": { "file": null, "sha256": null, "source": "https://www.apachelounge.com/download/ (httpd-2.4.*-win64-VS17.zip)" },
+    "php": { "file": null, "sha256": null, "source": "https://windows.php.net/download/ (8.2 or later, VS16/VS17 x64 Thread Safe zip)" },
+    "mysql": { "file": null, "sha256": null, "source": "https://dev.mysql.com/downloads/mysql/ (8.4 LTS, Windows x86 64-bit ZIP Archive)" },
+    "winsw": { "file": null, "sha256": null, "source": "https://github.com/winsw/winsw/releases/tag/v2.12.0 (WinSW-x64.exe)" },
+    "cacert": { "file": null, "sha256": null, "source": "https://curl.se/ca/cacert.pem" },
+    "vc_redist": { "file": null, "sha256": null, "source": "https://aka.ms/vs/17/release/vc_redist.x64.exe" }
+  }
+}

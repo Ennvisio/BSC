@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\Files\SafeUpload;
 use App\Attachment;
 use App\Item;
 use App\Order;
@@ -191,17 +192,18 @@ class StockConsumptionController extends Controller
 
     private function storeAttachment($file): Attachment
     {
-        $storedName = Str::uuid().'.'.$file->getClientOriginalExtension();
-        $path = $file->storeAs('attachments/'.auth()->id(), $storedName, 'local');
+        // Name and extension chosen by the server from the content (Checkpoint 7).
+        $stored = SafeUpload::storePrivate($file, 'attachments/'.auth()->id(), self::ALLOWED_MIMES, 'local', 'attachments');
 
         $attachment = new Attachment;
         $attachment->uploaded_by = auth()->id();
         $attachment->title = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
         $attachment->original_filename = $file->getClientOriginalName();
-        $attachment->path = $path;
-        $attachment->mime_type = $file->getMimeType();
-        $attachment->kind = Attachment::kindForMime($file->getMimeType());
-        $attachment->file_size = $file->getSize();
+        $attachment->path = $stored['path'];
+        $attachment->mime_type = $stored['mime'];
+        $attachment->kind = Attachment::kindForMime($stored['mime']);
+        $attachment->file_size = $stored['size'];
+        $attachment->recordChecksum($stored['sha256']);
         $attachment->save();
 
         return $attachment;

@@ -19,8 +19,14 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <!-- Tests run as the cloud unless a test switches mode itself, so a
+             developer's own .env (APP_MODE=vessel) cannot change the results. -->
+        <env name="APP_MODE" value="cloud"/>
+        <env name="APP_VESSEL_ID" value=""/>
+        <env name="APP_SUPPORT_ACCOUNTS" value=""/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="NAVISUITE_SECRETS_PATH" value="storage/framework/testing/no-secrets"/>
         <!-- config/cache.php's 'default' reads CACHE_DRIVER (this app's skeleton
              predates the CACHE_STORE rename) - CACHE_STORE alone silently did
              nothing and every test ran against the real on-disk file cache. -->

@@ -1,0 +1,20 @@
+{
+  "name": "navisuite-client",
+  "productName": "NaviSuite",
+  "version": "1.0.0",
+  "description": "NaviSuite desktop client: opens the ship's onboard NaviSuite server on the LAN",
+  "main": "src/main/main.js",
+  "private": true,
+  "author": "NaviSuite",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"test/*.test.js\"",
+    "smoke": "node test/smoke/run-smoke.js",
+    "dist": "electron-builder --win nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.10.2",
+    "electron-builder": "26.18.0"
+  }
+}

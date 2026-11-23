@@ -48,6 +48,14 @@ return [
             'root' => storage_path('app'),
         ],
 
+        // Photos, signatures and certificate copies, stored as images/... in
+        // the application folder and served by the web server as static
+        // files. Used by SafeUpload and by attachment sync (Checkpoint 7).
+        'public_images' => [
+            'driver' => 'local',
+            'root' => base_path(),
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

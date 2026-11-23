@@ -56,7 +56,7 @@ class ServiceProcurementStep extends Model
             return;
         }
 
-        $owned = Attachment::where('uploaded_by', $userId)
+        $owned = Attachment::visible()->where('uploaded_by', $userId)
             ->whereIn('id', array_map('intval', $attachmentIds))
             ->pluck('id')
             ->all();

@@ -1,0 +1,6 @@
+{
+  "product": "NaviSuite",
+  "version": "1.0.0",
+  "min_upgrade_from": "0.0.0",
+  "about": "The version of both installers (NaviSuite-Server-Setup.exe and NaviSuite-Client-Setup.exe). desktop/package.json must have the same version; build-installers.sh checks. min_upgrade_from: the oldest installed server version this release can upgrade (0.0.0 = servers installed with the scripts before Checkpoint 8)."
+}

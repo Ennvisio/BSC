@@ -17,6 +17,11 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->describe('Display an inspiring quote');
 
-// PMS: DueSoon/Overdue depend on today's date, so open jobs are re-evaluated
-// every night. Needs the usual `* * * * * php artisan schedule:run` cron.
-Illuminate\Support\Facades\Schedule::command('pms:refresh-jobs')->dailyAt('00:15')->withoutOverlapping();
+// Scheduled tasks for the cloud and for vessel servers: see
+// App\Console\VesselSchedule. The cloud's schedule is unchanged (the nightly
+// PMS refresh). Needs `* * * * * php artisan schedule:run` on the cloud, and
+// the NaviSuite-Scheduler service on a vessel server.
+App\Console\VesselSchedule::register(
+    app(Illuminate\Console\Scheduling\Schedule::class),
+    app(App\Support\AppMode::class)
+);

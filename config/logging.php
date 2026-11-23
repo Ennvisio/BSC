@@ -53,6 +53,15 @@ return [
             'days' => 14,
         ],
 
+        // Cloud-vessel sync: errors and anything an operator should read.
+        // Routine activity goes to the sync_logs table instead.
+        'sync' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/sync.log'),
+            'level' => 'info',
+            'days' => 30,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

@@ -28,3 +28,4 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{url('/css/srd-theme.css')}}?v={{ file_exists(base_path('css/srd-theme.css')) ? filemtime(base_path('css/srd-theme.css')) : 1 }}">
+@include('partials.deletion-policy-styles')

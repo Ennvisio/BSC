@@ -6,7 +6,10 @@
 			<strong class="pptitle">User Lists</strong>
 
 			<div class="right-buttons users-btns">
+				{{-- PD-71 A: only a Superadmin creates users. --}}
+				@if((auth()->user()->role->role ?? null) === 'super-admin')
 				<button type="button" class="btn btn-primary" data-toggle="modal" data-target="#myModal"> <i class="fas fa-plus-square"></i> Add New User </button>
+				@endif
 				<button class="btn btn-info btn-bvprint" onClick="print_this();"><i class="fa fa-print"></i>  Print</button>
 			</div>
 		</div>
@@ -108,7 +111,10 @@
 						<td class="action">
 							<button class="btn btn-info edit-user" data-id="{{!empty($role->user->id)?$role->user->id:''}}" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i>
 							</button>
+							{{-- ADR-004: only a Superadmin blocks a user (HomeController::deleteUser). --}}
+							@if((auth()->user()->role->role ?? null) === 'super-admin')
 							<button class="btn btn-danger delete-user" data-id="{{!empty($role->user->id)?$role->user->id:''}}" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>
+							@endif
 						</td>
 					</tr>
 					@endforeach
@@ -343,6 +349,9 @@
 						 password to show, and leaving a previously-typed one sitting
 						 here would risk silently resetting the WRONG user's password
 						 if the admin edits someone else next without noticing. --}}
+					{{-- ADR-004: only a Superadmin changes another user's password
+						 (HomeController::updateOneUser), so nobody else is offered it. --}}
+					@if((auth()->user()->role->role ?? null) === 'super-admin')
 					<div class="row justify-content-center form-group">
 						<div class="col-md-3">
 							<label for="New_Password">New Password: </label>
@@ -359,6 +368,7 @@
 							<input type="password" class="form-control Confirm_New_Password" name="password_confirmation" autocomplete="new-password">
 						</div>
 					</div>
+					@endif
 				</div>
 				<div class="modal-footer">
 					<button type="button" class="btn btn-danger" data-dismiss="modal">Cancel</button>
@@ -448,4 +458,19 @@ $(function () {
 	});
 });
 </script>
+{{-- PD-71 A: only a Superadmin changes a user's role or vessel. Others can
+     still correct a name or e-mail; the role fields stay in the form (they
+     are required) but cannot be changed. HomeController::updateOneUser
+     refuses a change regardless. --}}
+@if((auth()->user()->role->role ?? null) !== 'super-admin')
+<style>
+  #edit_template_modal .funkyradio, #edit_template_modal .User_Role, #edit_template_modal .Vessel_Name { pointer-events: none; opacity: .65; }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('#edit_template_modal .User_Role, #edit_template_modal .Vessel_Name, #edit_template_modal input[name="user_type"]')
+      .forEach(function (el) { el.setAttribute('tabindex', '-1'); });
+  });
+</script>
+@endif
 @endsection

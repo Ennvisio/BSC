@@ -57,6 +57,8 @@ class FleetOverviewDashboardTest extends TestCase
                 $t->timestamps();
             });
         }
+        // BuildsRequisitionSchema now creates the real table; this test uses its own.
+        Schema::dropIfExists('vessel_surveys');
         Schema::create('vessel_surveys', function (Blueprint $t) {
             $t->id();
             $t->unsignedBigInteger('survey_id');
@@ -172,9 +174,14 @@ class FleetOverviewDashboardTest extends TestCase
         return [['super-admin'], ['gm-srd']];
     }
 
-    public function test_ship_crew_cannot_open_certificate_categories(): void
+    /**
+     * PD-04 (settled 2026-11-23): ADR-003 lets vessel users maintain
+     * certificate categories, so crew may open the list. Under ADR-006 they
+     * cannot remove an entry from it (see VesselUserDeletionTest).
+     */
+    public function test_ship_crew_can_open_certificate_categories(): void
     {
-        $this->actingAs($this->makeUser('master', $this->vesselId))->get('/home/certificate-category')->assertForbidden();
+        $this->actingAs($this->makeUser('master', $this->vesselId))->get('/home/certificate-category')->assertOk();
     }
 
     public function test_ship_crew_still_cannot_open_fleet_certificates(): void

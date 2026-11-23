@@ -42,13 +42,14 @@ class EquipmentController extends Controller
 
         $vesselId = $this->vesselId($request);
         $vessel = Vessel::find($vesselId);
+        $locked = $this->lockedForOffice($vesselId);
 
         $equipment = VesselEquipment::where('vessel_id', $vesselId)
             ->where('status', true)
             ->orderBy('name')
             ->get();
 
-        return view('layouts.equipment', compact('equipment', 'vessel', 'vessels'));
+        return view('layouts.equipment', compact('equipment', 'vessel', 'vessels', 'locked'));
     }
 
     /** Manual add of one row. */
@@ -62,6 +63,7 @@ class EquipmentController extends Controller
         ]);
 
         $vesselId = $this->vesselId($request);
+        $this->refuseIfLocked($vesselId);
 
         $exists = VesselEquipment::where('vessel_id', $vesselId)
             ->where('name', trim($request->name))
@@ -93,6 +95,7 @@ class EquipmentController extends Controller
         ]);
 
         $vesselId = $this->vesselId($request);
+        $this->refuseIfLocked($vesselId);
         $equipment = VesselEquipment::where('id', $request->id)->where('vessel_id', $vesselId)->firstOrFail();
 
         $duplicate = VesselEquipment::where('vessel_id', $vesselId)
@@ -118,6 +121,7 @@ class EquipmentController extends Controller
         $this->authorizeManager();
 
         $vesselId = $this->vesselId($request);
+        $this->refuseIfLocked($vesselId);
         $equipment = VesselEquipment::where('id', $request->id)->where('vessel_id', $vesselId)->first();
 
         if (! $equipment) {
@@ -154,6 +158,7 @@ class EquipmentController extends Controller
         ]);
 
         $vesselId = $this->vesselId($request);
+        $this->refuseIfLocked($vesselId);
         $import = new VesselEquipmentImport($vesselId, auth()->id());
 
         Excel::import($import, $request->file('equipment_file'));
@@ -167,6 +172,29 @@ class EquipmentController extends Controller
         }
 
         return redirect()->route('equipment.index', $this->isSuperAdmin() ? ['vessel_id' => $vesselId] : [])->with('message', $message);
+    }
+
+    /**
+     * PD-06 (approved 2026-11-23, option 1): once a vessel runs its own
+     * server, its equipment list is kept on board. The office copy is
+     * read-only, as PMS already is (PmsAccess::canEditPmsVessel); an edit
+     * here would never reach the vessel. Ship users of that vessel are
+     * already refused every write on the cloud (EnforceAppMode).
+     */
+    private function lockedForOffice(int $vesselId): bool
+    {
+        $mode = app(\App\Support\AppMode::class);
+
+        return $mode->isCloud()
+            && config('navisuite.cloud.lock_offline_vessels', true)
+            && $mode->vesselIsOfflineEnabled($vesselId);
+    }
+
+    private function refuseIfLocked(int $vesselId): void
+    {
+        if ($this->lockedForOffice($vesselId)) {
+            abort(403, 'This vessel uses its own onboard NaviSuite server, so its equipment list is changed there. The office copy is read-only.');
+        }
     }
 
     private function isSuperAdmin(): bool

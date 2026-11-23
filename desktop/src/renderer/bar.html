@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+<title>NaviSuite</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="bar">
+<div class="bar-row">
+  <button class="icon-btn" id="back" title="Back (Alt+Left)" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+  <button class="icon-btn" id="forward" title="Forward (Alt+Right)" aria-label="Forward"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
+  <button class="icon-btn" id="reload" title="Reload (F5)" aria-label="Reload"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
+  <button class="icon-btn" id="home" title="Home (Alt+Home)" aria-label="Home"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg></button>
+  <div class="identity"><strong id="vessel">NaviSuite</strong><span id="host"></span></div>
+  <div class="status" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="status-text">Starting...</span></div>
+  <button class="text-btn" id="server" title="Choose the NaviSuite server">Server</button>
+  <button class="icon-btn" id="about" title="About NaviSuite" aria-label="About"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5v.01"/></svg></button>
+</div>
+<script src="bar.js"></script>
+</body>
+</html>

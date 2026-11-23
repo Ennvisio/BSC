@@ -79,3 +79,4 @@ Thumbs.db
 /.upgrade-backup/
 /Archive.zip
 *.sql
+/build/

@@ -1,0 +1,28 @@
+# NaviSuite vessel server: certificate requests.
+# Rendered by deploy/windows/new-certificate.ps1. The subject alternative
+# names are this PC's names and IP addresses.
+
+[req]
+distinguished_name = dn
+prompt = no
+utf8 = yes
+
+[dn]
+CN = {{COMMON_NAME}}
+O = NaviSuite
+
+[ca_ext]
+basicConstraints = critical, CA:TRUE, pathlen:0
+keyUsage = critical, keyCertSign, cRLSign
+subjectKeyIdentifier = hash
+
+[server_ext]
+basicConstraints = critical, CA:FALSE
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid
+subjectAltName = @alt_names
+
+[alt_names]
+{{ALT_NAMES}}

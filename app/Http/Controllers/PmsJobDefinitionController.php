@@ -9,6 +9,7 @@ use App\PmsJobInterval;
 use App\PmsRequiredPart;
 use App\Services\PmsJobScheduler;
 use App\Services\PmsPartsService;
+use App\Support\DeletionPolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -60,6 +61,8 @@ class PmsJobDefinitionController extends Controller
                 'done_by' => $job->doneByRank->code ?? null,
             ]),
             'can_edit' => $this->canEditPmsVessel($definition->vessel_id),
+            'can_deactivate' => $this->canEditPmsVessel($definition->vessel_id)
+                && app(DeletionPolicy::class)->userMayDelete(auth()->user()),
         ]);
     }
 
@@ -79,6 +82,18 @@ class PmsJobDefinitionController extends Controller
     public function update(Request $request, PmsJobDefinition $definition, PmsJobScheduler $scheduler)
     {
         $this->authorizePmsEdit($definition->vessel_id);
+
+        // PD-72 (approved 2026-11-23): deactivating a job takes it out of
+        // planning, which ADR-006 forbids vessel users. Reactivating is fine.
+        // is_active is read as a boolean, so a form that leaves it out is a
+        // deactivation too; the screen always sends it for vessel users.
+        if ($definition->is_active && ! $request->boolean('is_active')) {
+            abort_unless(
+                app(DeletionPolicy::class)->userMayDelete(auth()->user()),
+                403,
+                'Vessel users cannot deactivate a PMS job. If a job is no longer needed, please ask the office.'
+            );
+        }
 
         $this->save($definition, $request, $scheduler);
 

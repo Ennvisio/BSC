@@ -235,7 +235,7 @@ class RequisitionController extends Controller
         // files: a legitimately-preserved id always passes this since it was
         // only ever addable by this same officer, and this is what stops
         // someone linking another user's upload by editing form fields.
-        $ownedAttachmentIds = Attachment::where('uploaded_by', auth()->id())->pluck('id')->all();
+        $ownedAttachmentIds = Attachment::visible()->where('uploaded_by', auth()->id())->pluck('id')->all();
         $attachmentIdsByItem = (array) $request->input('attachment_ids', []);
 
         foreach ($request->item_id as $index => $itemId) {

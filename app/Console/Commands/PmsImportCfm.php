@@ -39,6 +39,20 @@ class PmsImportCfm extends Command
             return self::FAILURE;
         }
 
+        $removeUnmatched = (bool) $this->option('remove-unmatched');
+        // PD-34 (decided): on the cloud, a vessel that runs its own server
+        // keeps its components; --remove-unmatched would delete them here
+        // (a bulk soft delete, which the model-level guard does not see).
+        // Refused before anything is imported. The import itself, and the
+        // option for other vessels and on the vessel's own server, are
+        // unchanged.
+        $mode = app(\App\Support\AppMode::class);
+        if ($removeUnmatched && $mode->isCloud() && config('navisuite.cloud.lock_offline_vessels', true) && $mode->vesselIsOfflineEnabled($vessel->id)) {
+            $this->error($vessel->name.' uses its own onboard server, so its components cannot be removed on the cloud (--remove-unmatched). Nothing was imported.');
+
+            return self::FAILURE;
+        }
+
         $dir = storage_path('app/samples/cfm_export');
         $vesselFile = "{$dir}/CFM_export_{$code}.json";
         $masterFile = "{$dir}/CFM_export_master.json";
@@ -60,7 +74,6 @@ class PmsImportCfm extends Command
         $dryRun = (bool) $this->option('dry-run');
         $this->info(($dryRun ? '[DRY RUN] ' : '').'Importing CFM export for '.$code.' into '.$vessel->name.' (vessel #'.$vessel->id.')…');
 
-        $removeUnmatched = (bool) $this->option('remove-unmatched');
         $result = $importer->import($vessel->id, $vesselData, $master, (int) auth()->id() ?: 1, $dryRun, (array) $this->option('exclude-def'), $removeUnmatched);
 
         if ($dryRun) {

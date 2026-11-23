@@ -344,6 +344,8 @@
 							<div class="row justify-content-center">
 								<iframe id="prev_image1exist" src="" width="100%" frameborder="0"></iframe>
 							</div>
+							{{-- PD-62: earlier copies are kept; listed by dataForm.js. --}}
+							<div class="cert-copy-history small mt-1"></div>
 							<input type="file" id="image1exist"  class="form-control Certificate_Copy" name="Certificate_Copy">
 							<div class="err_msg">
 								<span class="file_error"></span>

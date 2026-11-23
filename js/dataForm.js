@@ -322,6 +322,16 @@ $(document).on('click','.edit-certificate',function(e){
       // not just whatever the form happened to load with.
       $('#certificate_edit_form .cert-permanent').trigger('change');
       $('#certificate_edit_form iframe#prev_image1exist').attr('src',res[0]['cert_copy'] ? res[1]+'/'+res[0]['cert_copy'] : '');
+      // PD-62: every earlier copy stays available.
+      var history = $('#certificate_edit_form .cert-copy-history').empty();
+      var earlier = (res[2] || []).filter(function(c){ return !c.current; });
+      if (earlier.length) {
+        history.append($('<div>').text('Earlier copies:'));
+        earlier.forEach(function(c){
+          history.append($('<div>').append($('<a target="_blank" rel="noopener">').attr('href', res[1]+'/'+c.path)
+            .text(c.uploaded_at ? 'Uploaded '+c.uploaded_at : 'Uploaded before history began')));
+        });
+      }
       $('#certificate_edit_form .Cert_Id').val(res[0]['id'])
     },
     error: function(errors)
@@ -2056,7 +2066,8 @@ $(document).on('click', '.restore', function(){
               })
 
               .fail(function(response){
-                swal('Oops...', 'Something went wrong!' , 'error');
+                var message = response.responseJSON && response.responseJSON.message ? response.responseJSON.message : 'Something went wrong!';
+                swal('Not restored', message, 'error');
               });
             });
           },
@@ -2103,13 +2114,15 @@ $(document).on('click', '.permanent_delete', function(){
                     .draw();
                   });
                 }else{
-                  swal('Sorry...', 'Something went wrong!' , 'warning');
+                  swal('Sorry...', response.message || 'Something went wrong!' , 'warning');
                 }
                 // console.log(response.delete);
                 // location.reload(true);
               })
               .fail(function(response){
-                swal('Oops...', 'Something went wrong!' , 'error');
+                // PD-60: a refused permanent delete says why (422 + message).
+                var message = response.responseJSON && response.responseJSON.message;
+                swal(message ? 'Not deleted' : 'Oops...', message || 'Something went wrong!' , message ? 'warning' : 'error');
               });
             });
           },

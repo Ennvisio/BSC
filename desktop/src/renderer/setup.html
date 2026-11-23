@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+<title>Choose the NaviSuite server</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="page">
+  <h1>Connect to the ship's NaviSuite server</h1>
+  <p class="lead">This PC opens NaviSuite from the server on board, over the ship's network. Choose the server once; the client remembers it and reconnects by itself.</p>
+
+  <div id="notice" class="notice hidden"></div>
+
+  <section class="card" id="found">
+    <div class="card-head">
+      <h2>Servers on this network</h2>
+      <button id="search">Search again</button>
+    </div>
+    <p id="progress" class="muted small"></p>
+    <ul id="list" class="servers"></ul>
+  </section>
+
+  <section class="card" id="manual">
+    <h2>Enter the server address</h2>
+    <p class="muted small">Use this if the server is not found automatically. Ask the officer responsible for IT for the address.</p>
+    <form class="inline" id="manual-form">
+      <input type="text" id="address" placeholder="For example 192.168.1.10 or master-pc" autocomplete="off" spellcheck="false" maxlength="253">
+      <button type="submit" id="check">Check</button>
+    </form>
+    <p id="manual-error" class="error small"></p>
+  </section>
+
+  <section class="card hidden" id="confirm">
+    <h2>Check the server's identity</h2>
+    <dl class="facts">
+      <dt>Vessel</dt><dd id="c-vessel"></dd>
+      <dt>Address</dt><dd id="c-address"></dd>
+      <dt>Server release</dt><dd id="c-release"></dd>
+    </dl>
+    <div>Server fingerprint (SHA-256)</div>
+    <pre class="fingerprint" id="c-fingerprint"></pre>
+    <p class="explain" id="c-explain"></p>
+    <p class="error small" id="c-error"></p>
+    <div class="actions">
+      <button class="primary" id="c-connect">Connect</button>
+      <button id="c-cancel">Cancel</button>
+    </div>
+  </section>
+
+  <footer class="page-foot">
+    <button class="link hidden" id="back-to-app">Back to NaviSuite</button>
+    <span id="version"></span>
+  </footer>
+</main>
+<script src="setup.js"></script>
+</body>
+</html>

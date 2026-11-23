@@ -4,7 +4,10 @@
 	<div class="card">
 		<div class="card-header pv-card-hader">
 			<strong class="pptitle">Category Lists</strong>
+			{{-- PD-71 B: only a Superadmin maintains requisition categories; everyone else sees the list. --}}
+			@if((auth()->user()->role->role ?? null) === 'super-admin')
 			<button type="button" class="btn btn-primary" data-toggle="modal" data-target="#myModal"> <i class="fas fa-plus-square"></i> Add New Category </button>
+			@endif
 		</div>
 		<!-- card-hader -->
 		<!-- card-body -->
@@ -30,8 +33,10 @@
 						<td>{{!empty($category->created_by)?$category->created_by:''}}</td>
 						<td>{{!empty($category->updated_by)?$category->updated_by:''}}</td>
 						<td class="action">
+							@if((auth()->user()->role->role ?? null) === 'super-admin')
 							<button class="btn btn-info edit-category" data-id="{{$category->id}}" data-name="{{$category->name}}" data-symbol="{{$category->symbol}}" data-toggle="modal" data-target="#edit_template_modal"><i class="fas fa-edit"></i></button>
 							<button class="btn btn-danger delete-category" data-id="{{$category->id}}" data-toggle="modal" data-target="#delete_template_modal"><i class="fas fa-trash-alt"></i></button>
+							@endif
 						</td>
 					</tr>
 					@endforeach

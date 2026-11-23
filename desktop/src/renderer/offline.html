@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+<title>Connection lost</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="page center">
+  <svg class="big-icon" id="icon" viewBox="0 0 24 24"><path d="M2 8.8a15 15 0 0 1 20 0"/><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16.1a5 5 0 0 1 7 0"/><path d="M12 20h.01"/><path d="M3 3l18 18"/></svg>
+  <h1 id="title">The NaviSuite server cannot be reached</h1>
+  <p class="lead" id="detail">Check that this PC is connected to the ship's network and that the server is switched on.</p>
+  <p class="muted" id="retry-text"><span class="spinner"></span>Trying again...</p>
+  <div class="actions">
+    <button class="primary" id="retry">Try now</button>
+    <button id="change">Choose another server</button>
+  </div>
+  <p class="muted small" id="keep">Pages you had open come back as they were when the connection returns.</p>
+</main>
+<script src="offline.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+# NaviSuite desktop client: Windows installer (NSIS), built with
+#   npm run dist
+# Output: dist/NaviSuite-Client-Setup-<version>.exe
+appId: com.navisuite.client
+productName: NaviSuite
+copyright: NaviSuite
+directories:
+  output: dist
+  buildResources: build
+files:
+  - package.json
+  - src/**/*
+asar: true
+# Electron fuses, burnt into NaviSuite.exe at build time. The client never
+# needs to act as a Node.js runtime, so those doors are closed: on a shared
+# crew PC the installed exe cannot be reused to run arbitrary scripts.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  # Session cookies on disk are encrypted with Windows DPAPI.
+  enableCookieEncryption: true
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.png
+  artifactName: NaviSuite-Client-Setup-${version}.${ext}
+  # Unsigned until a code-signing certificate is available; see the docs.
+nsis:
+  oneClick: false
+  perMachine: true
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: NaviSuite
+  uninstallDisplayName: NaviSuite desktop client
+  include: build/installer.nsh
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true

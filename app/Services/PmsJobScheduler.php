@@ -249,12 +249,13 @@ class PmsJobScheduler
     }
 
     /** Refresh every open job - what the nightly pms:refresh-jobs runs. Returns how many changed. */
-    public function refreshAll(?int $vesselId = null): int
+    public function refreshAll(?int $vesselId = null, array $exceptVessels = []): int
     {
         $changed = 0;
 
         PmsJob::whereIn('status', PmsJob::ACTIVE_STATUSES)
             ->when($vesselId, fn ($q) => $q->where('vessel_id', $vesselId))
+            ->when($exceptVessels !== [], fn ($q) => $q->whereNotIn('vessel_id', $exceptVessels))
             ->with(['definition.intervals', 'component'])
             ->chunkById(200, function ($jobs) use (&$changed) {
                 foreach ($jobs as $job) {

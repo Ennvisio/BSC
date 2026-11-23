@@ -12,6 +12,7 @@ use App\PmsJobType;
 use App\PmsLocation;
 use App\Rank;
 use App\Services\PmsJobScheduler;
+use App\Support\DeletionPolicy;
 use App\Vessel;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
@@ -28,6 +29,8 @@ class PmsComponentController extends Controller
     use PmsAccess;
 
     private const DUPLICATE_NAME = 'A component with this name already exists here.';
+
+    public const INACTIVE_REFUSED = 'Only the office can mark a PMS component inactive or make it active again. Please ask the office.';
 
     public function __construct(private PmsJobScheduler $scheduler)
     {
@@ -73,6 +76,7 @@ class PmsComponentController extends Controller
             'vessel' => $vessel,
             'vessels' => $this->pmsIsShip() ? collect() : Vessel::where('status', true)->orderBy('name')->get(['id', 'name']),
             'canEdit' => $this->canEditPmsVessel($vessel->id),
+            'canSetInactive' => $this->maySetComponentInactive(),
             'locations' => $locations,
             'rootsByLocation' => $rootsByLocation,
             'childrenByParent' => $childrenByParent,
@@ -185,8 +189,28 @@ class PmsComponentController extends Controller
         return response()->json(['message' => 'Component deleted.']);
     }
 
+    /**
+     * PD-73 (decided 2026-11-24): only the office marks a component inactive
+     * or active again; vessel users, and everyone on a vessel server, may
+     * not, as with PMS job deactivation (PD-72). Office users keep exactly
+     * the permission they had (canEditPmsVessel).
+     */
+    private function maySetComponentInactive(): bool
+    {
+        return app(DeletionPolicy::class)->userMayDelete(auth()->user());
+    }
+
     private function validated(Request $request, int $vesselId, ?PmsComponent $component = null): array
     {
+        // PD-73: a request that would change the switch is refused. One that
+        // leaves it out (the screen disables the box for these users) keeps
+        // the component's current value; a new component starts active.
+        $mayToggle = $this->maySetComponentInactive();
+        $currentInactive = (bool) ($component?->is_inactive ?? false);
+        if (! $mayToggle && $request->has('is_inactive') && $request->boolean('is_inactive') !== $currentInactive) {
+            abort(response()->json(['message' => self::INACTIVE_REFUSED], 403));
+        }
+
         foreach (['is_critical', 'is_class_relevant', 'is_inactive'] as $flag) {
             $request->merge([$flag => $request->boolean($flag)]);
         }
@@ -223,6 +247,10 @@ class PmsComponentController extends Controller
             'installation_date.before_or_equal' => 'The installation date can\'t be in the future.',
             'counter_parent_id.exists' => 'The meter must be another component on this vessel.',
         ]);
+
+        if (! $mayToggle) {
+            $data['is_inactive'] = $currentInactive;
+        }
 
         $data = $this->resolveCounterMode($data, $vesselId, $component);
 

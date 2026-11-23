@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Attachment;
 use App\Order;
 use App\OrderItem;
+use App\Support\Files\SafeUpload;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -54,7 +55,7 @@ class AttachmentController extends Controller
     {
         $term = trim((string) $request->query('q'));
 
-        $files = Attachment::where('uploaded_by', auth()->id())
+        $files = Attachment::visible()->where('uploaded_by', auth()->id())
             ->when($term !== '', fn ($q) => $q->where('title', 'like', "%{$term}%"))
             ->orderBy('created_at', 'desc')
             ->get(['id', 'title', 'kind', 'created_at']);
@@ -112,17 +113,19 @@ class AttachmentController extends Controller
         ]);
 
         $file = $request->file('file');
-        $storedName = Str::uuid().'.'.$file->getClientOriginalExtension();
-        $path = $file->storeAs('attachments/'.auth()->id(), $storedName, 'local');
+        // The stored name and extension are the server's choice, from the
+        // file's content (Checkpoint 7); the browser's name is only shown.
+        $stored = SafeUpload::storePrivate($file, 'attachments/'.auth()->id(), self::ALLOWED_MIMES);
 
         $attachment = new Attachment;
         $attachment->uploaded_by = auth()->id();
         $attachment->title = trim($request->title);
         $attachment->original_filename = $file->getClientOriginalName();
-        $attachment->path = $path;
-        $attachment->mime_type = $file->getMimeType();
-        $attachment->kind = Attachment::kindForMime($file->getMimeType());
-        $attachment->file_size = $file->getSize();
+        $attachment->path = $stored['path'];
+        $attachment->mime_type = $stored['mime'];
+        $attachment->kind = Attachment::kindForMime($stored['mime']);
+        $attachment->file_size = $stored['size'];
+        $attachment->recordChecksum($stored['sha256']);
         $attachment->save();
 
         return $attachment;
@@ -137,7 +140,7 @@ class AttachmentController extends Controller
 
         // Only the caller's own files can be attached - "my files" is
         // personal, not a way to pull in someone else's upload by guessing an id.
-        $ownedIds = Attachment::where('uploaded_by', auth()->id())
+        $ownedIds = Attachment::visible()->where('uploaded_by', auth()->id())
             ->whereIn('id', $request->attachment_ids)
             ->pluck('id');
 
@@ -182,33 +185,31 @@ class AttachmentController extends Controller
     }
 
     /**
-     * AJAX: permanently remove a file from the officer's own library - the
-     * "Choose from my files" tab is the only place a file is visible outside
-     * any one item, so it's the natural place to clean the library up too.
+     * AJAX: "delete" a file from the officer's own library - the "Choose from
+     * my files" tab is the only place a file is visible outside any one item.
      *
-     * Refused while the file is still attached to anything, draft or
-     * submitted: attachment_order_item cascades on delete, and silently
-     * pulling a spec sheet out from under a requisition an approver may
-     * already be looking at is exactly the kind of thing this app has
-     * otherwise been careful never to do to submitted paperwork. Detach it
-     * from those items first (only possible while still a draft - see
-     * authorizeDraftItem), then delete.
+     * Refused while the file is attached to a requisition item (detach it
+     * first, only possible on a draft - see authorizeDraftItem), to a
+     * procurement stage or to a consumption record (PD-61). Otherwise the
+     * file is hidden from the library and can no longer be linked, but its
+     * record and the file itself are kept (PD-61 option 3). Vessel users
+     * never reach this (ADR-006, RefuseVesselUserDeletes).
      */
     public function destroy(Attachment $attachment)
     {
         abort_unless($attachment->uploaded_by === auth()->id(), 403);
 
-        $linkedCount = $attachment->orderItems()->count();
-        if ($linkedCount > 0) {
-            return response()->json([
-                'message' => "This file is attached to {$linkedCount} requisition item"
-                    .($linkedCount === 1 ? '' : 's')
-                    .' - remove it from those first.',
-            ], 422);
+        // PD-61 (approved 2026-11-23): refused while the file is on a
+        // requisition line, a completed procurement stage or a consumption
+        // record; otherwise hidden from the library, never removed: the
+        // record and the file on disk are kept.
+        if (($refusal = $attachment->deletionRefusal()) !== null) {
+            return response()->json(['message' => $refusal], 422);
         }
 
-        Storage::disk('local')->delete($attachment->path);
-        $attachment->delete();
+        if ($attachment->hidden_at === null) {
+            $attachment->forceFill(['hidden_at' => now(), 'hidden_by' => auth()->id()])->save();
+        }
 
         return response()->json(['message' => 'File deleted.']);
     }
@@ -221,7 +222,7 @@ class AttachmentController extends Controller
         return Storage::disk('local')->response(
             $attachment->path,
             $attachment->original_filename,
-            ['Content-Type' => $attachment->mime_type]
+            Attachment::responseHeaders($attachment->mime_type)
         );
     }
 
