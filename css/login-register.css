@@ -2,7 +2,7 @@
 * login-register.css
 ********************************/
 @import url("../assets/fonts/SutonnyMJ/SutonnyMJ.css");
-@import url('https://fonts.googleapis.com/css?family=Roboto+Condensed:400,700');
+@import url('../assets/vendor/fonts/roboto-condensed.css');
 
 .auth-page-content {
     background: url(../images/auth-form-bg.jpg) no-repeat scroll center top / cover;

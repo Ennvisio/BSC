@@ -6,11 +6,11 @@
 
 
 Googel Fonts  */
-@import url("https://fonts.googleapis.com/css?family=Open+Sans:400,600,700");
+@import url("../vendor/fonts/open-sans.css");
 /* Googel Fonts End  
 
 */
-@import url("https://fonts.googleapis.com/css?family=Open+Sans:400,600,700");
+@import url("../vendor/fonts/open-sans.css");
 .bg-flat-color-1 {
   background: #00c292; }
 

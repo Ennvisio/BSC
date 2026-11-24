@@ -1,6 +1,7 @@
 
 // Fonts
-@import url('https://fonts.googleapis.com/css?family=Nunito');
+// Self-hosted Nunito (no Google Fonts CDN) - root-relative because this compiles to public/css.
+@import url('/assets/vendor/fonts/nunito.css');
 
 // Variables
 @import 'variables';

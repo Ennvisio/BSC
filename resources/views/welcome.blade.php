@@ -6,7 +6,7 @@
         <link rel="shortcut icon" href="{{asset('/images/logo.png')}}">
         <title>Welcome to Ship Repair Department | Bangladesh Shipping Corporation</title>
         <!-- Fonts -->
-        <link href="https://fonts.googleapis.com/css?family=Nunito:200,600" rel="stylesheet">
+        <link href="{{ asset('/assets/vendor/fonts/nunito.css') }}" rel="stylesheet">
 
         <!-- Styles -->
         <style>

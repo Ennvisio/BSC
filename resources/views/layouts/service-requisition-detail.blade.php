@@ -7,9 +7,7 @@
 	 its own <style> block since each page loads independently. IBM Plex Mono/
 	 Sans aren't loaded by admin-master.blade.php (no head-yield to add them
 	 to), so they're pulled in here the same way that page does it. --}}
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ asset('/assets/vendor/fonts/ibm-plex.css') }}">
 <style>
 .order-section{
 	--od-ink:        #15211F;

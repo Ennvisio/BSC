@@ -8,10 +8,8 @@
 	<link rel="shortcut icon" href="{{url('/images/logo.png')}}">
 	<title>Sign in — Bangladesh Shipping Corporation</title>
 
-	<link rel="preconnect" href="https://fonts.googleapis.com">
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-	<link href="https://use.fontawesome.com/releases/v5.0.6/css/all.css" rel="stylesheet">
+	<link rel="stylesheet" href="{{ asset('/assets/vendor/fonts/public-sans.css') }}">
+	<link href="{{ asset('/assets/vendor/fontawesome/css/all.css') }}" rel="stylesheet">
 	<link rel="stylesheet" href="{{url('/css/login.css')}}?v={{ file_exists(base_path('css/login.css')) ? filemtime(base_path('css/login.css')) : 1 }}">
 </head>
 <body>

@@ -3,9 +3,7 @@
 {{-- IBM Plex Mono/Sans aren't loaded by admin-master.blade.php (which has no
      head-yield to add them to), so they're pulled in here instead - a
      stylesheet <link> works wherever it sits in the document, head or not. --}}
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ asset('/assets/vendor/fonts/ibm-plex.css') }}">
 <style>
 /* ---- Order detail page: design tokens ----
    Palette and type scale for this page only - doesn't touch the sidebar/
