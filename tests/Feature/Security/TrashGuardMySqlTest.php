@@ -235,4 +235,74 @@ class TrashGuardMySqlTest extends TestCase
         $this->assertSame(1, DB::table('sync_deletions')->where('table_name', 'items')->where('row_id', $item)->count(),
             'the delete leaves its deletion record');
     }
+
+    /** 'refused' when the PD-34 ownership guard stops $write; nothing is kept either way. */
+    private function verdict(callable $write): string
+    {
+        DB::beginTransaction();
+        try {
+            $write();
+
+            return 'allowed';
+        } catch (\App\Sync\Exceptions\WrongSideEdit|\App\Sync\Exceptions\VesselRecordProtected) {
+            return 'refused';
+        } finally {
+            DB::rollBack();
+        }
+    }
+
+    /** PD-34: the ownership guard's own lookups (through a parent row, on a new row, for a mass write) on MySQL. */
+    public function test_the_ownership_guard_works_on_mysql(): void
+    {
+        config(['sync.enabled_tables' => 'currencies,ranks,categories,@master,@inventory,@pms,@requisitions']);
+        $category = DB::table('categories')->insertGetId(['name' => 'Spares '.uniqid(), 'symbol' => 'S'.substr(uniqid(), -2), 'status' => true, 'created_by' => 'seed', 'created_at' => now(), 'updated_at' => now()]);
+        $item = DB::table('items')->insertGetId(['category_id' => $category, 'impa_code' => 0, 'name' => 'Gasket', 'unit' => 'PC', 'article_number' => 'G-'.uniqid(), 'item_key' => uniqid(), 'created_by' => 'seed', 'status' => true, 'created_at' => now(), 'updated_at' => now()]);
+        $order = DB::table('orders')->insertGetId(['vessel_id' => $this->vesselId, 'category_id' => $category, 'req_no' => 'REQ/'.uniqid(), 'req_date' => '2026-11-20', 'port_name' => 'Port', 'status' => 'submitted', 'created_by' => $this->superAdmin, 'created_at' => now(), 'updated_at' => now()]);
+        $line = DB::table('order_items')->insertGetId(['order_id' => $order, 'item_id' => $item, 'item_qty' => 2, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('vessels')->where('id', $this->vesselId)->update(['offline_enabled_at' => now()]);
+
+        // On the cloud, for a vessel that runs its own server.
+        $this->assertSame('refused', $this->verdict(fn () => DB::table('order_items')->where('id', $line)->update(['rcv_item_qty' => 1])), 'the vessel\'s column, found through the requisition');
+        $this->assertSame('allowed', $this->verdict(fn () => DB::table('order_items')->where('id', $line)->update(['del_item_qty' => 1])), 'the office\'s column');
+        $this->assertSame('refused', $this->verdict(fn () => DB::table('order_items')->insert(['order_id' => $order, 'item_id' => $item, 'item_qty' => 1, 'created_at' => now(), 'updated_at' => now()])), 'a new line');
+        $this->assertSame('refused', $this->verdict(fn () => DB::table('order_items')->join('orders', 'orders.id', '=', 'order_items.order_id')->where('orders.vessel_id', $this->vesselId)->update(['order_items.rcv_item_qty' => 1])), 'a mass update with a join');
+        $this->assertSame('refused', $this->verdict(fn () => DB::table('orders')->where('id', $order)->delete()), 'a delete');
+        $this->assertSame('allowed', $this->verdict(fn () => DB::table('orders')->where('id', $order)->update(['status' => 'approved by am (ssm)'])), 'a shared column');
+
+        // On board.
+        config(['navisuite.mode' => 'vessel', 'navisuite.vessel_id' => $this->vesselId]);
+        $this->assertSame('refused', $this->verdict(fn () => DB::table('categories')->where('id', $category)->update(['name' => 'X'])));
+        $this->assertSame('refused', $this->verdict(fn () => DB::table('order_items')->where('id', $line)->update(['del_item_qty' => 1])));
+        $this->assertSame('allowed', $this->verdict(fn () => DB::table('order_items')->where('id', $line)->update(['rcv_item_qty' => 1])));
+    }
+
+    /**
+     * PD-59 B backfill on MySQL, with rows to fill: each existing file gets
+     * its owner from the uploader's role. The column already exists
+     * (migrate:fresh), so only the data step runs, inside the transaction.
+     */
+    public function test_the_attachment_owner_backfill_works_on_mysql(): void
+    {
+        $crew = DB::table('users')->insertGetId([
+            'name' => 'Master', 'email' => 'bf-master-'.uniqid().'@test.test', 'password' => Hash::make('secret'),
+            'status' => true, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('roles')->insert([
+            'user_id' => $crew, 'vessel_id' => $this->vesselId, 'role' => 'master', 'user_type' => 'ship',
+            'created_by' => 'seed', 'status' => true, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $file = fn (int $user, string $title) => DB::table('attachments')->insertGetId([
+            'uploaded_by' => $user, 'title' => $title, 'original_filename' => 'a.pdf', 'path' => 'attachments/'.$user.'/'.uniqid().'.pdf',
+            'mime_type' => 'application/pdf', 'kind' => 'pdf', 'file_size' => 1, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $crewFile = $file($crew, 'Crew file');
+        $officeFile = $file($this->superAdmin, 'Office file');
+        DB::table('attachments')->whereIn('id', [$crewFile, $officeFile])->update(['owner_side' => null]);
+
+        (require database_path('migrations/2026_11_27_100000_add_owner_side_to_attachments_table.php'))->up();
+        (require database_path('migrations/2026_11_27_100000_add_owner_side_to_attachments_table.php'))->up(); // repeated: changes nothing
+
+        $this->assertSame('vessel', DB::table('attachments')->where('id', $crewFile)->value('owner_side'));
+        $this->assertSame('cloud', DB::table('attachments')->where('id', $officeFile)->value('owner_side'));
+    }
 }

@@ -3,6 +3,7 @@
 namespace App\Sync\Engine;
 
 use App\Sync\SyncRegistry;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Which tables travel between servers, in which direction, and who wins a
@@ -71,6 +72,7 @@ class ReplicationRules
                 'creates' => $rule['creates'] ?? null,
                 'deletes' => $rule['deletes'] ?? null,
                 'row_owner' => $rule['row_owner'] ?? null,
+                'owned_with' => $rule['owned_with'] ?? null,
                 'on_duplicate' => $rule['on_duplicate'] ?? self::REVIEW,
                 'hooks' => array_values((array) ($rule['hooks'] ?? [])),
                 'redact' => (array) ($rule['redact'] ?? []),
@@ -273,6 +275,39 @@ class ReplicationRules
         return $rule['values'][(string) $value] ?? ($rule['other'] ?? null);
     }
 
+    /**
+     * Who owns one row whose owner is that of another row (owned_with): a
+     * document link belongs to the side that owns its procurement stage
+     * (PD-22, PD-59 B). Looked up by the parent's local id, so $values must
+     * hold local ids. Null when the table has no such rule or the parent is
+     * not here.
+     *
+     * @param  array<string, mixed>  $values
+     */
+    public function parentOwner(string $table, array $values): ?string
+    {
+        $rule = $this->rule($table)['owned_with'] ?? null;
+        $id = $rule === null ? null : ($values[$rule['column']] ?? null);
+        if ($id === null) {
+            return null;
+        }
+        $parent = DB::table($rule['table'])->where('id', $id)->first();
+
+        return $parent === null ? null : $this->rowOwner($rule['table'], (array) $parent);
+    }
+
+    /** The owner of one stored row: by its own column (row_owner) or its parent's (owned_with). */
+    public function ownerOfRow(string $table, array $values): ?string
+    {
+        return $this->rowOwner($table, $values) ?? $this->parentOwner($table, $values);
+    }
+
+    /** @return array{column: string, table: string}|null */
+    public function ownedWith(string $table): ?array
+    {
+        return $this->rule($table)['owned_with'] ?? null;
+    }
+
     /** review (keep both apart for a person) or merge (one record, the second UUID an alias). */
     public function onDuplicate(string $table): string
     {
@@ -438,6 +473,14 @@ class ReplicationRules
             }
             if ($rule['row_owner'] !== null && ! is_string($rule['row_owner']['column'] ?? null)) {
                 $errors[] = "\"{$table}\" row_owner needs a column.";
+            }
+            if ($rule['owned_with'] !== null) {
+                $parent = $rule['owned_with']['table'] ?? null;
+                if (! is_string($rule['owned_with']['column'] ?? null) || ! is_string($parent)) {
+                    $errors[] = "\"{$table}\" owned_with needs a column and a table.";
+                } elseif (($this->rule($parent)['row_owner'] ?? null) === null) {
+                    $errors[] = "\"{$table}\" is owned with \"{$parent}\", which has no row_owner.";
+                }
             }
             if (is_array($rule['review'])) {
                 foreach ($rule['review'] as $column) {

@@ -139,7 +139,7 @@ class SyncFlowTest extends SyncEngineTestCase
         $eur = $this->addCurrency('EUR', 'Euro');
         $this->assertCycleOk();
 
-        $this->onShip(fn () => DB::table('currencies')->where('sync_uuid', $eur)->update(['name' => 'Changed on board']));
+        $this->onShip(fn () => \App\Sync\WrongSideEdits::outsideTheApplication(fn () => DB::table('currencies')->where('sync_uuid', $eur)->update(['name' => 'Changed on board'])));
         $this->assertCycleOk();
         $this->assertSame('Euro', $this->row('cloud', 'currencies', $eur)->name, 'not sent up');
 

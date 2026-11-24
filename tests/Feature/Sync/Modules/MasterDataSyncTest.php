@@ -71,11 +71,11 @@ class MasterDataSyncTest extends BusinessSyncTestCase
 
     public function test_the_vessel_cannot_create_users_or_change_office_records(): void
     {
-        $this->onShip(function () {
+        $this->onShip(fn () => \App\Sync\WrongSideEdits::outsideTheApplication(function () {
             DB::table('users')->insert(['name' => 'Stowaway', 'email' => 'x@mvtest.test', 'password' => 'x', 'status' => true, 'created_at' => now(), 'updated_at' => now()]);
             DB::table('vessels')->where('id', 7)->update(['name' => 'RENAMED ON BOARD']);
             DB::table('pms_locations')->update(['name' => 'CHANGED ON BOARD']);
-        });
+        }));
 
         $result = $this->syncCycle();
 

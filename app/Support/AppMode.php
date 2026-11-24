@@ -133,6 +133,25 @@ class AppMode
      * run, or a partial test schema) is treated as "not offline", which is
      * exactly the behaviour before this feature existed.
      */
+    /**
+     * The vessels marked as running their own server (PD-34 checks bulk
+     * writes against them). Empty before the column exists.
+     *
+     * @return list<int>
+     */
+    public function offlineEnabledVesselIds(): array
+    {
+        try {
+            if (! $this->hasOfflineColumn()) {
+                return [];
+            }
+
+            return DB::table('vessels')->whereNotNull('offline_enabled_at')->pluck('id')->map(fn ($id) => (int) $id)->all();
+        } catch (QueryException) {
+            return [];
+        }
+    }
+
     public function vesselIsOfflineEnabled(int $vesselId): bool
     {
         try {

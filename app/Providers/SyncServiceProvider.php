@@ -22,6 +22,10 @@ class SyncServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // PD-34: every connection hands out the ownership-guarded query
+        // builder, so query-builder writes are checked like model saves.
+        \App\Sync\Database\OwnershipGuardedConnections::register();
+
         foreach ([SyncRegistry::class, TriggerBuilder::class, TriggerManager::class, SyncInbox::class, SyncCursors::class, SyncNodes::class, SyncLogger::class] as $class) {
             $this->app->singleton($class);
         }
@@ -59,6 +63,18 @@ class SyncServiceProvider extends ServiceProvider
                 ->cloudDeleteRefusal($model->getTable(), $model->getAttributes(), $model->getKeyName());
             if ($refusal !== null) {
                 throw new \App\Sync\Exceptions\VesselRecordProtected($refusal);
+            }
+        });
+
+        // PD-34, edits (decided 2026-11-24): data is changed only on the
+        // side that owns it. Every Eloquent save is checked here, so a later
+        // screen inherits the rule (see App\Sync\WrongSideEdits).
+        Event::listen(\Illuminate\Database\Events\MigrationsStarted::class, fn () => \App\Sync\WrongSideEdits::migrationsStarted());
+        Event::listen(\Illuminate\Database\Events\MigrationsEnded::class, fn () => \App\Sync\WrongSideEdits::migrationsEnded());
+        Event::listen('eloquent.saving: *', function (string $event, array $payload) {
+            $model = $payload[0] ?? null;
+            if ($model instanceof \Illuminate\Database\Eloquent\Model) {
+                app(\App\Sync\WrongSideEdits::class)->check($model);
             }
         });
 

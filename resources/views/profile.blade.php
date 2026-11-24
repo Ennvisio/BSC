@@ -182,6 +182,12 @@ img.police-st-field-loader {
 						 is already on file. --}}
 					<h5><strong><i class="far fa-file"></i> File Upload</strong></h5>
 
+					{{-- PD-34, edits: on a vessel server the photo and signature are
+						 the office's user record, so they are changed in the office. --}}
+					@if(!empty($profileFilesNote))
+					<div class="alert alert-info" id="profile-files-note">{{ $profileFilesNote }}</div>
+					@endif
+					<fieldset @if(!empty($profileFilesNote)) disabled data-office-only="1" @endif>
 					<form class='form' action="{{url('/change/file')}}" method="post" enctype="multipart/form-data">
 						{{csrf_field()}}
 						<div class="row form-group">
@@ -249,6 +255,7 @@ img.police-st-field-loader {
 							</div>
 						</div>
 					</form>
+					</fieldset>
 				</div>
 				
 			</div>

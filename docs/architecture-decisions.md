@@ -80,6 +80,45 @@ decision above.
 
 - **2026-11-23.** The project owner confirmed ADR-001 again, and added
   Clarification A below (the synchronization network).
+- **2026-11-24, PD-34 edits decided (option 1).** Under principle 7, the
+  owner chose to block wrong-side edits rather than warn: data is changed
+  only on the side that owns it, as the replication rules already define
+  ownership, and an edit on the other side is refused before anything is
+  saved. Built in Checkpoint 14 (item 7) as one central guard for model
+  saves and query-builder writes, after an audit of every write path.
+- **2026-11-24, PD-17, PD-21, PD-59 and PD-36 decided.** Recorded, not
+  yet built (Checkpoints 15 and 16). They supersede the line further down
+  that says "The PD-17 line (certificates and surveys) and PD-11 and PD-21
+  stay open" for PD-17 and PD-21; PD-11 is settled by ADR-004.
+  - **PD-17 (vessel-managed).** A vessel's certificates, surveys and
+    certificate copies are its own operational data under principle 1,
+    owned as PD-34 decides: changed only on board for a vessel that runs
+    its own server. History and audit are kept, sync stays idempotent, and
+    no approval step is added. The certificate and survey name lists stay
+    with the office; certificate categories stay shared (ADR-003).
+  - **PD-21 (own photo and signature).** A specific exception to PD-34:
+    a vessel user changes their own profile photo and signature on board,
+    offline included. Nobody else can change them, and the office must not
+    silently overwrite them. It applies to these two columns only.
+  - **PD-59 A (option 2).** Under principle 7, a conflict is flagged when
+    an owner would lose its change, and always for files, passwords,
+    statuses and ownership-sensitive fields. Newest wins only where the
+    rules allow it, never by timestamps alone.
+  - **PD-59 B (vessel-only).** Documents, photos and signatures the vessel
+    creates are managed only on board, previous versions are kept, and no
+    attachment deletion is added.
+  - **PD-36 (option 1).** Every database delete cascade is reviewed, and a
+    delete that a cascade would turn into a loss of protected data is
+    refused.
+- **2026-11-24, CP15 answers.** PD-59 B refined: an attachment belongs to
+  the side that uploaded it (vessel uploads the vessel's, office uploads
+  the office's), and only that side changes it; this applies principle 7
+  to files of both sides, and replaces the "vessel-only" wording above for
+  attachments. PD-22: procurement documents are the office's and reach the
+  vessel as read-only copies; 20 MB per file between servers. PD-74
+  (concluded): a requisition shows each signer's current signature, and
+  users named on requisitions are never deleted. Built (Checkpoint 15);
+  PD-17 and PD-21 are still planned.
 - **2026-11-23.** PD-35 (sync monitoring for the office) was made a
   requirement for the first pilot. The owner also set directions for PD-13
   (an office rejection must not be silently overridden) and PD-59 (documents
@@ -432,6 +471,11 @@ Open in [pending-decisions.md](pending-decisions.md):
 - **2026-11-23.** PD-71 A extends the rule: only a Superadmin also
   creates users and changes user roles. Built in Checkpoint 10. The open
   point "Creating users and changing roles" above is settled by it.
+- **2026-11-24, PD-21 decided.** Not part of this decision, recorded here
+  because it concerns user records: a vessel user may change their own
+  profile photo and signature on board, offline included, as a specific
+  exception to PD-34. Blocking, passwords, creating users and roles stay
+  as decided above. Planned (Checkpoint 15).
 
 ---
 
@@ -592,3 +636,12 @@ Open in [pending-decisions.md](pending-decisions.md):
   owns; the refusal is logged and flagged, and nothing is deleted or
   cascade-deleted. Built in Checkpoint 14. (3) The certificate copy
   history travels between servers as immutable records (Checkpoint 15).
+- **2026-11-24, PD-36 and PD-59 B decided.** PD-36 (option 1): a database
+  cascade must not remove a record this decision protects; every
+  `ON DELETE CASCADE` is reviewed and a delete that would cascade into
+  protected data is refused. PD-59 B: documents, photos and signatures the
+  vessel creates are managed only on board, with previous versions kept.
+  Neither adds attachment deletion or a new permission. Planned
+  (Checkpoints 15 and 16). *(PD-59 B refined the same day: each side
+  manages the attachments it uploaded. Built in Checkpoint 15, without
+  any delete path: a file is still only hidden by its uploader.)*

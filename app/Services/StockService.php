@@ -239,6 +239,10 @@ class StockService
             return 0;
         }
 
+        // PD-34, edits: these figures and movements are the vessel's. A bulk
+        // write skips the model-level check, so it is made here.
+        app(\App\Sync\WrongSideEdits::class)->assertMayWrite('stock_movements', $vesselId);
+
         return DB::transaction(function () use ($vesselId, $rows, $userId, $stockImportId) {
             $now = now();
             $today = $now->toDateString();
@@ -387,6 +391,8 @@ class StockService
      */
     public function backfillMovementsForVessel(int $vesselId): array
     {
+        app(\App\Sync\WrongSideEdits::class)->assertMayWrite('stock_movements', $vesselId);   // PD-34, edits: see bulkSet()
+
         return DB::transaction(function () use ($vesselId) {
             $counts = ['opening' => 0, 'receipt' => 0, 'consumption' => 0, 'adjustment' => 0];
 

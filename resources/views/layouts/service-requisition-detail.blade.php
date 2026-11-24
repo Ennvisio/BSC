@@ -634,9 +634,7 @@
 										@if($step->attachments->isNotEmpty())
 										<div class="t-docs">
 											@foreach($step->attachments as $doc)
-											<a href="{{ url('/attachments/'.$doc->id.'/view') }}" target="_blank" rel="noopener" class="t-doc">
-												<i class="fas fa-paperclip"></i> {{ $doc->title }}
-											</a>
+											@include('partials.procurement-doc-link', ['doc' => $doc])
 											@endforeach
 										</div>
 										@endif

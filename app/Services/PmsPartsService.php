@@ -104,8 +104,15 @@ class PmsPartsService
      */
     public function releaseStaleLinks(?array $jobIds = null): int
     {
+        // PD-34, edits: on the cloud, the parts of a vessel that runs its own
+        // server are its own; it releases them on board, and the result
+        // comes up by sync. A bulk update skips the model-level check.
+        $keepOwn = app(\App\Sync\WrongSideEdits::class)->vesselsKeepingTheirOwn('pms_required_parts');
+
         return PmsRequiredPart::whereNotNull('order_id')
             ->when($jobIds !== null, fn ($q) => $q->whereIn('job_id', $jobIds))
+            ->when($keepOwn !== [], fn ($q) => $q->where(fn ($own) => $own->whereNull('job_id')
+                ->orWhereNotIn('job_id', fn ($jobs) => $jobs->select('id')->from('pms_jobs')->whereIn('vessel_id', $keepOwn))))
             ->where(function ($q) {
                 $q->whereNotExists(function ($line) {
                     $line->select(DB::raw(1))->from('order_items')

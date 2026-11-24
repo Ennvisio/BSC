@@ -63,7 +63,7 @@ class SyncHealthTest extends BusinessSyncTestCase
 
     public function test_changes_that_could_not_be_applied_and_conflicts_are_listed(): void
     {
-        $this->onShip(fn () => DB::table('users')->insert(['name' => 'X', 'email' => 'x@mvtest.test', 'password' => 'x', 'status' => true, 'created_at' => now(), 'updated_at' => now()]));
+        $this->onShip(fn () => \App\Sync\WrongSideEdits::outsideTheApplication(fn () => DB::table('users')->insert(['name' => 'X', 'email' => 'x@mvtest.test', 'password' => 'x', 'status' => true, 'created_at' => now(), 'updated_at' => now()])));
         $this->syncCycle();
 
         $cloud = $this->alerts('cloud');
@@ -73,7 +73,7 @@ class SyncHealthTest extends BusinessSyncTestCase
 
     public function test_each_problem_is_logged_once(): void
     {
-        $this->onShip(fn () => DB::table('users')->insert(['name' => 'X', 'email' => 'x@mvtest.test', 'password' => 'x', 'status' => true, 'created_at' => now(), 'updated_at' => now()]));
+        $this->onShip(fn () => \App\Sync\WrongSideEdits::outsideTheApplication(fn () => DB::table('users')->insert(['name' => 'X', 'email' => 'x@mvtest.test', 'password' => 'x', 'status' => true, 'created_at' => now(), 'updated_at' => now()])));
         $this->syncCycle();
 
         $this->onCloud(function () {

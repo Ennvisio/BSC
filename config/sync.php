@@ -236,6 +236,9 @@ return [
         |             a column may still change it.
         | creates / deletes  The only side that may create / delete rows.
         | row_owner   The side owning each row, by a column's value.
+        | owned_with  ['column' => ..., 'table' => ...]: each row belongs to
+        |             the side owning the row that column points at (whose
+        |             table has a row_owner).
         | append_only Permanent records: once written never changed or
         |             removed by sync (ledger lines, audit entries).
         | on_duplicate  review (default) or merge: the same record created
@@ -421,16 +424,32 @@ return [
         // link to one of that vessel's records (the "carries" below), never
         // on their own (strict_scope). The files themselves travel
         // separately (App\Sync\Files, config 'files' below).
+        //
+        // PD-59 B (approved 2026-11-24): a file belongs to the side that
+        // uploaded it (owner_side, set once when the record is created), and
+        // only that side changes the record. A change from the other side is
+        // refused here and at sync, and flagged (App\Sync\WrongSideEdits,
+        // ChangeApplier). A record without owner_side keeps the rules above.
         'attachments' => ['direction' => 'both', 'conflict' => 'latest', 'strict_scope' => true,
+            'row_owner' => ['column' => 'owner_side', 'values' => ['vessel' => 'vessel', 'cloud' => 'cloud']],
             'references' => ['uploaded_by' => 'users', 'hidden_by' => 'users']],
         // Links made on board: to a draft line, to a consumption record.
         'attachment_order_item' => ['direction' => 'up', 'references' => ['order_item_id' => 'order_items', 'attachment_id' => 'attachments']],
         'attachment_stock_consumption' => ['direction' => 'up', 'references' => ['stock_consumption_id' => 'stock_consumptions', 'attachment_id' => 'attachments']],
         // Links made by whoever completes a procurement stage: the office
         // for most stages, the vessel for Receipt & Verification.
+        //
+        // PD-22 (approved 2026-11-24): procurement documents are the
+        // office's. They reach the vessel as read-only copies (carries), and
+        // a link belongs to the side that owns its stage (owned_with), so the
+        // vessel cannot add, change or remove the documents of an office
+        // stage, nor the office those of Receipt & Verification. Refused in
+        // the application (App\Sync\WrongSideEdits) and at sync, flagged.
         'attachment_order_step' => ['direction' => 'both', 'conflict' => 'latest', 'carries' => ['attachment_id' => 'attachments'],
+            'owned_with' => ['column' => 'order_procurement_step_id', 'table' => 'order_procurement_steps'],
             'references' => ['order_procurement_step_id' => 'order_procurement_steps', 'attachment_id' => 'attachments']],
         'attachment_service_req_step' => ['direction' => 'both', 'conflict' => 'latest', 'carries' => ['attachment_id' => 'attachments'],
+            'owned_with' => ['column' => 'step_id', 'table' => 'service_requisition_procurement_steps'],
             'references' => ['step_id' => 'service_requisition_procurement_steps', 'attachment_id' => 'attachments']],
     ],
 
@@ -548,7 +567,11 @@ return [
             'vessel_certificate_copies' => ['path' => ['disk' => 'public_images', 'prefix' => 'images/cert_copy/', 'sha256' => 'sha256', 'size' => 'file_size']],
         ],
         'chunk_bytes' => 512 * 1024,                     // per request, both ways
-        'max_file_bytes' => 64 * 1024 * 1024,
+        // PD-22 (approved 2026-11-24): the largest file the vessel server
+        // accepts (deploy/windows/templates/php.ini upload_max_filesize). A
+        // larger file could never have been uploaded there, so it is
+        // reported at once instead of being retried.
+        'max_file_bytes' => 20 * 1024 * 1024,
         'max_bytes_per_cycle' => (int) env('SYNC_FILES_MAX_BYTES', 50 * 1024 * 1024),
         'max_attempts' => 20,                            // then the file is marked failed for an operator
         'tmp_dir' => 'sync-files-tmp',                   // under the local disk; partial transfers

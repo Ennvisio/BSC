@@ -139,6 +139,9 @@ class ChangeApplier
         if (($deleter = $this->rules->deleter($table)) !== null && $deleter !== $sender) {
             throw new InvalidChange("Only the {$deleter} deletes {$table} rows.");
         }
+        if ($table === 'users' && ($why = \App\Support\UserRecordGuard::refusal((int) $local->id)) !== null) {
+            throw new InvalidChange($why);
+        }
 
         $localUuid = $this->uuidOf($table, $local);
         $pending = $side->pendingLocalChange($table, $localUuid);
@@ -172,6 +175,9 @@ class ChangeApplier
         }
 
         $decoded = $this->codec->decode($table, $event['values']);
+        if (($owner = $this->rules->parentOwner($table, $decoded['values'])) !== null && $owner !== $this->sender($side)) {
+            throw new InvalidChange("This {$table} row belongs to a record kept by the {$owner}; a change from the {$this->sender($side)} is not accepted.");
+        }
         $values = $this->runHooksBefore($table, $decoded['values'], $local, $side);
         $note = $decoded['ignored'] === [] ? null : 'Columns not on this server, ignored: '.implode(', ', $decoded['ignored']).'.';
         $remoteUpdatedAt = isset($event['values']['updated_at']) ? (string) $event['values']['updated_at'] : null;
@@ -577,11 +583,13 @@ class ChangeApplier
     private function assertSenderOwnsRow(string $table, array $event, ?object $local, ReceivingSide $side): void
     {
         $sender = $this->sender($side);
-        foreach ([$local === null ? null : (array) $local, $event['values']] as $values) {
+        foreach ([$local === null ? null : (array) $local, $event['values']] as $i => $values) {
             if ($values === null) {
                 continue;
             }
-            $owner = $this->rules->rowOwner($table, $values);
+            // The stored row holds local ids, so its parent can be looked up
+            // (owned_with); the sent values are checked once decoded (upsert).
+            $owner = $i === 0 ? $this->rules->ownerOfRow($table, $values) : $this->rules->rowOwner($table, $values);
             if ($owner !== null && $owner !== $sender) {
                 throw new InvalidChange("This {$table} row is kept by the {$owner}; a change from the {$sender} is not accepted.");
             }

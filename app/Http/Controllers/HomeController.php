@@ -1744,7 +1744,15 @@ return view('layouts.order',compact('orders','items','categories','vessels','shi
 }
 public function getProfile(){
   $profile=User::findOrFail(auth()->id());
-  return view('profile',compact('profile'));
+  // PD-34, edits: where the photo and signature are the office's to change
+  // (on a vessel server), the upload is shown disabled with the reason.
+  $probe = clone $profile;
+  $probe->photo = '-';
+  $probe->sign = '-';
+  $profileFilesNote = app(\App\Sync\WrongSideEdits::class)->refusalFor($probe)
+    ? 'Your photo and signature are kept in the office\'s user record. Please ask the office to change them; the change reaches this vessel by synchronisation.'
+    : null;
+  return view('profile',compact('profile','profileFilesNote'));
 }
 public function changePassword(Request $request){
   $this->validate($request,[
@@ -1787,6 +1795,14 @@ public function changeFile(Request $request){
 
   $user=User::findOrFail(auth()->user()->id);
   $updated=[];
+
+  // PD-34, edits: the photo and signature are the office's user record. On
+  // board they would be overwritten by the office's next change, so they
+  // are refused before any file is stored (App\Sync\WrongSideEdits).
+  $probe = clone $user;
+  if($request->hasFile('photo')){ $probe->photo = '-'; }
+  if($request->hasFile('signature')){ $probe->sign = '-'; }
+  app(\App\Sync\WrongSideEdits::class)->check($probe);
 
   if($request->hasFile('photo')){
     $name = \App\Support\Files\SafeUpload::storePublic($request->photo, 'userphoto', ['image/jpeg', 'image/png', 'image/gif'], 'photo');

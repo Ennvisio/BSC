@@ -203,10 +203,10 @@ class RequisitionSyncTest extends BusinessSyncTestCase
         $uuid = $this->submitOnBoard($orderId);
         $reqNo = $this->onShip(fn () => DB::table('orders')->where('id', $orderId)->value('req_no'));
         // A different requisition in the office already carries that number.
-        $this->onCloud(fn () => DB::table('orders')->insert([
+        $this->onCloud(fn () => \App\Sync\WrongSideEdits::outsideTheApplication(fn () => DB::table('orders')->insert([
             'vessel_id' => 7, 'category_id' => $this->categoryId, 'req_no' => $reqNo, 'req_date' => now()->toDateString(), 'port_name' => '-',
             'status' => 'approved by chief-officer', 'ord_status' => true, 'created_by' => 1, 'created_by_role' => 'chief-officer', 'created_at' => now(), 'updated_at' => now(),
-        ]));
+        ])));
 
         $result = $this->syncCycle();
 
@@ -247,10 +247,10 @@ class RequisitionSyncTest extends BusinessSyncTestCase
         $this->assertCycleOk();
 
         // Edited on board directly in the database, bypassing the screens.
-        $this->onShip(function () use ($orderId) {
+        $this->onShip(fn () => \App\Sync\WrongSideEdits::outsideTheApplication(function () use ($orderId) {
             DB::table('orders')->where('id', $orderId)->update(['official_remarks' => 'Changed on board', 'port_name' => 'Singapore', 'updated_at' => now()->addMinute()]);
             DB::table('order_form_parts')->where('order_id', $orderId)->where('part', 'B')->update(['answers' => '{"forged":true}', 'updated_at' => now()->addMinute()]);
-        });
+        }));
         $result = $this->syncCycle();
 
         $this->assertSame(1, $result['summary']['pushed']['rejected'], 'Part B is the office\'s row');

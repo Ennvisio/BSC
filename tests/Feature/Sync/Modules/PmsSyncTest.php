@@ -109,9 +109,9 @@ class PmsSyncTest extends BusinessSyncTestCase
         $this->assertCycleOk();
 
         // Changed in the office database directly, bypassing the screens.
-        $this->onCloud(fn () => DB::table('pms_jobs')->where('id', $jobId)->update([
+        $this->onCloud(fn () => \App\Sync\WrongSideEdits::outsideTheApplication(fn () => DB::table('pms_jobs')->where('id', $jobId)->update([
             'status' => PmsJob::CANCELLED, 'remark' => 'office edit', 'due_date' => '2030-01-01', 'updated_at' => now()->addMinute(),
-        ]));
+        ])));
         $this->assertCycleOk();
 
         $job = $this->onShip(fn () => DB::table('pms_jobs')->where('id', $jobId)->first());
@@ -120,10 +120,10 @@ class PmsSyncTest extends BusinessSyncTestCase
         $this->assertNotSame('2030-01-01', substr((string) $job->due_date, 0, 10));
 
         // A job created in the office is refused on board.
-        $this->onCloud(function () use ($jobId) {
+        $this->onCloud(fn () => \App\Sync\WrongSideEdits::outsideTheApplication(function () use ($jobId) {
             $row = (array) DB::table('pms_jobs')->where('id', $jobId)->first();
             DB::table('pms_jobs')->insert(['id' => (string) \Illuminate\Support\Str::uuid(), 'status' => PmsJob::PLANNED, 'sync_version' => 1] + array_diff_key($row, array_flip(['id', 'status', 'sync_version', 'completed_at', 'remark'])));
-        });
+        }));
         $result = $this->syncCycle();
         $this->assertSame(1, $result['summary']['pulled']['rejected']);
         $this->assertStringContainsString('Only the vessel creates pms_jobs', (string) $this->onShip(fn () => DB::table('sync_inbox')->where('status', 'failed')->value('last_error')));

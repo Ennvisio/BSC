@@ -130,6 +130,8 @@ Files named in other tables (`config/sync.php` `files.columns`):
   so superintendents' signatures show on board;
 - `vessel_certificates.cert_copy`: both ways.
 
+Later decisions (2026-11-24; PD-21 and PD-17 not yet built): PD-21 lets a vessel user change their own photo and signature on board, and the office must not overwrite them; PD-17 makes certificates and their copies vessel-managed. Built the same day (Checkpoint 15): PD-59 B, each attachment belongs to the side that uploaded it and only that side changes it; PD-22, sync's per-file limit is 20 MB (it was 64 MB); PD-22, office procurement documents are read-only copies on board, and each stage link belongs to the side owning the stage. See [pending-decisions.md](pending-decisions.md) and Checkpoint 15 in [implementation-roadmap.md](implementation-roadmap.md).
+
 ### Files
 
 The files travel after the records of each cycle, over their own endpoints.

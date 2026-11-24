@@ -74,6 +74,9 @@ class FileServer
             return $this->answer(400, 'X-File-SHA256, X-File-Size and X-File-Offset are required.');
         }
         if ($size > (int) config('sync.files.max_file_bytes')) {
+            // PD-22: it can never be received, so it is not asked for again.
+            $this->index->failNow($entry, sprintf('The file is %.1f MB, larger than the %s a server accepts (PD-22).', $size / 1048576, FileIndex::sizeLimitText()));
+
             return $this->answer(413, 'The file is larger than this server accepts.');
         }
         $expected = $entry->sha256 ?? $this->index->recordedChecksum($spec['disk'], (string) $entry->path);

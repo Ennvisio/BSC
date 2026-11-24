@@ -15,6 +15,43 @@ class Attachment extends Model
 {
     public const KINDS = ['image', 'pdf', 'doc'];
 
+    public const VESSEL = 'vessel';
+
+    public const OFFICE = 'cloud';
+
+    /**
+     * PD-59 B (approved 2026-11-24): a file belongs to the side that
+     * uploaded it, recorded once when the record is created. On a vessel's
+     * own server that is always the vessel. On the cloud it is the vessel
+     * when one of its crew uploads (the vessel working on the cloud), and
+     * the office otherwise. Set while saving, before the ownership guard
+     * (App\Sync\WrongSideEdits) checks the new record.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $attachment) {
+            if (! $attachment->exists && $attachment->getAttribute('owner_side') === null
+                && Schema::hasColumn($attachment->getTable(), 'owner_side')) {
+                $attachment->owner_side = self::sideOf($attachment->uploaded_by);
+            }
+        });
+    }
+
+    public static function sideOf(?int $userId): string
+    {
+        if (app(\App\Support\AppMode::class)->isVessel()) {
+            return self::VESSEL;
+        }
+        $type = $userId === null ? null : DB::table('roles')->where('user_id', $userId)->value('user_type');
+
+        return $type === 'ship' ? self::VESSEL : self::OFFICE;
+    }
+
+    public function isVesselOwned(): bool
+    {
+        return $this->owner_side === self::VESSEL;
+    }
+
     public function uploader()
     {
         return $this->belongsTo(User::class, 'uploaded_by');

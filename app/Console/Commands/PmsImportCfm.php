@@ -53,6 +53,18 @@ class PmsImportCfm extends Command
             return self::FAILURE;
         }
 
+        // PD-34, edits (decided 2026-11-24): a vessel that runs its own
+        // server keeps its own components (they travel up only), so they
+        // are not imported on the cloud either: the import would never
+        // reach the vessel. Refused before anything is read.
+        try {
+            app(\App\Sync\WrongSideEdits::class)->assertMayWrite('pms_components', (int) $vessel->id);
+        } catch (\App\Sync\Exceptions\WrongSideEdit) {
+            $this->error($vessel->name.' uses its own onboard server, so its PMS components are imported there, not on the cloud. Nothing was imported.');
+
+            return self::FAILURE;
+        }
+
         $dir = storage_path('app/samples/cfm_export');
         $vesselFile = "{$dir}/CFM_export_{$code}.json";
         $masterFile = "{$dir}/CFM_export_master.json";

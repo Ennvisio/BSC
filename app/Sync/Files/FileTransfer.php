@@ -144,7 +144,9 @@ class FileTransfer
             } catch (Throwable $e) {
                 $summary['failed']++;
                 $summary['errors'][] = "Down {$entry->table_name}/{$entry->row_uuid}/{$entry->column_name}: {$e->getMessage()}";
-                $this->index->attemptFailed($entry, $e->getMessage());
+                $e instanceof FileTooLarge
+                    ? $this->index->failNow($entry, $e->getMessage())
+                    : $this->index->attemptFailed($entry, $e->getMessage());
             }
         }
     }
@@ -180,7 +182,11 @@ class FileTransfer
             $headers = $answer['headers'];
             $sha = strtolower((string) ($headers['x-file-sha256'] ?? ''));
             $size = (int) ($headers['x-file-size'] ?? -1);
-            if (! preg_match('/^[0-9a-f]{64}$/', $sha) || $size < 0 || $size > (int) config('sync.files.max_file_bytes')) {
+            if ($size > (int) config('sync.files.max_file_bytes')) {
+                @unlink($part);
+                throw new FileTooLarge(sprintf('The file is %.1f MB, larger than the %s a server accepts (PD-22).', $size / 1048576, FileIndex::sizeLimitText()));
+            }
+            if (! preg_match('/^[0-9a-f]{64}$/', $sha) || $size < 0) {
                 throw new FileTransferException('The cloud sent no usable checksum or size.');
             }
             if ($expected !== null && ! hash_equals((string) $expected, $sha)) {

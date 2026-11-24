@@ -162,7 +162,7 @@ class DeletionSyncTest extends BusinessSyncTestCase
     {
         $component = $this->componentOnBoth();
 
-        $this->onShip(fn () => DB::table('pms_components')->where('id', $component)->update(['is_inactive' => true, 'remark' => 'Laid up', 'updated_at' => now()]));
+        $this->onShip(fn () => \App\Sync\WrongSideEdits::outsideTheApplication(fn () => DB::table('pms_components')->where('id', $component)->update(['is_inactive' => true, 'remark' => 'Laid up', 'updated_at' => now()])));
         $this->assertCycleOk();
 
         $cloud = $this->onCloud(fn () => DB::table('pms_components')->where('id', $component)->first());
@@ -183,7 +183,7 @@ class DeletionSyncTest extends BusinessSyncTestCase
             $this->{$server}(fn () => \App\Sync\SyncContext::withoutCapture(fn () => DB::table('pms_components')->where('id', $component)->update(['is_inactive' => true])));
         }
 
-        $this->onShip(fn () => DB::table('pms_components')->where('id', $component)->update(['is_inactive' => false, 'updated_at' => now()]));
+        $this->onShip(fn () => \App\Sync\WrongSideEdits::outsideTheApplication(fn () => DB::table('pms_components')->where('id', $component)->update(['is_inactive' => false, 'updated_at' => now()])));
         $this->assertCycleOk();
 
         $this->assertSame(1, (int) $this->onCloud(fn () => DB::table('pms_components')->where('id', $component)->value('is_inactive')), 'still inactive on the cloud');
@@ -369,7 +369,7 @@ class DeletionSyncTest extends BusinessSyncTestCase
         $linkId = $this->onShip(fn () => (int) DB::table('vessel_items')->where('item_id', $this->itemId('ME-100'))->value('id'));
         $uuid = $this->onShip(fn () => $this->uuidFor('vessel_items', $linkId));
 
-        $this->onCloud(fn () => DB::table('vessel_items')->where('sync_uuid', $uuid)->delete());
+        $this->onCloud(fn () => \App\Sync\WrongSideEdits::outsideTheApplication(fn () => DB::table('vessel_items')->where('sync_uuid', $uuid)->delete()));
         $result = $this->syncCycle();
         $this->assertSame(1, $result['summary']['pulled']['rejected']);
 
@@ -395,7 +395,7 @@ class DeletionSyncTest extends BusinessSyncTestCase
 
         // The office's database removes the lines with the requisition (on
         // SQLite each line's delete is captured and travels too).
-        $this->onCloud(fn () => DB::table('orders')->where('sync_uuid', $uuid)->delete());
+        $this->onCloud(fn () => \App\Sync\WrongSideEdits::outsideTheApplication(fn () => DB::table('orders')->where('sync_uuid', $uuid)->delete()));
         $result = $this->syncCycle();
         $this->assertGreaterThanOrEqual(1, $result['summary']['pulled']['rejected']);
 

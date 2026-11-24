@@ -185,6 +185,28 @@ class FileIndex
     }
 
     /**
+     * Marked failed at once, without further attempts: for a file that can
+     * never travel (PD-22: larger than a server accepts). It stays listed
+     * for an operator, like a file that failed max_attempts times.
+     */
+    public function failNow(object $entry, string $error): void
+    {
+        DB::table('sync_files')->where('id', $entry->id)->update([
+            'attempts' => (int) $entry->attempts + 1,
+            'state' => self::FAILED,
+            'last_error' => mb_substr($error.' Not tried again.', 0, 1000),
+            'next_attempt_at' => null,
+            'updated_at' => now(),
+        ]);
+    }
+
+    /** The largest file the servers exchange, for messages: "20 MB". */
+    public static function sizeLimitText(): string
+    {
+        return round((int) config('sync.files.max_file_bytes') / 1048576, 1).' MB';
+    }
+
+    /**
      * The file a row names, as it is on this server now: its checksum and
      * size, or null when it is not here. The checksum is read again only
      * when the file changed since it was last read.

@@ -523,6 +523,503 @@ class ApprovedGuardsTest extends TestCase
             ->expectsOutputToContain('export file not found')->assertFailed();
     }
 
+    // --------------------------------------------- PD-34, edits
+
+    /** The modules a vessel with its own server synchronises (SYNC_TABLES). */
+    private function syncModules(): void
+    {
+        config(['sync.enabled_tables' => 'currencies,ranks,categories,@master,@inventory,@pms,@requisitions']);
+    }
+
+    private function onBoard(): void
+    {
+        config(['navisuite.mode' => 'vessel', 'navisuite.vessel_id' => self::VESSEL]);
+    }
+
+    /** Runs $change and returns the refusal's message, or null when it was saved. */
+    private function refusal(callable $change): ?string
+    {
+        try {
+            $change();
+        } catch (\App\Sync\Exceptions\WrongSideEdit $e) {
+            return $e->getMessage();
+        }
+
+        return null;
+    }
+
+    private function save(string $model, mixed $key, array $values): void
+    {
+        $record = $model::findOrFail($key);
+        foreach ($values as $column => $value) {
+            $record->{$column} = $value;
+        }
+        $record->save();
+    }
+
+    private function stockLink(): int
+    {
+        $item = $this->item($this->retiredCategory('Stock '.uniqid()), true);
+
+        return DB::table('vessel_items')->insertGetId(['vessel_id' => self::VESSEL, 'item_id' => $item, 'stock_qty' => 3, 'min_qty' => 1, 'created_at' => now(), 'updated_at' => now()]);
+    }
+
+    private function pmsJob(string $status): string
+    {
+        $component = $this->pmsComponent();
+        $rank = (int) DB::table('ranks')->value('id') ?: DB::table('ranks')->insertGetId(['code' => 'CE', 'name' => 'Chief Engineer', 'created_at' => now(), 'updated_at' => now()]);
+        $type = (int) DB::table('pms_job_types')->value('id') ?: DB::table('pms_job_types')->insertGetId(['name' => 'Overhaul', 'abbreviation' => 'OH', 'created_at' => now(), 'updated_at' => now()]);
+        $definition = (string) \Illuminate\Support\Str::uuid();
+        DB::table('pms_job_definitions')->insert(['id' => $definition, 'vessel_id' => self::VESSEL, 'component_id' => $component, 'name' => 'Overhaul', 'job_type_id' => $type, 'rank_id' => $rank, 'created_at' => now(), 'updated_at' => now()]);
+        $job = (string) \Illuminate\Support\Str::uuid();
+        DB::table('pms_jobs')->insert(['id' => $job, 'vessel_id' => self::VESSEL, 'component_id' => $component, 'job_definition_id' => $definition, 'status' => $status, 'due_date' => '2026-12-01', 'created_at' => now(), 'updated_at' => now()]);
+
+        return $job;
+    }
+
+    public function test_pd34_edits_the_office_cannot_change_an_offline_vessels_own_data_on_the_cloud(): void
+    {
+        $this->syncModules();
+        $order = $this->order();
+        $partA = $this->formPart($order, 'A');
+        $link = $this->stockLink();
+        $component = $this->pmsComponent();
+        $plannedJob = $this->pmsJob('Planned');
+        $this->offline(self::VESSEL);
+        $this->actAs('super-admin');
+
+        $refused = [
+            'a PMS component (the vessel\'s table)' => fn () => $this->save(\App\PmsComponent::class, $component, ['name' => 'Office pump']),
+            'a stock figure (the vessel\'s column)' => fn () => $this->save(\App\VesselItem::class, $link, ['min_qty' => 9]),
+            'a requisition\'s own details (the vessel\'s column)' => fn () => $this->save(\App\Order::class, $order, ['port_name' => 'Office port']),
+            'form Part A (the vessel\'s row)' => fn () => $this->save(\App\OrderFormPart::class, $partA, ['answers' => ['x' => 1]]),
+            'a PMS job the office does not approve' => fn () => $this->save(\App\PmsJob::class, $plannedJob, ['due_date' => '2027-01-01']),
+            'a new PMS component' => function () {
+                $new = new \App\PmsComponent;
+                foreach ((array) DB::table('pms_components')->first() as $column => $value) {
+                    $new->{$column} = $column === 'id' ? (string) \Illuminate\Support\Str::uuid() : $value;
+                }
+                $new->save();
+            },
+        ];
+        foreach ($refused as $what => $change) {
+            $message = $this->refusal($change);
+            $this->assertNotNull($message, $what.' is refused');
+            $this->assertStringContainsString('own onboard server, so it can only be changed there', $message, $what);
+        }
+
+        $this->assertSame('Port', DB::table('orders')->where('id', $order)->value('port_name'));
+        $this->assertSame(1, (int) DB::table('vessel_items')->where('id', $link)->value('min_qty'));
+        $this->assertSame('{}', DB::table('order_form_parts')->where('id', $partA)->value('answers'));
+        $this->assertStringStartsWith('Pump ', DB::table('pms_components')->where('id', $component)->value('name'));
+        $this->assertSame(2, DB::table('pms_components')->count(), 'no component added (the other is the job\'s)');
+    }
+
+    public function test_pd34_edits_the_office_keeps_its_own_part_of_an_offline_vessels_records(): void
+    {
+        $this->syncModules();
+        $order = $this->order();
+        $partB = $this->formPart($order, 'B');
+        $approval = DB::table('order_approvals')->insertGetId(['order_id' => $order, 'created_at' => now(), 'updated_at' => now()]);
+        $job = $this->pmsJob('WaitingApproval');
+        $this->offline(self::VESSEL);
+        $this->actAs('am-ssm');
+
+        $this->save(\App\Order::class, $order, ['status' => 'approved by am (ssm)', 'deliver_date' => '2026-11-30']);   // shared and office columns
+        $this->save(\App\OrderFormPart::class, $partB, ['answers' => ['office' => 1]]);                                // the office's row
+        $this->save(\App\OrderApproval::class, $approval, ['am_app_ssm' => $this->users['am-ssm']]);                  // the office's signature
+        app(\App\Services\PmsJobScheduler::class)->approve(\App\PmsJob::findOrFail($job), $this->users['super-admin']);   // the guarded approval
+
+        $this->assertSame('2026-11-30', substr((string) DB::table('orders')->where('id', $order)->value('deliver_date'), 0, 10));
+        $this->assertSame(['office' => 1], json_decode(DB::table('order_form_parts')->where('id', $partB)->value('answers'), true));
+        $this->assertSame($this->users['am-ssm'], (int) DB::table('order_approvals')->where('id', $approval)->value('am_app_ssm'));
+        $this->assertSame('Completed', DB::table('pms_jobs')->where('id', $job)->value('status'));
+    }
+
+    public function test_pd34_edits_on_the_cloud_nothing_changes_for_other_vessels_unsynced_tables_or_with_the_switch_off(): void
+    {
+        $this->syncModules();
+        $link = $this->stockLink();
+        $component = $this->pmsComponent();
+        $this->actAs('super-admin');
+
+        $this->save(\App\VesselItem::class, $link, ['min_qty' => 2]);                       // vessel without its own server
+        $this->offline(self::VESSEL);
+        config(['navisuite.cloud.lock_offline_vessels' => false]);
+        $this->save(\App\VesselItem::class, $link, ['min_qty' => 3]);                       // the switch off
+        config(['navisuite.cloud.lock_offline_vessels' => true, 'sync.enabled_tables' => 'currencies,ranks,categories']);
+        $this->save(\App\PmsComponent::class, $component, ['name' => 'Not synced']);        // the module not synchronised
+
+        $this->assertSame(3, (int) DB::table('vessel_items')->where('id', $link)->value('min_qty'));
+        $this->assertSame('Not synced', DB::table('pms_components')->where('id', $component)->value('name'));
+    }
+
+    public function test_pd34_edits_office_data_cannot_be_changed_on_board(): void
+    {
+        $this->syncModules();
+        $order = $this->order();
+        $partB = $this->formPart($order, 'B');
+        $component = $this->pmsComponent();
+        $category = (int) DB::table('categories')->value('id');
+        $this->onBoard();
+        $this->actAs('master');
+
+        $refused = [
+            'a requisition category (the office\'s table)' => fn () => $this->save(\App\Category::class, $category, ['name' => 'Ship name']),
+            'a user\'s details (the office\'s columns)' => fn () => $this->save(User::class, $this->users['master'], ['name' => 'Captain']),
+            'a new user (only the office creates users)' => function () {
+                $user = new User;
+                $user->name = 'New';
+                $user->email = 'new@test.test';
+                $user->password = 'x';
+                $user->save();
+            },
+            'the delivery date (the office\'s column)' => fn () => $this->save(\App\Order::class, $order, ['deliver_date' => '2026-12-01']),
+            'form Part B (the office\'s row)' => fn () => $this->save(\App\OrderFormPart::class, $partB, ['answers' => ['x' => 1]]),
+            'the component Inactive switch (office only, PD-73)' => fn () => $this->save(\App\PmsComponent::class, $component, ['is_inactive' => true]),
+        ];
+        foreach ($refused as $what => $change) {
+            $message = $this->refusal($change);
+            $this->assertNotNull($message, $what.' is refused');
+            $this->assertStringContainsString('maintained by the office', $message, $what);
+        }
+        $this->assertSame('master', DB::table('users')->where('id', $this->users['master'])->value('name'));
+        $this->assertSame(0, DB::table('users')->where('email', 'new@test.test')->count());
+        $this->assertNull(DB::table('orders')->where('id', $order)->value('deliver_date'));
+
+        // The vessel's own changes, and the shared ones, go on as before.
+        $this->save(\App\Order::class, $order, ['port_name' => 'Chittagong', 'status' => 'approved by master']);
+        $this->save(\App\PmsComponent::class, $component, ['name' => 'Fire pump']);
+        $this->save(User::class, $this->users['master'], ['password' => Hash::make('new secret')]);   // shared: crew change their own password
+        $this->save(User::class, $this->users['master'], ['remember_token' => 'local']);              // never travels
+        $this->assertSame('Chittagong', DB::table('orders')->where('id', $order)->value('port_name'));
+        $this->assertSame('Fire pump', DB::table('pms_components')->where('id', $component)->value('name'));
+    }
+
+    public function test_pd34_edits_the_sync_engine_and_migrations_still_write_on_board(): void
+    {
+        $this->syncModules();
+        $category = (int) DB::table('categories')->value('id');
+        $this->onBoard();
+
+        \App\Sync\SyncContext::asOrigin((string) \Illuminate\Support\Str::uuid(), fn () => $this->save(\App\Category::class, $category, ['name' => 'From the office']));
+        \App\Sync\WrongSideEdits::migrationsStarted();
+        try {
+            $this->save(\App\Category::class, $category, ['name' => 'By a migration']);
+        } finally {
+            \App\Sync\WrongSideEdits::migrationsEnded();
+        }
+
+        $this->assertSame('By a migration', DB::table('categories')->where('id', $category)->value('name'));
+        $this->assertNotNull($this->refusal(fn () => $this->save(\App\Category::class, $category, ['name' => 'After'])), 'the rule is back after the migration');
+    }
+
+    public function test_pd34_edits_a_refused_edit_answers_403_with_its_reason_and_stores_no_file(): void
+    {
+        $this->syncModules();
+        $link = $this->stockLink();
+        $this->offline(self::VESSEL);
+        \Illuminate\Support\Facades\Route::middleware('web')->post('/_pd34-edit-probe/{id}', fn (string $id) => $this->save(\App\VesselItem::class, (int) $id, ['min_qty' => 9]));
+
+        $this->actAs('super-admin')->postJson('/_pd34-edit-probe/'.$link)
+            ->assertForbidden()->assertJsonFragment(['message' => app(\App\Sync\WrongSideEdits::class)->refusalFor(tap(\App\VesselItem::findOrFail($link), fn ($m) => $m->min_qty = 9))]);
+        $this->assertSame(1, (int) DB::table('vessel_items')->where('id', $link)->value('min_qty'));
+
+        // On board, a crew member's photo and signature are the office's user record.
+        $this->onBoard();
+        $before = glob($this->publicRoot.'/images/*/*') ?: [];
+        $this->actAs('master')->post('/change/file', ['signature' => UploadedFile::fake()->image('sign.png')])->assertForbidden();
+        $this->assertNull(DB::table('users')->where('id', $this->users['master'])->value('sign'));
+        $this->assertSame($before, glob($this->publicRoot.'/images/*/*') ?: [], 'no file stored');
+    }
+
+    public function test_pd34_edits_bulk_writes_of_an_offline_vessels_stock_and_components_are_refused_on_the_cloud(): void
+    {
+        $this->syncModules();
+        $link = $this->stockLink();
+        $item = (int) DB::table('vessel_items')->where('id', $link)->value('item_id');
+        $this->offline(self::VESSEL);
+
+        $this->assertNotNull($this->refusal(fn () => app(\App\Services\StockService::class)->bulkSet(self::VESSEL, [['item_id' => $item, 'min_qty' => 9]])));
+        $this->assertNotNull($this->refusal(fn () => app(\App\Services\StockService::class)->backfillMovementsForVessel(self::VESSEL)));
+        $this->assertSame(1, (int) DB::table('vessel_items')->where('id', $link)->value('min_qty'));
+
+        $this->artisan('pms:import-cfm', ['code' => 'ZZZ', 'vessel_id' => self::VESSEL])
+            ->expectsOutputToContain('imported there, not on the cloud')->assertFailed();
+    }
+
+    public function test_pd34_edits_the_parts_cleanup_leaves_an_offline_vessels_parts_alone_on_the_cloud(): void
+    {
+        $this->syncModules();
+        $order = $this->order();
+        DB::table('orders')->where('id', $order)->update(['status' => 'rejected']);
+        $job = $this->pmsJob('Planned');
+        $part = DB::table('pms_required_parts')->insertGetId(['job_id' => $job, 'part_name' => 'Seal', 'quantity' => 1, 'unit' => 'pc', 'order_id' => $order, 'created_at' => now(), 'updated_at' => now()]);
+        $this->offline(self::VESSEL);
+
+        $this->assertSame(0, app(\App\Services\PmsPartsService::class)->releaseStaleLinks());
+        $this->assertSame($order, (int) DB::table('pms_required_parts')->where('id', $part)->value('order_id'), 'the vessel releases it on board');
+
+        DB::table('vessels')->where('id', self::VESSEL)->update(['offline_enabled_at' => null]);
+        $this->assertSame(1, app(\App\Services\PmsPartsService::class)->releaseStaleLinks(), 'other vessels: as before');
+        $this->assertNull(DB::table('pms_required_parts')->where('id', $part)->value('order_id'));
+    }
+
+    /** 'refused' when the ownership guard stops $write, 'allowed' when it lets it through; nothing is kept either way. */
+    private function verdict(callable $write): string
+    {
+        DB::beginTransaction();
+        try {
+            $write();
+
+            return 'allowed';
+        } catch (\App\Sync\Exceptions\WrongSideEdit|\App\Sync\Exceptions\VesselRecordProtected) {
+            return 'refused';
+        } catch (\Illuminate\Database\QueryException) {
+            return 'allowed';   // past the guard; the database had its own objection to the test row
+        } finally {
+            DB::rollBack();
+        }
+    }
+
+    /** One record of each kind a vessel keeps, for vessel 7. @return array<string, int|string> */
+    private function ownerGroupRecords(): array
+    {
+        $order = $this->order();
+        $line = DB::table('order_items')->insertGetId(['order_id' => $order, 'item_id' => $this->item($this->retiredCategory('Line '.uniqid()), true), 'item_qty' => 2, 'created_at' => now(), 'updated_at' => now()]);
+        $sr = DB::table('service_requisitions')->insertGetId(['vessel_id' => self::VESSEL, 'req_no' => 'SR/'.uniqid(), 'req_date' => '2026-11-20', 'service_type' => 'shore_repair', 'description' => '-', 'status' => 'submitted', 'created_by' => $this->users['master'], 'created_by_role' => 'master', 'created_at' => now(), 'updated_at' => now()]);
+        $job = $this->pmsJob('WaitingApproval');
+
+        return [
+            'order' => $order, 'line' => $line, 'sr' => $sr, 'job' => $job,
+            'definition' => (string) DB::table('pms_jobs')->where('id', $job)->value('job_definition_id'),
+            'component' => (string) DB::table('pms_jobs')->where('id', $job)->value('component_id'),
+            'partA' => $this->formPart($order, 'A'), 'partB' => $this->formPart($order, 'B'),
+            'approval' => DB::table('order_approvals')->insertGetId(['order_id' => $order, 'created_at' => now(), 'updated_at' => now()]),
+            'srItem' => DB::table('service_requisition_items')->insertGetId(['service_requisition_id' => $sr, 'title' => 'Repair', 'created_at' => now(), 'updated_at' => now()]),
+            'srApproval' => DB::table('service_requisition_approvals')->insertGetId(['service_requisition_id' => $sr, 'created_at' => now(), 'updated_at' => now()]),
+            'step' => DB::table('order_procurement_steps')->insertGetId(['order_id' => $order, 'step' => 'quotation', 'completed_by' => $this->users['am-ssm'], 'created_at' => now(), 'updated_at' => now()]),
+            'srStep' => DB::table('service_requisition_procurement_steps')->insertGetId(['service_requisition_id' => $sr, 'step' => 'quotation', 'completed_by' => $this->users['am-ssm'], 'created_at' => now(), 'updated_at' => now()]),
+            'consumption' => DB::table('stock_consumptions')->insertGetId(['vessel_id' => self::VESSEL, 'item_id' => DB::table('order_items')->where('id', $line)->value('item_id'), 'consumption_type' => 'general', 'qty' => 1, 'consumed_on' => '2026-11-20', 'purpose' => '-', 'recorded_by' => $this->users['master'], 'created_at' => now(), 'updated_at' => now()]),
+            'link' => $this->stockLink(),
+        ];
+    }
+
+    /** @return array<string, array{0: string, 1: array<string, mixed>}> a new row for each synchronised table: [table, values] */
+    private function newRows(array $r): array
+    {
+        $v = ['vessel_id' => self::VESSEL];
+
+        return [
+            'currencies' => ['currencies', ['name' => 'Euro', 'code' => 'EUR']], 'ranks' => ['ranks', ['code' => 'XX', 'name' => 'X']],
+            'categories' => ['categories', ['name' => 'X']], 'vessels' => ['vessels', ['name' => 'X']], 'roles' => ['roles', $v + ['role' => 'master']],
+            'users' => ['users', ['name' => 'X', 'email' => 'x@x.test']], 'pms_locations' => ['pms_locations', ['name' => 'X']],
+            'pms_component_categories' => ['pms_component_categories', ['name' => 'X']], 'pms_job_types' => ['pms_job_types', ['name' => 'X']],
+            'pms_conditions' => ['pms_conditions', ['name' => 'X']], 'certificates' => ['certificates', ['name' => 'X']], 'surveys' => ['surveys', ['name' => 'X']],
+            'manufacturers' => ['manufacturers', ['name' => 'X']], 'budget_groups' => ['budget_groups', ['name' => 'X']],
+            'certificate_categories' => ['certificate_categories', ['name' => 'X']], 'item_groups' => ['item_groups', ['name' => 'X']], 'items' => ['items', ['name' => 'X']],
+            'vessel_items' => ['vessel_items', $v + ['item_id' => 1]], 'stock_movements' => ['stock_movements', $v], 'stock_consumptions' => ['stock_consumptions', $v],
+            'stock_imports' => ['stock_imports', $v], 'vessel_equipment' => ['vessel_equipment', $v + ['name' => 'X']],
+            'pms_components' => ['pms_components', $v + ['name' => 'X']], 'pms_counter_readings' => ['pms_counter_readings', ['component_id' => $r['component']]],
+            'pms_job_definitions' => ['pms_job_definitions', $v + ['name' => 'X']], 'pms_job_intervals' => ['pms_job_intervals', ['job_definition_id' => $r['definition']]],
+            'pms_job_checklist_items' => ['pms_job_checklist_items', ['job_definition_id' => $r['definition']]], 'pms_jobs' => ['pms_jobs', $v],
+            'pms_required_parts' => ['pms_required_parts', ['job_id' => $r['job']]], 'pms_used_parts' => ['pms_used_parts', ['job_id' => $r['job']]],
+            'orders' => ['orders', $v], 'order_items' => ['order_items', ['order_id' => $r['order']]], 'order_approvals' => ['order_approvals', ['order_id' => $r['order']]],
+            'order_form_parts A' => ['order_form_parts', ['order_id' => $r['order'], 'part' => 'A']], 'order_form_parts B' => ['order_form_parts', ['order_id' => $r['order'], 'part' => 'B']],
+            'order_form_part_edits' => ['order_form_part_edits', ['order_form_part_id' => $r['partA']]],
+            'order_item_quantity_changes' => ['order_item_quantity_changes', ['order_item_id' => $r['line']]],
+            'order_procurement_steps receipt' => ['order_procurement_steps', ['order_id' => $r['order'], 'step' => 'receipt_verification']],
+            'order_procurement_steps other' => ['order_procurement_steps', ['order_id' => $r['order'], 'step' => 'delivery']],
+            'order_invoices' => ['order_invoices', ['order_id' => $r['order']]],
+            'service_requisitions' => ['service_requisitions', $v], 'service_requisition_items' => ['service_requisition_items', ['service_requisition_id' => $r['sr']]],
+            'service_requisition_approvals' => ['service_requisition_approvals', ['service_requisition_id' => $r['sr']]],
+            'service_requisition_procurement_steps receipt' => ['service_requisition_procurement_steps', ['service_requisition_id' => $r['sr'], 'step' => 'receipt_verification']],
+            'service_requisition_procurement_steps other' => ['service_requisition_procurement_steps', ['service_requisition_id' => $r['sr'], 'step' => 'delivery']],
+            'service_requisition_invoices' => ['service_requisition_invoices', ['service_requisition_id' => $r['sr']]],
+            'vessel_certificates' => ['vessel_certificates', $v], 'attachments' => ['attachments', ['uploaded_by' => $this->users['master']]],
+            'attachment_order_item' => ['attachment_order_item', ['order_item_id' => $r['line']]],
+            'attachment_stock_consumption' => ['attachment_stock_consumption', ['stock_consumption_id' => $r['consumption']]],
+            'attachment_order_step' => ['attachment_order_step', ['order_procurement_step_id' => $r['step']]],
+            'attachment_service_req_step' => ['attachment_service_req_step', ['step_id' => $r['srStep']]],
+        ];
+    }
+
+    /** Office data: refused as a new row on board. The rest (the vessel's, and shared lists) is created on board. */
+    private const OFFICE_ROWS = ['currencies', 'ranks', 'categories', 'vessels', 'roles', 'users', 'pms_locations', 'pms_component_categories',
+        'pms_job_types', 'pms_conditions', 'certificates', 'surveys', 'order_form_parts B', 'order_item_quantity_changes',
+        'order_procurement_steps other', 'order_invoices', 'service_requisition_procurement_steps other', 'service_requisition_invoices',
+        // PD-22: a document link on an office procurement stage (the fixtures' stages are office stages).
+        'attachment_order_step', 'attachment_service_req_step'];
+
+    /** The vessel's data: refused as a new row on the cloud for a vessel that runs its own server. */
+    private const VESSEL_ROWS = ['stock_movements', 'stock_consumptions', 'stock_imports', 'vessel_equipment', 'pms_components', 'pms_counter_readings',
+        'pms_job_definitions', 'pms_job_intervals', 'pms_job_checklist_items', 'pms_jobs', 'pms_required_parts', 'pms_used_parts', 'orders',
+        'order_items', 'order_approvals', 'order_form_parts A', 'order_form_part_edits', 'order_procurement_steps receipt', 'service_requisitions',
+        'service_requisition_items', 'service_requisition_approvals', 'service_requisition_procurement_steps receipt', 'attachment_order_item',
+        'attachment_stock_consumption'];
+
+    /** @return array<string, array{0: string, 1: string, 2: array<string, mixed>}> column changes: [table, key, values] */
+    private function columnChanges(array $r): array
+    {
+        return [
+            'orders: delivery date (office)' => ['orders', $r['order'], ['deliver_date' => '2026-12-01']],
+            'orders: official remarks (office)' => ['orders', $r['order'], ['official_remarks' => 'X']],
+            'orders: port (vessel)' => ['orders', $r['order'], ['port_name' => 'X']],
+            'orders: status (shared)' => ['orders', $r['order'], ['status' => 'approved by master']],
+            'order_items: delivered qty (office)' => ['order_items', $r['line'], ['del_item_qty' => 1]],
+            'order_items: received qty (vessel)' => ['order_items', $r['line'], ['rcv_item_qty' => 1]],
+            'order_items: requested qty (shared)' => ['order_items', $r['line'], ['item_qty' => 3]],
+            'order_approvals: office signature' => ['order_approvals', $r['approval'], ['am_app_ssm' => $this->users['am-ssm']]],
+            'order_approvals: master signature' => ['order_approvals', $r['approval'], ['master_app' => $this->users['master']]],
+            'order_form_parts: Part A' => ['order_form_parts', $r['partA'], ['answers' => '{"x":1}']],
+            'order_form_parts: Part B' => ['order_form_parts', $r['partB'], ['answers' => '{"x":1}']],
+            'service_requisition_items: price (office)' => ['service_requisition_items', $r['srItem'], ['unit_price' => 5]],
+            'service_requisition_items: title (vessel)' => ['service_requisition_items', $r['srItem'], ['title' => 'X']],
+            'service_requisition_approvals: office signature' => ['service_requisition_approvals', $r['srApproval'], ['gm_app' => $this->users['am-ssm']]],
+            'service_requisition_approvals: master signature' => ['service_requisition_approvals', $r['srApproval'], ['master_app' => $this->users['master']]],
+            'pms_jobs: remark (vessel)' => ['pms_jobs', $r['job'], ['remark' => 'X']],
+            'pms_jobs: approval (office, guarded)' => ['pms_jobs', $r['job'], ['status' => 'Completed', 'approved_by' => $this->users['am-ssm'], 'approved_at' => now()]],
+            'pms_jobs: cancelled (vessel)' => ['pms_jobs', $r['job'], ['status' => 'Cancelled']],
+            'pms_components: name (vessel)' => ['pms_components', $r['component'], ['name' => 'X']],
+            'pms_components: Inactive switch (office only)' => ['pms_components', $r['component'], ['is_inactive' => true]],
+            'vessel_items: minimum (vessel)' => ['vessel_items', $r['link'], ['min_qty' => 9]],
+            'users: name (office)' => ['users', $this->users['master'], ['name' => 'X']],
+            'users: signature (office)' => ['users', $this->users['master'], ['sign' => 'x.png']],
+            'users: password (shared)' => ['users', $this->users['master'], ['password' => 'x']],
+            'users: remember token (local)' => ['users', $this->users['master'], ['remember_token' => 'x']],
+            'categories: name (office)' => ['categories', (int) DB::table('categories')->value('id'), ['name' => 'X']],
+            'budget_groups: name (ADR-003)' => ['budget_groups', DB::table('budget_groups')->insertGetId(['name' => 'BG '.uniqid(), 'created_by' => $this->users['master'], 'created_at' => now(), 'updated_at' => now()]), ['name' => 'X']],
+        ];
+    }
+
+    private const REFUSED_ON_BOARD = ['orders: delivery date (office)', 'orders: official remarks (office)', 'order_items: delivered qty (office)',
+        'order_approvals: office signature', 'order_form_parts: Part B', 'service_requisition_items: price (office)',
+        'service_requisition_approvals: office signature', 'pms_jobs: approval (office, guarded)', 'pms_components: Inactive switch (office only)',
+        'users: name (office)', 'users: signature (office)', 'categories: name (office)'];
+
+    private const REFUSED_ON_THE_CLOUD = ['orders: port (vessel)', 'order_items: received qty (vessel)', 'order_approvals: master signature',
+        'order_form_parts: Part A', 'service_requisition_items: title (vessel)', 'service_requisition_approvals: master signature',
+        'pms_jobs: remark (vessel)', 'pms_jobs: cancelled (vessel)', 'pms_components: name (vessel)', 'pms_components: Inactive switch (office only)',
+        'vessel_items: minimum (vessel)'];
+
+    public function test_pd34_edits_every_owner_group_on_board_through_the_query_builder(): void
+    {
+        $this->syncModules();
+        config(['sync.enabled_tables' => config('sync.enabled_tables').',@attachments']);
+        $records = $this->ownerGroupRecords();
+        $this->onBoard();
+        $this->actAs('master');
+
+        foreach ($this->newRows($records) as $case => [$table, $values]) {
+            $expected = in_array($case, self::OFFICE_ROWS, true) ? 'refused' : 'allowed';
+            $this->assertSame($expected, $this->verdict(fn () => DB::table($table)->insert($values + ['created_at' => now(), 'updated_at' => now()])), "new row on board: {$case}");
+        }
+        foreach ($this->columnChanges($records) as $case => [$table, $key, $values]) {
+            $expected = in_array($case, self::REFUSED_ON_BOARD, true) ? 'refused' : 'allowed';
+            $this->assertSame($expected, $this->verdict(fn () => DB::table($table)->where('id', $key)->update($values)), "change on board: {$case}");
+        }
+        // A mass update reaching an office row is refused as a whole; nothing is written.
+        $this->assertSame('refused', $this->verdict(fn () => DB::table('order_form_parts')->where('order_id', $records['order'])->update(['answers' => '{}'])));
+    }
+
+    public function test_pd34_edits_every_owner_group_on_the_cloud_for_a_vessel_with_its_own_server(): void
+    {
+        $this->syncModules();
+        config(['sync.enabled_tables' => config('sync.enabled_tables').',@attachments']);
+        $records = $this->ownerGroupRecords();
+        $this->offline(self::VESSEL);
+        $this->actAs('super-admin');
+
+        foreach ($this->newRows($records) as $case => [$table, $values]) {
+            $expected = in_array($case, self::VESSEL_ROWS, true) ? 'refused' : 'allowed';
+            $this->assertSame($expected, $this->verdict(fn () => DB::table($table)->insert($values + ['created_at' => now(), 'updated_at' => now()])), "new row on the cloud: {$case}");
+        }
+        foreach ($this->columnChanges($records) as $case => [$table, $key, $values]) {
+            $expected = in_array($case, self::REFUSED_ON_THE_CLOUD, true) ? 'refused' : 'allowed';
+            $this->assertSame($expected, $this->verdict(fn () => DB::table($table)->where('id', $key)->update($values)), "change on the cloud: {$case}");
+        }
+        // Mass updates and increments go through the same check.
+        $this->assertSame('refused', $this->verdict(fn () => DB::table('vessel_items')->where('vessel_id', self::VESSEL)->increment('min_qty')));
+        $this->assertSame('refused', $this->verdict(fn () => \App\Order::where('vessel_id', self::VESSEL)->update(['port_name' => 'X'])));
+        $this->assertSame('allowed', $this->verdict(fn () => \App\Order::where('vessel_id', self::VESSEL)->update(['status' => 'approved by am (ssm)'])));
+    }
+
+    public function test_pd34_edits_vessels_without_their_own_server_are_unaffected_in_every_group(): void
+    {
+        $this->syncModules();
+        config(['sync.enabled_tables' => config('sync.enabled_tables').',@attachments']);
+        $records = $this->ownerGroupRecords();
+        $this->actAs('super-admin');   // vessel 7 does not run its own server
+
+        foreach ($this->newRows($records) as $case => [$table, $values]) {
+            $this->assertSame('allowed', $this->verdict(fn () => DB::table($table)->insert($values + ['created_at' => now(), 'updated_at' => now()])), "new row: {$case}");
+        }
+        foreach ($this->columnChanges($records) as $case => [$table, $key, $values]) {
+            $this->assertSame('allowed', $this->verdict(fn () => DB::table($table)->where('id', $key)->update($values)), "change: {$case}");
+        }
+        $this->assertSame('allowed', $this->verdict(fn () => DB::table('orders')->where('id', $records['order'])->delete()));
+        $this->assertSame('allowed', $this->verdict(fn () => $this->save(\App\VesselItem::class, $records['link'], ['min_qty' => 5])));
+    }
+
+    public function test_pd34_query_builder_deletes_of_an_offline_vessels_own_records_are_refused_on_the_cloud(): void
+    {
+        $this->syncModules();
+        $records = $this->ownerGroupRecords();
+        $this->offline(self::VESSEL);
+
+        $this->assertSame('refused', $this->verdict(fn () => DB::table('orders')->where('id', $records['order'])->delete()));
+        $this->assertSame('refused', $this->verdict(fn () => DB::table('vessel_items')->delete($records['link'])));
+        $this->assertSame('refused', $this->verdict(fn () => DB::table('order_form_parts')->where('order_id', $records['order'])->delete()), 'Part A is among them');
+        $this->assertSame('allowed', $this->verdict(fn () => DB::table('order_form_parts')->where('id', $records['partB'])->delete()), 'Part B is the office\'s');
+        $this->assertSame('refused', $this->verdict(fn () => \App\PmsComponent::whereKey($records['component'])->forceDelete()));
+    }
+
+    public function test_pd34_edits_the_lists_vessels_maintain_are_edited_on_board_through_the_screens(): void
+    {
+        $this->syncModules();
+        $this->onBoard();
+
+        // ADR-003: budget groups and certificate categories are maintained on board too.
+        $this->actAs('master')->postJson('/budget-group/store', ['name' => 'Deck stores'])->assertOk();
+        $group = (int) DB::table('budget_groups')->where('name', 'Deck stores')->value('id');
+        $this->actAs('master')->postJson('/budget-group/update', ['BudgetGroup_Id' => $group, 'name' => 'Deck and cabin stores'])->assertOk();
+        $this->actAs('master')->postJson('/certificate-category/store', ['name' => 'Radio'])->assertOk();
+        $category = (int) DB::table('certificate_categories')->where('name', 'Radio')->value('id');
+        $this->actAs('master')->postJson('/certificate-category/update', ['category_id' => $category, 'name' => 'Radio and GMDSS'])->assertOk();
+        // The crew's own password (shared).
+        $this->actAs('master')->post('/change/password', ['current_password' => 'secret', 'new_password' => 'new secret', 'new_password_confirmation' => 'new secret'])->assertRedirect();
+
+        $this->assertSame('Deck and cabin stores', DB::table('budget_groups')->where('id', $group)->value('name'));
+        $this->assertSame('Radio and GMDSS', DB::table('certificate_categories')->where('id', $category)->value('name'));
+        $this->assertTrue(Hash::check('new secret', DB::table('users')->where('id', $this->users['master'])->value('password')));
+    }
+
+    public function test_pd34_edits_the_profile_upload_is_shown_disabled_on_board_only(): void
+    {
+        $this->syncModules();
+        $this->actAs('master')->get('/profile')->assertOk()->assertDontSee('profile-files-note');
+
+        $this->onBoard();
+        $this->actAs('master')->get('/profile')->assertOk()
+            ->assertSee('id="profile-files-note"', false)->assertSee('Please ask the office to change them')->assertSee('disabled data-office-only="1"', false);
+
+        // A form post (not JSON) gets the refusal page with the reason.
+        $this->actAs('master')->post('/change/file', ['photo' => UploadedFile::fake()->image('me.png')])
+            ->assertForbidden()->assertSee('maintained by the office');
+    }
+
+    public function test_pd34_no_application_code_steps_outside_the_ownership_guard(): void
+    {
+        $calls = [];
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator(app_path())) as $file) {
+            if ($file->isFile() && $file->getExtension() === 'php' && $file->getPathname() !== app_path('Sync/WrongSideEdits.php')
+                && str_contains(file_get_contents($file->getPathname()), 'outsideTheApplication')) {
+                $calls[] = $file->getPathname();
+            }
+        }
+        $this->assertSame([], $calls, 'only tests may stand in for a change made outside the application');
+    }
+
     /** The route is reachable by nobody today: ship users by ADR-006, office users by the 'member' group. */
     public function test_pd61_nobody_reaches_the_file_delete_through_the_screens_today(): void
     {

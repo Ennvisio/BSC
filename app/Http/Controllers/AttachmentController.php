@@ -214,10 +214,18 @@ class AttachmentController extends Controller
         return response()->json(['message' => 'File deleted.']);
     }
 
-    /** Stream one file for viewing/downloading. */
-    public function view(Attachment $attachment)
+    /**
+     * Stream one file for viewing/downloading. ?download=1 sends it as a
+     * download (PD-22: crew download the office's procurement documents).
+     */
+    public function view(Request $request, Attachment $attachment)
     {
         abort_unless(Storage::disk('local')->exists($attachment->path), 404);
+
+        if ($request->boolean('download')) {
+            return Storage::disk('local')->download($attachment->path, $attachment->original_filename,
+                ['Content-Type' => $attachment->mime_type, 'X-Content-Type-Options' => 'nosniff']);
+        }
 
         return Storage::disk('local')->response(
             $attachment->path,

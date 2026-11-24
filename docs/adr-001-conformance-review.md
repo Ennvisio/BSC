@@ -46,9 +46,9 @@ Nothing was run against real data, and no code was changed.
 | F2 | **Super-admin can edit an offline vessel's equipment list on the cloud** (`EquipmentController`, no offline check, unlike `PmsAccess`). `vessel_equipment` travels vessel to cloud only, so the edit never reaches the vessel and is overwritten at the vessel's next change. | Silent | Offline vessels | Medium | PD-06, PD-34 |
 | F3 | **Office writes to vessel-owned data on the cloud are not refused in general.** Only ship roles are locked, plus super-admin's PMS edits (and F2 is the gap). An office edit to a vessel-to-cloud table, or to a vessel-owned column, is overwritten without a conflict record. The trash (F12) is one such path. Not every screen has been checked. | Silent | Offline vessels; Module on | Medium | PD-34 |
 | F4 | **On board, a write to cloud-owned data outside `blocked_write_paths` is overwritten** by the next cloud change, with no conflict recorded. The main screens are blocked; the full list has not been checked route by route. | Silent | Module on | Medium | PD-34 |
-| F5 | **A photo or signature changed on board is overwritten** at the office's next edit of that user, because user columns other than the password belong to the cloud. | Silent | Module on (`@master`) | Medium | PD-21 |
-| F11 | **Attachment records and procurement-step links are two-way, newest wins, not flagged.** New uploads never replace one another: each is its own record and file. A conflict needs the same record edited on both sides. | Silent | Module on (`@attachments`) | Low | PD-59 |
-| F6 | **`vessel_surveys` is newest wins without review.** `vessel_certificates` has review, and CP6 says both do. | Silent | Module on (`@master`) | Medium | PD-17, PD-59 |
+| F5 | **A photo or signature changed on board is overwritten** at the office's next edit of that user, because user columns other than the password belong to the cloud. | Silent | Module on (`@master`) | Medium | PD-21 (**decided 2026-11-24**: the vessel user's own photo and signature are changed on board and the office must not overwrite them; planned, Checkpoint 15. Until built, the upload is refused on board, so nothing is overwritten.) |
+| F11 | **Attachment records and procurement-step links are two-way, newest wins, not flagged.** New uploads never replace one another: each is its own record and file. A conflict needs the same record edited on both sides. | Silent | Module on (`@attachments`) | Low | PD-59 (**decided 2026-11-24**: option 2 flags every file conflict; B, each attachment belongs to the side that uploaded it. **B built 2026-11-24**: the other side's change is refused in the application and refused and flagged at sync. The base-value check of A is still planned) |
+| F6 | **`vessel_surveys` is newest wins without review.** `vessel_certificates` has review, and CP6 says both do. | Silent | Module on (`@master`) | Medium | PD-17, PD-59 (**decided 2026-11-24**: certificates and surveys are vessel-managed, and owner-losing conflicts are flagged; planned, Checkpoint 15) |
 | F17 | **Shore users' placeholder password hash.** Shore users arrive on board with one fixed bcrypt hash from `config/sync.php`, and its plaintext is not recorded. Vessel mode also refuses anyone but this vessel's crew at sign-in, so a second guard exists. A value that can never match any password would be safer. | Unauthorized | Module on (`@master`) | Low | PD-11 |
 | F18 | **Deactivation reaches a vessel only at its next sync.** Until then, a deactivated crew member can still sign in on board. This is inherent to offline working; what to do about it is a business choice. | Unauthorized | Module on | Medium | PD-11 |
 | F8 | **The office approves PMS jobs**, but ADR-001 lists only requisition approvals. This is not a defect; it needs confirming. | (none) | Module on (`@pms`) | Low | PD-06 |
@@ -122,6 +122,54 @@ Built on `feature/offline-sync`, not committed, not deployed. Details in
 | PD-60 at sync | **Built.** A vessel never applies a delete of its own vessel row, nor one that would cascade into rows it holds; both are refused and flagged. | None. |
 | Cloud deletes of vessel-owned records | **Built** (your instruction, 2026-11-23). On the vessel, a delete from the cloud of a record the vessel owns is refused, logged with the pull and flagged; nothing is deleted or cascade-deleted. On the cloud, office users cannot delete an offline vessel's own records (confirmed 2026-11-24): every model delete is checked against the same rule the vessel uses, every office delete route was checked and refuses, and the CFM import's removal option is refused for such a vessel. | Certificates and surveys are not counted as vessel-owned until PD-17 is decided. |
 | "Delete against change" (above) | **Closed.** A deleted record is never recreated by a late change, including after the outbox is pruned; the change is kept in a conflict flagged for review. A delete stands against a change made meanwhile, and an office retirement stands against a vessel's offline edit, which is kept in the conflict and flagged (PD-68 A, decided 2026-11-23: option 1). Every delete is recorded with who, when and where from. | Re-applying deletions after a backup restore (Checkpoint 21). |
-| F3, F4 | **Partly.** A change the receiver refuses (ownership, a permanent record, ADR-006, a vessel-owned record deleted from the cloud) is now recorded as a conflict needing review, never only in the inbox. For deletes, F3 is closed on the cloud too: office users cannot delete an offline vessel's own records (PD-34, confirmed 2026-11-24). | Wrong-side edits that are overwritten without any record (PD-34, Checkpoint 14 item 7). |
+| F3, F4 | **Closed** for writes through the application. A change the receiver refuses (ownership, a permanent record, ADR-006, a vessel-owned record deleted from the cloud) is recorded as a conflict needing review, never only in the inbox. Office users cannot delete an offline vessel's own records (PD-34, confirmed 2026-11-24). Wrong-side edits are refused before they are saved, on both sides (PD-34 edits, option 1, 2026-11-24): one central guard checks every model save and every query-builder insert, update, upsert and delete. Every write path was audited (below). | A change written with SQL directly in the database, outside the application, is still overwritten without a record (one that reaches the other side by sync is refused and flagged). |
 | ADR-006 at sync | **Built.** A delete or retirement arriving from a vessel is refused and flagged, except the PD-72 draft edits and replaced child rows. | None. |
+
+## PD-34 write path audit (2026-11-24)
+
+Every write path of the application, checked against the ownership rules
+in `config/sync.php` for both sides: on a vessel server, and on the cloud
+for a vessel that runs its own server. "Own" means the path writes only
+its own side's data or shared columns. Every path is also covered by the
+central guard (`App\Sync\WrongSideEdits`, model saves and the query
+builder), so a later path is checked the same way.
+
+| Write paths | Who uses them | What they write | Result |
+|---|---|---|---|
+| Sync API: `api/sync/v1/handshake`, `push`, `ack`, `files/...` | The sync engine | Changes from the other side, applied under the ownership rules | Exempt from the guard; a wrong-side change that arrives is refused and flagged (unchanged) |
+| `login`, `logout`, `password/email`, `password/reset`, `change/password` | Everyone | The password (shared), the remember token (local) | Own |
+| `register`, `user/store`, `user/update`, `user/delete` | Super-admin (PD-71) | Users and roles (office) | Own on the cloud; blocked on board (`blocked_write_paths`), and refused by the guard |
+| `change/file` | Everyone | Profile photo and signature (office's user record) | **Refused on board** (new; the upload is shown disabled); own on the cloud. PD-21 (decided 2026-11-24) will allow a vessel user's own photo and signature on board; planned, Checkpoint 15 |
+| `vessel/store/*`, `vessel/delete`, `vessel/toggle-status` | Office | Vessels (office); particulars (not synchronised) | Own on the cloud; blocked on board |
+| `category/*`, `pms/master/*` | Super-admin | Office reference lists | Own on the cloud; blocked on board, and refused by the guard |
+| `budget-group/*`, `certificate-category/*`, `item/*`, `catalog/import`, `catalog/import/manual` | Office and crew (ADR-003) | Shared lists; opening stock through `StockService` | Shared lists allowed on both sides; stock figures checked as the vessel's |
+| `certificate/*`, `survey/*` | Office and crew | Vessel certificates and their copies (shared), surveys (not synchronised) | Allowed on both sides today. PD-17 (decided 2026-11-24): vessel-managed, so for a vessel with its own server they will be refused on the cloud; planned, Checkpoint 15 |
+| `requisition/*` (create, details, form, items, quantities, remove, submit, attachments), `order/store` | Ship roles | The vessel's requisitions, lines, Part A, line attachments | Own on board; crew locked on the cloud (PD-05) and the guard refuses for offline vessels |
+| `order/approve`, `order/reject`, `order/forward`, `order/assign`, `service-requisition/approve`, `reject`, `delegate` | Ship and office roles | Each role its own signature; status and rejection (shared) | Own on both sides; no role writes the other side's columns |
+| `order/{order}/form-part/{part}`, `order/{order}/official-remarks` | Office (Parts B and C, remarks); master and chief engineer (Part A corrections) | The writer's own part | Own |
+| `item-qty/update`, `single-qty/update` | AM (SSM): delivered; second engineer: received; AM (SRD): requested | Office, vessel and shared columns respectively | Own |
+| `procurement/{order}/complete`, `service-procurement/{id}/complete` | Office stages; the raiser for Receipt & Verification | The office's stage rows; the vessel's receipt row | Own |
+| `stock/upload`, `stock/manual`, `stock/update`, `stock/consumption` | Ship roles, for their own vessel | The vessel's stock | Own on board; refused on the cloud for offline vessels (guard, and `StockService` for bulk writes) |
+| `pms/components*`, `pms/counters`, `pms/job-definitions/*`, `pms/jobs/*/complete`, `reschedule`, `parts`, `requisition`, `pms/parts/*`, `pms/readings/*` | Ship roles; super-admin for vessels without their own server | The vessel's PMS records | Own on board; refused on the cloud for offline vessels (PD-06, and the guard) |
+| `pms/jobs/{job}/approve` | Office | Approval columns and the guarded status change | Allowed (PD-06) |
+| `vessel/equipment/*` | Ship roles; office for vessels without their own server | The vessel's equipment | Own on board; refused on the cloud for offline vessels (PD-06, and the guard) |
+| `attachments/upload`, `attachments/{id}/delete` | Everyone | File records (shared) | Allowed; deletes as PD-61 |
+| `restore`, `permanent-delete` | Super-admin | Retired records | Refused for offline vessels' records (PD-60); blocked on board |
+| `search/*`, `broadcasting/auth` | Everyone | Nothing (read-only POSTs) | Not a write |
+| Commands: `pms:import-cfm` | Technician | The vessel's PMS components | Refused on the cloud for an offline vessel once PMS is synchronised (new); own on board |
+| Commands: `pms:refresh-jobs` | Scheduler | PMS jobs | Skips offline vessels on the cloud (unchanged) |
+| Commands: `sync:*`, `navisuite:*` | Administrator | Sync tables; `vessels.offline_enabled_at` on the cloud (office); `attachments.sha256` (shared) | Own, or exempt as the sync engine |
+| Imports and services: `VesselStockImport`, `StockService`, `PmsComponentImport`, `VesselEquipmentImport`, `ItemCatalogImport`, `PmsPartsService` | Behind the screens above | As their screens | Checked by the guard; `StockService` bulk writes and the PMS parts cleanup check for themselves |
+| Queue job `QueueHeartbeat` | Queue worker | No business data | Not a write to synchronised data |
+
+**How the audit was made.** Each route's controller was read for the
+tables and columns it writes, and the whole test suite was run twice with
+every table synchronised, every vessel treated as running its own server
+and the guard only logging: once for office writes as on the cloud, once
+for crew writes as on board. The only office writes logged were already
+refused by an existing guard (PD-06, PD-60); no crew write was logged.
+
+**Not covered.** SQL written directly in the database, outside the
+application, and raw SQL statements, which the application does not use
+for these tables.
 

@@ -90,6 +90,16 @@ changed in each revision.
 | PD-72 B | 2026-11-23 (option 2) | No action needed for removing a wrong entry: the master and SRD update requisition quantities, so they fix it. No office permission is widened; wrong entries are corrected by editing. |
 | PD-61 scope | 2026-11-23 | No attachment deletion and no new permission is added. The current protection stays. Deleting attachments is out of scope for now. |
 | PD-34, deletes | 2026-11-23, confirmed 2026-11-24 | The cloud must not delete vessel-owned records. The vessel rejects such a delete (logged and flagged; never silently deleted or cascade-deleted), and the cloud prevents office users from deleting them in the first place. |
+| PD-34, edits | 2026-11-24 (option 1) | Wrong-side edits are blocked: data is changed only on the side that owns it, and an edit on the other side is refused with a clear message before anything is saved. |
+| PD-17 | 2026-11-24 | Certificates and surveys are vessel-managed. The office does not overwrite them (PD-34 rules); history and audit kept; idempotent sync; no new approval workflow. **Not built** (Checkpoint 14 item 8). |
+| PD-21 (raised under PD-34) | 2026-11-24 | Vessel users update their own photo and signature on board, offline; server-enforced; synced safely; the office does not silently overwrite them. A named exception: other user fields stay the office's. Audit decided 2026-11-25: no photo or signature history table, no approval-time signature; the existing sync actor and conflict records, user protection and file retention are kept. **Not built** (Checkpoint 15). |
+| PD-59 A | 2026-11-24 (option 2) | Flag every conflict where the owner would lose, and every file, password, status and ownership-sensitive conflict; latest-wins only where permitted; not on timestamps alone; details kept, safe resolution. **Partly built:** refused changes are flagged (Checkpoint 14 item 5); the broader rules and their tests are planned (item 6). |
+| PD-59 B | 2026-11-24 | Vessel-only management of the documents, photos and signatures it covers; previous versions and audit kept; no attachment deletion. Refined the same day (CP15): an attachment belongs to the side that uploaded it; only that side changes it. Built (Checkpoint 15). |
+| PD-22 (size) | 2026-11-24 | Upload limits 15/10/5 MB unchanged; sync per-file limit 20 MB; a larger file is marked failed at once. Built (Checkpoint 15). |
+| Retention (CP15) | 2026-11-24 | No photo or signature history; other files keep every version. |
+| PD-74 | 2026-11-24 | Concluded: each signer's current signature, no history or approval-time record; signers and their signature files never deleted. Built (Checkpoint 15). |
+| PD-22 (content) | 2026-11-24 | Procurement documents are the office's; read-only copies on board, viewable and downloadable. Built (Checkpoint 15). |
+| PD-36 | 2026-11-24 (option 1) | Review every MySQL cascade before deletion is enabled per module; refuse a delete that could remove protected data; test the real database, indirect cascades included. **Not built:** the review list and MySQL cascade tests (Checkpoint 14 item 4); the PD-60 part is built. |
 | Certificate copy history | 2026-11-23 | Synchronized safely: each copy an immutable record with a unique id, idempotent sync, the original author and time, and file integrity checks. |
 | Requisition trash restore | 2026-11-23 | Fix the bug if necessary. Unsubmitted drafts stay listed in the requisition trash (confirmed). |
 | Offline vessel's stock links | 2026-11-23 | The office may not delete the stock link of a vessel that runs its own server. |
@@ -401,20 +411,35 @@ section 3.
      explicitly, so each is recorded, or refuse the parent's removal. The
      receiving side refuses a delete that would cascade into rows it owns,
      and flags it. (PD-60 part built: a vessel refuses such a delete, and a
-     delete of its own vessel record. The per-key list and its MySQL tests
-     wait for PD-36.)
+     delete of its own vessel record. PD-36 decided 2026-11-24, option 1:
+     the per-key review list and its MySQL tests, indirect cascades
+     included, are planned, not built.)
   5. **A refused change is flagged**, never dropped silently (F3, F4).
-  6. **Review flags** as decided in PD-59 A, including newest-wins outcomes
-     on shared master data and `vessel_surveys` (F6).
+  6. **Review flags** as decided in PD-59 A (option 2, 2026-11-24):
+     every conflict where the owner would lose, and every file, password,
+     status and ownership-sensitive conflict; the base-value check for the
+     two-way tables that still decide by timestamp; tests for duplicate
+     delivery, retries, ownership, conflicting updates and skewed clocks.
+     Partly built: every refused change is already flagged (item 5), and
+     deletion, retirement and resurrection conflicts are flagged (items 2
+     and 3). Planned, not built: the base-value check for the two-way
+     tables that still decide by timestamp, flags for every other
+     option 2 outcome (`vessel_surveys`, for one, is newest wins without
+     a flag today), and the tests listed.
   7. **Wrong-side guards** (PD-34) for office-maintained data on board, and
      vessel-owned data on the cloud. (Built for deletes: the cloud
      prevents office deletes of an offline vessel's own records, and a
      delete that still arrives is refused on the vessel, logged and
-     flagged. Wrong-side edits wait for PD-34.)
-  8. Certificates and surveys authority, as decided in PD-17.
+     flagged. Built for edits, option 1, 2026-11-24: a wrong-side edit is
+     refused before anything is saved.)
+  8. Certificates and surveys authority, as decided in PD-17 (2026-11-24:
+     vessel-managed): their replication rules become vessel-owned and the
+     PD-34 guard applies. Decided, not built: `vessel_certificates` and
+     `vessel_surveys` are still two-way, newest wins.
 - **Depends on.** Checkpoint 10 (trash guard).
-- **Decisions needed.** PD-36 (confirm), PD-59 A, PD-34 (edits), PD-17.
-  PD-68 A and PD-72 are decided.
+- **Decisions needed.** None left for this checkpoint. PD-36, PD-59 A and
+  PD-17 were decided on 2026-11-24; PD-68 A, PD-72 and PD-34 (deletes and
+  edits) before.
 - **Expected outcome.** Create, update and delete all travel safely: a
   delete is never lost, never undone by a late change, never cascades
   silently, and always says who and when.
@@ -432,30 +457,45 @@ section 3.
 
 ### Checkpoint 15. Files and documents
 
-- **Status (2026-11-23).** The certificate copy history travels between
-  servers (your instruction): both copies are kept when both sides upload
-  while apart. Photos, signatures, office procurement files and the size
-  limit are not started. See section 17.
+- **Status (2026-11-24).** In progress. Built: the certificate copy
+  history travels between servers (2026-11-23); PD-59 B attachment
+  ownership, PD-22 (size limit and read-only procurement documents) and
+  the PD-74 conclusion (2026-11-24, after the CP15 answers). Not started
+  (checked against the code, 2026-11-25): PD-21 (own photo and signature
+  on board: the upload is still refused on board, and `users.photo` and
+  `users.sign` are still office columns) and the certificate side of
+  PD-17.
 
-- **Scope.**
-  - Keep both versions when two versions of one file field collide:
-    certificate copy, photo, signature. The losing file is kept as a linked
-    version and flagged (PD-59 B, F11, F15), building on the certificate
-    history from Checkpoint 10.
-  - Sync never removes a file from disk, neither by a conflict nor by a
-    delete. When an attachment record is deleted, its file stays on disk,
-    as today (PD-54).
-  - Office procurement files to vessels, and the per-file size limit
-    (PD-22).
+| Item | Decision | Status |
+|---|---|---|
+| Attachment ownership by the uploading side; the other side refused in the application and at sync, flagged | PD-59 B (refined, CP15) | **Done** (`AttachmentOwnershipSyncTest`, 6) |
+| Sync per-file limit 20 MB; a larger file marked failed at once, both directions | PD-22 (size) | **Done** (`FileSizeLimitTest`, 3) |
+| Requisitions show each signer's current signature; users named on requisitions are never deleted (model, query, sync); previous signature files kept | PD-74 (concluded) | **Done** (`ProcurementDocumentSyncTest`). The approval-time signature record built earlier the same day was removed |
+| Backfill on MySQL (owners of existing files) | PD-59 B | **Done** (`TrashGuardMySqlTest`) |
+| Retention: no photo or signature history; other files keep every version | CP15 answer | **Done**: nothing deletes a previous version (attachments hidden, never deleted, PD-61; certificate copies permanent, PD-62; old signature images kept) |
+| Own photo and signature changed on board, synced, not overwritten by the office | PD-21 | Planned, not built (today refused on board by the PD-34 guard; the only tests, in `ApprovedGuardsTest`, check that refusal) |
+| Which side replaces a certificate's current copy | PD-17 | Planned, not built (Checkpoint 14 item 8) |
+| Office procurement documents on board as read-only copies: view and download; adding, changing or removing them, or their stage links, refused on board and at sync; labelled in the screen | PD-22 (content) | **Done** (`ProcurementDocumentSyncTest`, 7) |
+
+- **Scope (unchanged rules).** Sync never removes a file from disk,
+  neither by a conflict nor by a delete. No attachment deletion is added
+  (PD-61). No history table or change log for photos and signatures, and
+  no approval-time signature (retention answer 2026-11-24, audit decided
+  2026-11-25). Audit stays with the existing sync actor and conflict
+  records, the user protection and the file retention rules.
 - **Depends on.** Checkpoints 14 and 10.
-- **Decisions needed.** PD-59 B, PD-22, PD-21 (photos and signatures).
-- **Expected outcome.** No document or file silently replaces or removes
-  another, on either side.
-- **Required tests.** File conflict tests (both files present on both
-  sides, flagged); a deleted attachment record leaves its file on disk on
-  both sides; the size limit; procurement-stage files per stage.
-- **Cloud.** Sync only. A version-link table if PD-59 B needs it
-  (additive).
+- **Decisions needed.** None. The PD-21 audit point was decided on
+  2026-11-25 (no change log).
+- **Deployment.** One additive migration
+  (`2026_11_27_100000_add_owner_side_to_attachments_table`), then
+  `php artisan sync:triggers install`, on the cloud and every vessel
+  together. Not run anywhere but the test databases; deployment needs your
+  approval.
+- **Required tests still to write (PD-21).** Own photo and signature
+  updated on board and synced; another user's refused; an office change
+  refused for that user; a change arriving by sync flagged; office users'
+  own photos and signatures unchanged. The two `ApprovedGuardsTest` checks
+  that the upload is refused on board change with the build.
 
 ### Checkpoint 16. User administration by Superadmin (ADR-004)
 
@@ -485,10 +525,11 @@ Design: [adr-003-to-005-design.md](adr-003-to-005-design.md) section 5.
   - users keep changing their own password (PD-69);
   - on board, a Superadmin does only the approved actions, and only named
     super-admin accounts are sent (PD-70);
-  - photos and signatures (PD-21); other shore accounts (PD-20).
+  - other shore accounts (PD-20). (Photos and signatures: PD-21, decided
+    2026-11-24, planned in Checkpoint 15, not built.)
 - **Depends on.** Checkpoint 10 (the server check), Checkpoint 14.
 - **Decisions needed.** PD-11 (conflict details), PD-69, PD-70, PD-20,
-  PD-21, PD-37 item 1.
+  PD-37 item 1.
 - **Expected outcome.** A Superadmin on board or on shore can block,
   unblock and reset passwords, offline or online; it reaches the other side;
   nobody else can; every action is on record; no credential leaks.
@@ -574,7 +615,9 @@ The ADR-003 rules for each vessel-owned module (design section 1.3).
   - **Equipment.** Vessel users do not disable equipment (ADR-006); the
     office, as today, where permitted.
   - **Vessel certificates and surveys.** Vessel users do not retire them
-    (ADR-006); the fleet records roles, as today; authority per PD-17.
+    (ADR-006); the fleet records roles, as today; authority per PD-17
+    (decided 2026-11-24: vessel-managed, so for a vessel that runs its own
+    server the office copy becomes read-only once built).
   - **Attachments.** Vessel users do not delete files (ADR-006). A removed
     file is hidden, not deleted (PD-61, built in Checkpoint 10); the hide
     travels as an update, and the file stays on disk (PD-54, Checkpoint 15).
@@ -773,12 +816,13 @@ PD-72 and PD-72 B (section 1).
 | 9 | PD-02 | Rotate, untrack, possibly rewrite history | Rotate and untrack; rewrite only if the repository was shared widely |
 | 11 | PD-23, PD-24, PD-33 | Attachment viewing; images behind sign-in; `/register` | Yes; yes; disable unless the office uses it |
 | 11, 16 | PD-37 | Remaining security limits | Accept item 1; item 2 is now required (ADR-004) |
-| 14 | PD-59 A | Which automatic outcomes are flagged | Every case where the owner lost, every newest-wins on shared data, every file, password and status conflict |
-| 14 | PD-34 | Block or warn for wrong-side **edits** (deletes of vessel-owned records are decided and built) | Block |
-| 14 | PD-17 | Certificates and surveys: ship, office or both | Ask whoever manages certificates; if both, newest wins with review |
-| 15 | PD-59 B | How both document versions are kept | History for certificate copies and procurement documents; keep both on conflict for photos and signatures |
-| 15 | PD-22 | Office procurement files to vessels; size limit | Decide with procurement; set a limit after measuring link cost |
-| 15, 16 | PD-21 | Photos and signatures changed on board | Up, newest wins, if crew update their own signature |
+| 14 | PD-59 A | Which automatic outcomes are flagged | Decided 2026-11-24: option 2. Partly built (refused changes flagged); the rest planned |
+| 14 | PD-34 | Block or warn for wrong-side **edits** | Decided 2026-11-24: block (option 1). Built |
+| 14 | PD-17 | Certificates and surveys: ship, office or both | Decided 2026-11-24: vessel-managed. Not built |
+| 15 | PD-59 B | How both document versions are kept | Decided 2026-11-24: attachment ownership by the uploading side; retention decided. Built |
+| 15 | PD-22 | Office procurement files to vessels; size limit | Decided and built 2026-11-24: read-only copies on board; 20 MB sync limit |
+| 15 | PD-21 | Photos and signatures changed on board | Decided 2026-11-24: own photo and signature on board, vessel-owned for that user; audit decided 2026-11-25 (no change log). Not built |
+| 15 | PD-74 | Which signature a past requisition shows | Decided 2026-11-24: the signer's current one; signers never deleted. Built |
 | 16 | PD-11 | Conflict rules for blocks and passwords | Block beats unblock; Superadmin reset beats own change; newest of two resets; all flagged |
 | 16 | PD-69 | Keep users' own password change | Keep it |
 | 16 | PD-70 | Superadmin powers on board; which accounts are sent | Only the approved actions; named accounts only |
@@ -912,7 +956,7 @@ still delete, and how that is kept safe.
 | Inventory ledger | Append only; corrections are new entries | Never deleted | Ledger rows are permanent on both sides |
 | Equipment | Create, update. No disable | Disable, as today, for vessels without their own server; read-only for offline vessels (PD-06, built). Wrong entries are corrected by editing (PD-72 B) | Deletion record when it travels |
 | PMS | Create, update. No job deactivation (PD-72). No component "Inactive" switch, either way (PD-73). No removal | Super-admin, not for offline vessels; wrong entries are corrected by editing (PD-72 B) | Children deleted explicitly; deletion records |
-| Certificates and surveys | Create, update. No retire | Fleet records roles retire; trash | Per PD-17 |
+| Certificates and surveys | Create, update. No retire | Fleet records roles retire, and the trash, for vessels without their own server; read-only for offline vessels once PD-17 is built | Vessel-managed (PD-17, 2026-11-24) |
 | Attachments | Upload, link. No delete (unlink from a draft: PD-72) | Nobody reaches the file delete today (the route admits only two ship roles, which ADR-006 refuses). The server guard (PD-61) hides the file and refuses it when it is a record. Deleting attachments is out of scope for now; no permission is added | The file and its record stay (PD-54, PD-61). A cloud delete of a file uploaded on board is refused on the vessel |
 | Users | Nothing | Superadmin blocks and unblocks (ADR-004); blocking is not a delete | ADR-004 rules |
 
@@ -1007,8 +1051,8 @@ committed, merged into `main` or deployed.
 |---|---|
 | 9 | **Waiting for you or IT.** It is operations on the production site and its credentials, which development may not touch. It does not block other work. |
 | 10 | **Complete on the branch** (not committed, not deployed). Items 1 to 7 built, and every required test listed for it written and passing (below). The PMS component switch is restricted for vessel users (PD-73, decided 2026-11-24). |
-| 14 | **In progress.** Items 1, 1a, 2, 3 and 5 built and tested; the PD-60 part of item 4 and the delete part of item 7 built and tested. The rest of items 4 and 7, and items 6 and 8, wait for decisions (below). |
-| 15 | **In progress.** The certificate copy history syncs (below). The rest is not started. |
+| 14 | **In progress.** Items 1, 1a, 2, 3, 5 and 7 built and tested; the PD-60 part of item 4 built and tested. Decided, not built (checked 2026-11-25): the rest of item 4 (PD-36 review list and MySQL cascade tests, indirect cascades included), the rest of item 6 (PD-59 A rules beyond refused-change flagging, and their tests) and item 8 (PD-17). |
+| 15 | **In progress.** Built and tested: the certificate copy history sync, PD-59 B attachment ownership, PD-22 (size limit and read-only procurement documents) and the PD-74 conclusion. Not built (checked 2026-11-25): PD-21 (own photo and signature on board) and the certificate side of PD-17. |
 | 11 to 13, 16 to 24 | Not started. |
 
 ### Checkpoint 10 (2026-11-23)
@@ -1097,12 +1141,12 @@ committed, merged into `main` or deployed.
 | 5. A refused change is flagged (F3, F4) | **Done** | Every change the receiver refuses (ownership, a permanent record, ADR-006) now records a `refused` conflict needing review, once per change however often it is retried. The vessel also receives a copy, so the crew side can see it. |
 | Who made each change | **Done** | The signed-in user is recorded with every change (middleware `SetSyncActor`), travels with the sync event, and is kept by the receiving server. Changes made by commands and the scheduler are recorded as the system. |
 | 4a. Cascades, PD-60 part | **Done** | A vessel refuses a delete from the cloud that would cascade, through an `ON DELETE CASCADE` key, into rows it holds, and a delete of its own vessel record; each is flagged as a refused conflict. The keys are read from the schema, so a new key is covered without a list. A delete with nothing below it on board is applied. |
-| 4. Cascades, the rest | Waiting | PD-36 (confirm): the per-key list and MySQL cascade tests at sync. |
-| 6. Review flags | Waiting | PD-59 A. The new deletion and retirement conflicts above are already flagged. |
+| 4. Cascades, the rest | Planned, not built (PD-36 decided 2026-11-24, option 1) | The per-key review list and MySQL cascade tests per module, indirect cascades included. |
+| 6. Review flags | Partly built (PD-59 A decided 2026-11-24, option 2) | Built: the deletion, retirement and refused-change conflicts above are flagged. Planned, not built: the base-value check for the two-way tables that still decide by timestamp, flags for the other option 2 outcomes (`vessel_surveys` is newest wins without a flag today), and the tests for duplicate delivery, retries, ownership, conflicting updates and skewed clocks. |
 | 7a. Cloud deletes of vessel-owned records (PD-34, vessel side) | **Done** | On the vessel, a delete from the cloud is refused when the row is the vessel's own record: a vessel-owned operational table, a table only the vessel creates rows in (requisitions, lines, approvals, PMS jobs), a row the vessel keeps in a shared table (form Part A, Receipt & Verification), or a file its crew uploaded. The refusal is in the sync log with the pull and flagged as a `refused` conflict; nothing is deleted, so no deletion record is written. Certificates, surveys and shared master data are not counted as vessel-owned (PD-17 open). |
 | 7b. Cloud deletes of vessel-owned records (PD-34, cloud side, confirmed 2026-11-24) | **Done** | `App\Sync\VesselOwnership` holds the one rule of what is a vessel's own record; the vessel's refusal (7a) and the cloud now both use it. On the cloud, every model delete of an offline vessel's own record is refused before anything changes (403 with the reason; listener in `SyncServiceProvider`, exception `VesselRecordProtected`). Every office delete route was checked and already refuses such records (trash, equipment, PMS, files, requisition drafts); a test walks them. The CFM import's `--remove-unmatched` is refused on the cloud for an offline vessel (a bulk delete the model check does not see). Not affected: vessels without their own server, the vessel server, rows the office keeps, office files, master data, certificates and surveys (PD-17). Tests: `ApprovedGuardsTest::test_pd34_*` (5). |
-| 7. Wrong-side edits | Waiting | PD-34. |
-| 8. Certificates and surveys authority | Waiting | PD-17. |
+| 7. Wrong-side edits (PD-34, option 1, decided 2026-11-24) | **Done** | `App\Sync\WrongSideEdits` reads who owns what from the replication rules (a one-way table belongs to its sender; `creates`, `row_owner` and column owners for the rest; the PD-73 office-only columns count as the office's on board; a guarded transition such as the office approving a PMS job stays allowed). One central guard in two layers: every model save, and every query-builder insert, update, upsert and delete through the ownership-guarded query builder every connection hands out (`App\Sync\Database`), so mass updates, joins and `DB::table()` writes are checked too; the query-builder layer also refuses cloud bulk deletes of an offline vessel's own records. On a vessel server for every synchronised table; on the cloud for the rows of a vessel that runs its own server. A refused edit answers 403 with the reason and nothing is saved. Exempt: the sync engine's own writes (wrong-side changes arriving by sync are still refused and flagged), writes with capture off, schema migrations, timestamps and local columns. Every write path audited, route by route ([conformance review](adr-001-conformance-review.md#pd-34-write-path-audit-2026-11-24)). Documented changes: crew cannot change their profile photo or signature on board (shown disabled with the reason; PD-21 decided 2026-11-24 to allow a user's own photo and signature on board, planned in Checkpoint 15); the CFM import, stock uploads and the stock backfill are refused on the cloud for such a vessel; the PMS parts cleanup leaves its parts alone. Tests: `ApprovedGuardsTest` (15 for edits, with a table by table matrix per side covering every owner group), `TrashGuardMySqlTest` (1, on MySQL); with either layer removed, its tests fail. |
+| 8. Certificates and surveys authority | Planned, not built (PD-17 decided 2026-11-24: vessel-managed) | Rules become vessel-owned; the PD-34 guard applies. Today both sides still edit them, newest wins. |
 
 **Differences from the design** ([adr-003-to-005-design.md](adr-003-to-005-design.md)
 section 3), all simplifications:
@@ -1150,18 +1194,22 @@ section 3), all simplifications:
 | Run | Result |
 |---|---|
 | `VesselUserDeletionTest` (Checkpoint 10, with PD-73) | 56 passed |
-| `ApprovedGuardsTest` (Checkpoint 10, items 4 to 7, the trash restore fix, the stock link guard, and PD-34 on the cloud) | 28 passed |
-| `TrashGuardMySqlTest` (Checkpoint 10, MySQL) | 4 passed |
+| `ApprovedGuardsTest` (Checkpoint 10, items 4 to 7, the trash restore fix, the stock link guard, PD-34 on the cloud, and PD-34 edits) | 43 passed |
+| `TrashGuardMySqlTest` (Checkpoint 10, MySQL, the PD-34 ownership guard on MySQL, and the PD-59 B backfill) | 6 passed |
 | `DeletionSyncTest` (Checkpoint 14, with PD-68 A and PD-73) | 20 passed |
 | `CertificateCopySyncTest` (Checkpoint 15) | 6 passed |
-| Full PHP suite, MySQL tests on (local throwaway MySQL 9.3), 2026-11-23 | **615 passed, 0 failed, 0 skipped** (after PD-34 on the cloud, 2026-11-24; 610 after PD-73; 604 after the stock link guard; 601 after PD-68 A; 600 after the PD-73 check; 488 passed, 2 failed, 10 skipped before Checkpoint 10) |
+| `AttachmentOwnershipSyncTest` (Checkpoint 15, PD-59 B) | 6 passed |
+| `ProcurementDocumentSyncTest` (Checkpoint 15, PD-22 and PD-74) | 7 passed |
+| `FileSizeLimitTest` (Checkpoint 15, PD-22) | 3 passed |
+| Full PHP suite, MySQL tests on (local throwaway MySQL 9.3), 2026-11-23 | **648 passed, 0 failed, 0 skipped** (after PD-22 read-only documents and the PD-74 conclusion, 2026-11-24; 646 after PD-59 B, PD-22 size and the approval-time signature record, since removed; 631 after PD-34 edits with the central guard; 623 before the query-builder layer; 615 after PD-34 on the cloud; 610 after PD-73; 604 after the stock link guard; 601 after PD-68 A; 600 after the PD-73 check; 488 passed, 2 failed, 10 skipped before Checkpoint 10) |
 | Desktop `npm test` (no client change since) | 36 passed (last run before this round) |
 
 **Not yet run:** any of this on Windows (Checkpoint 13), or against a
 copy of production data.
 
-**Still required before Checkpoint 14 is complete:** the rest of items 4
-and 7, and items 6 and 8 (PD-36, PD-34 for edits, PD-59 A, PD-17), and the
+**Still required before Checkpoint 14 is complete:** the rest of item 4,
+the rest of item 6, and item 8 (decided 2026-11-24, not built: PD-36,
+PD-59 A beyond refused-change flagging, PD-17), and the
 tests that go with them: a sync interrupted at each step, the PD-68 cases
 with skewed clocks, and MySQL cascade tests for every listed key.
 

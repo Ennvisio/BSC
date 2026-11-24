@@ -14,9 +14,9 @@ use Throwable;
  *
  * One rule, used on both sides, so they never disagree:
  *  - the vessel's sync refusal (ChangeApplier::delete);
- *  - the cloud's guard against office deletes (cloudDeleteRefusal(), called
- *    for every Eloquent delete by SyncServiceProvider, and by the
- *    few query-builder deletes that can reach a vessel's rows).
+ *  - the cloud's guard against office deletes: cloudDeleteRefusal() for
+ *    every Eloquent delete (SyncServiceProvider), and reason() for every
+ *    query-builder delete (App\Sync\WrongSideEdits::checkDeleteQuery()).
  *
  * A row is the vessel's own record when its table is a vessel-owned
  * operational table (class C), only the vessel creates rows in it
@@ -46,7 +46,7 @@ class VesselOwnership
         return match (true) {
             $class === 'C' => 'a vessel-owned operational record',
             $this->rules->creator($table) === ReplicationRules::VESSEL => 'raised on board',
-            $this->rules->rowOwner($table, $row) === ReplicationRules::VESSEL => 'kept by the vessel',
+            $this->rules->ownerOfRow($table, $row) === ReplicationRules::VESSEL => 'kept by the vessel',
             $class === 'F' && $vesselId !== null => 'uploaded on board',
             default => null,
         };
@@ -91,6 +91,12 @@ class VesselOwnership
             return null;
         }
 
+        return $this->deleteRefusalMessage($table, $why);
+    }
+
+    /** The refusal shown for a cloud delete of a vessel's own record, $why being reason()'s answer. */
+    public function deleteRefusalMessage(string $table, string $why): string
+    {
         $label = str_replace('_', ' ', $table);
 
         return "This {$label} record is the vessel's own record ({$why}). The vessel uses its own onboard server, so it cannot be deleted on the cloud. It is kept as it is.";
