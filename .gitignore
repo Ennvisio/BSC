@@ -79,4 +79,6 @@ Thumbs.db
 /.upgrade-backup/
 /Archive.zip
 *.sql
+# The vessel installer's database template: placeholders only, no data or credentials.
+!/deploy/windows/templates/create-database.sql
 /build/

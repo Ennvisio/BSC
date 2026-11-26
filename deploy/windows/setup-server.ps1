@@ -122,8 +122,9 @@ function Get-NsInstalledRuntimes {
     }
     $winsw = Get-NsWinSwExe $paths
     if ($winsw) {
-        $r = Invoke-NsCapture $winsw @('--version')
-        if ("$($r.Output)" -match '(\d+\.\d+\.\d+)') { $v.winsw = $Matches[1] }
+        # WinSW 2.x answers no command without its own XML, so read the file's version resource (as prepare-runtime.ps1 does).
+        $pv = "$((Get-Item -LiteralPath $winsw).VersionInfo.ProductVersion)"
+        if ($pv -match '^(\d+\.\d+\.\d+)') { $v.winsw = $Matches[1] }
     }
     return $v
 }

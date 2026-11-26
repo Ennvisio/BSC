@@ -1,11 +1,35 @@
 {
-  "about": "Pinned runtime downloads for NaviSuite-Server-Setup.exe. Filled by prepare-runtime.ps1 -Pin after the downloads were checked against the publishers' checksums; every later build must use exactly these files.",
-  "components": {
-    "apache": { "file": null, "sha256": null, "source": "https://www.apachelounge.com/download/ (httpd-2.4.*-win64-VS17.zip)" },
-    "php": { "file": null, "sha256": null, "source": "https://windows.php.net/download/ (8.2 or later, VS16/VS17 x64 Thread Safe zip)" },
-    "mysql": { "file": null, "sha256": null, "source": "https://dev.mysql.com/downloads/mysql/ (8.4 LTS, Windows x86 64-bit ZIP Archive)" },
-    "winsw": { "file": null, "sha256": null, "source": "https://github.com/winsw/winsw/releases/tag/v2.12.0 (WinSW-x64.exe)" },
-    "cacert": { "file": null, "sha256": null, "source": "https://curl.se/ca/cacert.pem" },
-    "vc_redist": { "file": null, "sha256": null, "source": "https://aka.ms/vs/17/release/vc_redist.x64.exe" }
-  }
+    "about":  "Pinned runtime downloads for NaviSuite-Server-Setup.exe. Filled by prepare-runtime.ps1 -Pin after the downloads were checked against the publishers\u0027 checksums; every later build must use exactly these files.",
+    "components":  {
+                       "apache":  {
+                                      "file":  "httpd-2.4.71-261112-Win64-VS18.zip",
+                                      "sha256":  "44961a929dff16b767b3adbcea55760a942a00239b2891dc55806be34029e1fc",
+                                      "source":  "https://www.apachelounge.com/download/ (httpd-2.4.*-win64-VS17.zip)"
+                                  },
+                       "php":  {
+                                   "file":  "php-8.4.28-Win32-vs17-x64.zip",
+                                   "sha256":  "59ccaa095d0f0c3fbb9f7e2bfd86713ebac032d5783cc22bc8934e2285629999",
+                                   "source":  "https://windows.php.net/download/ (8.2 or later, VS16/VS17 x64 Thread Safe zip)"
+                               },
+                       "mysql":  {
+                                     "file":  "mysql-8.4.13.1-winx64.zip",
+                                     "sha256":  "b96b13299bd0e74deaf543ae77d7aea5dac57bfae24ae30902d8899912a43382",
+                                     "source":  "https://dev.mysql.com/downloads/mysql/ (8.4 LTS, Windows x86 64-bit ZIP Archive)"
+                                 },
+                       "winsw":  {
+                                     "file":  "WinSW-x64.exe",
+                                     "sha256":  "05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da",
+                                     "source":  "https://github.com/winsw/winsw/releases/tag/v2.12.0 (WinSW-x64.exe)"
+                                 },
+                       "cacert":  {
+                                      "file":  "cacert.pem",
+                                      "sha256":  "427c064216761a1e72a8b30f0d954d08cb6e4435a82091fb865afd20c8497285",
+                                      "source":  "https://curl.se/ca/cacert.pem"
+                                  },
+                       "vc_redist":  {
+                                         "file":  "vc_redist.x64.exe",
+                                         "sha256":  "9c02c9ed120f671b900e6b9471d890e3b2414117a7e53f4ae2e855466fa2b7c9",
+                                         "source":  "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+                                     }
+                   }
 }

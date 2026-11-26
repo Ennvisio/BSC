@@ -127,8 +127,9 @@ $mysqld = Invoke-NsCapture (Join-Path $Output 'mysql\bin\mysqld.exe') @('--versi
 if ("$($mysqld.Output)" -notmatch 'Ver (\d+\.\d+\.\d+)') { throw "MySQL not recognised: $($mysqld.Output)" }
 $mysqlVersion = $Matches[1]
 if ((ConvertTo-NsVersion $mysqlVersion).Major -lt 8) { throw "MySQL 8.0 or later is required. Found $mysqlVersion." }
-$winsw = Invoke-NsCapture (Join-Path $Output 'winsw\WinSW-x64.exe') @('--version')
-if ("$($winsw.Output)" -notmatch '(\d+\.\d+\.\d+)') { throw "WinSW not recognised: $($winsw.Output)" }
+# WinSW 2.x answers no command (not even --version) without a service XML next to it, so the version comes from the file's version resource.
+$winswProduct = "$((Get-Item -LiteralPath (Join-Path $Output 'winsw\WinSW-x64.exe')).VersionInfo.ProductVersion)"
+if ($winswProduct -notmatch '^(\d+\.\d+\.\d+)') { throw "WinSW not recognised: product version '$winswProduct'" }
 $winswVersion = $Matches[1]
 $vcVersion = (Get-Item -LiteralPath (Join-Path $Output 'vc_redist.x64.exe')).VersionInfo.ProductVersion
 foreach ($dll in @('php8apache2_4.dll')) { if (-not (Test-Path -LiteralPath (Join-Path $Output "php\$dll"))) { throw "php\$dll is missing: the PHP zip is not the thread-safe build." } }
